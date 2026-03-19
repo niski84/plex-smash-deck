@@ -1,0 +1,25 @@
+# Build output
+/plex-dashboard
+/snapshot-cli
+
+# Runtime
+server.log
+server.pid
+server.port
+server.lock
+
+# Local secrets
+.env
+.env.*
+
+# App data (snapshots, settings, caches — keep structure locally, not in git)
+data/movie-snapshots/
+data/tmdb-discovery-cache/
+data/plexdash-settings.json
+data/plexdash-discovery.log
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+*~

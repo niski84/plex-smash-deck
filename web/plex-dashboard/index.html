@@ -1,0 +1,1910 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Plex Library Dashboard</title>
+  <style>
+    body {
+      font-family: "Trebuchet MS", Arial, sans-serif;
+      margin: 24px;
+      background: radial-gradient(circle at top, #1a1e30 0%, #0d101a 45%, #080a10 100%);
+      color: #eee;
+    }
+    .device-name {
+      display: inline-block;
+      margin-bottom: 14px;
+      padding: 10px 14px;
+      border-radius: 10px;
+      border: 2px solid #2a324d;
+      background: linear-gradient(180deg, #151a2c 0%, #0f1422 100%);
+      font-weight: 700;
+      letter-spacing: 0.6px;
+    }
+    .theme-hero {
+      margin: 0 0 14px 0;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px dashed #3b4a78;
+      background: rgba(23, 30, 50, 0.55);
+      color: #c9d2f2;
+      font-size: 13px;
+    }
+    .tabs { display: flex; gap: 10px; margin-bottom: 12px; }
+    .tab-btn {
+      position: relative;
+      overflow: hidden;
+      padding: 8px 14px;
+      border-radius: 999px;
+      border: 2px solid #1a1a1a;
+      background: linear-gradient(180deg, #ff5e5e 0%, #d41919 100%);
+      color: #fff;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      cursor: pointer;
+      box-shadow: inset 0 2px 0 rgba(255,255,255,0.24), inset 0 -3px 0 rgba(0,0,0,0.35), 0 4px 0 #6f0d0d;
+      transition: transform 0.08s ease, filter 0.12s ease;
+    }
+    .tab-btn.active {
+      filter: brightness(1.1);
+      transform: translateY(1px);
+      box-shadow: inset 0 2px 0 rgba(255,255,255,0.3), inset 0 -3px 0 rgba(0,0,0,0.35), 0 3px 0 #6f0d0d;
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    input, select, button { padding: 8px 10px; border-radius: 6px; border: 1px solid #444; background: #1e1e1e; color: #eee; }
+    button {
+      position: relative;
+      overflow: hidden;
+      cursor: pointer;
+      border: 2px solid #1a1a1a;
+      border-radius: 999px;
+      background: linear-gradient(180deg, #ffd24f 0%, #f49a17 100%);
+      color: #201607;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      box-shadow: inset 0 2px 0 rgba(255,255,255,0.3), inset 0 -3px 0 rgba(0,0,0,0.3), 0 4px 0 #9a5f0b;
+      transition: transform 0.08s ease, filter 0.12s ease;
+    }
+    button:hover { filter: brightness(1.06); }
+    button:active {
+      transform: translateY(1px);
+      box-shadow: inset 0 2px 0 rgba(255,255,255,0.3), inset 0 -2px 0 rgba(0,0,0,0.3), 0 3px 0 #9a5f0b;
+    }
+    button::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 14px;
+      height: 14px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.35);
+      transform: translate(-50%, -50%) scale(0);
+      opacity: 0;
+      pointer-events: none;
+    }
+    button.smash-active {
+      animation: smash-bounce 220ms cubic-bezier(.2,.9,.2,1);
+    }
+    button.smash-active::after {
+      animation: smash-ring 280ms ease-out;
+    }
+    @keyframes smash-bounce {
+      0% { transform: translateY(0) scale(1); }
+      40% { transform: translateY(3px) scale(0.96); }
+      75% { transform: translateY(-1px) scale(1.03); }
+      100% { transform: translateY(0) scale(1); }
+    }
+    @keyframes smash-ring {
+      0% { transform: translate(-50%, -50%) scale(0); opacity: 0.75; }
+      100% { transform: translate(-50%, -50%) scale(5.8); opacity: 0; }
+    }
+    .card { background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 14px; margin-bottom: 14px; }
+    .muted { color: #aaa; font-size: 13px; }
+    .ok { color: #7CFC95; }
+    .err { color: #ff7777; }
+    ul { margin: 0; padding-left: 20px; max-height: 380px; overflow: auto; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border-bottom: 1px solid #333; padding: 8px; text-align: left; font-size: 13px; vertical-align: top; }
+    th { color: #ccc; }
+    .small { font-size: 12px; color: #bbb; }
+    .disc-title { cursor: help; border-bottom: 1px dotted rgba(200,200,255,0.35); }
+    #discoveryTableWrap { overflow-x: auto; }
+    th.th-sort {
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+    th.th-sort:hover { color: #fff; background: rgba(44, 92, 255, 0.15); }
+    th.th-sort .sort-ind { font-size: 10px; opacity: 0.45; margin-left: 4px; }
+    th.th-sort.sorted-asc .sort-ind::after { content: "▲"; opacity: 0.95; }
+    th.th-sort.sorted-desc .sort-ind::after { content: "▼"; opacity: 0.95; }
+    .disc-poster-cell { width: 64px; padding: 6px 8px; vertical-align: middle; }
+    .disc-poster {
+      display: block;
+      width: 52px;
+      height: 78px;
+      object-fit: cover;
+      border-radius: 4px;
+      border: 1px solid #333;
+      background: #111;
+    }
+    .disc-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      align-items: stretch;
+      min-width: 118px;
+    }
+    .disc-actions button { font-size: 11px; padding: 6px 8px; white-space: nowrap; }
+    .disc-poster-missing {
+      display: flex;
+      width: 52px;
+      height: 78px;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: #666;
+      border: 1px dashed #444;
+      border-radius: 4px;
+      background: #141414;
+    }
+    #discPosterPopup {
+      position: fixed;
+      z-index: 9999;
+      pointer-events: none;
+      display: none;
+      background: #0d101a;
+      border: 2px solid #3b4a78;
+      border-radius: 8px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.85);
+      padding: 5px;
+      opacity: 0;
+      transition: opacity 0.12s ease;
+    }
+    #discPosterPopup.pp-visible {
+      opacity: 1;
+    }
+    #discPosterPopup img {
+      display: block;
+      max-width: min(500px, 88vw);
+      max-height: 85vh;
+      border-radius: 4px;
+      object-fit: contain;
+    }
+
+    /* ── Snapshots Tab ─────────────────────────────────── */
+    #snapshots-history { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    #snapshots-history th {
+      background: #1a2040; color: #8fa4e8; font-size: 12px;
+      text-transform: uppercase; letter-spacing: .04em;
+      padding: 8px 12px; text-align: left; border-bottom: 1px solid #2a3260;
+    }
+    #snapshots-history td { padding: 8px 12px; border-bottom: 1px solid #1a2040; font-size: 13px; }
+    #snapshots-history tr:hover td { background: rgba(59,74,120,0.25); cursor: pointer; }
+    #snapshots-history tr.snap-active td { background: rgba(59,74,120,0.45); }
+    .snap-badge {
+      display: inline-block; padding: 2px 8px; border-radius: 10px;
+      font-size: 12px; font-weight: 600;
+    }
+    .snap-badge.added  { background: rgba(34,197,94,0.2);  color: #4ade80; }
+    .snap-badge.removed{ background: rgba(239,68,68,0.2);  color: #f87171; }
+    .snap-badge.neutral{ background: rgba(100,116,139,0.25); color: #94a3b8; }
+
+    /* Last Drop card */
+    #snap-last-drop {
+      border: 1px solid #2a3260; border-radius: 10px;
+      background: #0e1420; padding: 20px 22px; margin-bottom: 18px;
+    }
+    #snap-last-drop h3 { margin: 0 0 4px; color: #a0b4ff; }
+    .snap-drop-meta { font-size: 12px; color: #6b7280; margin-bottom: 16px; }
+    .snap-drop-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    @media (max-width: 700px) { .snap-drop-columns { grid-template-columns: 1fr; } }
+    .snap-drop-col h4 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; }
+    .snap-drop-col.new-movies h4  { color: #4ade80; }
+    .snap-drop-col.gone-movies h4 { color: #f87171; }
+    .snap-drop-list { list-style: none; margin: 0; padding: 0; max-height: 280px; overflow-y: auto; }
+    .snap-drop-list li { padding: 5px 10px; border-radius: 5px; margin-bottom: 3px; font-size: 13px; }
+    .snap-drop-list li.new-item  { background: rgba(34,197,94,0.10); color: #bbf7d0; }
+    .snap-drop-list li.gone-item { background: rgba(239,68,68,0.10); color: #fecaca; }
+    .snap-drop-list li.none-item { color: #4b5563; font-size: 12px; font-style: italic; padding: 4px 10px; }
+
+    /* ⚠ Missing alert banner */
+    #snap-missing-banner {
+      border: 2px solid #dc2626; border-radius: 10px;
+      background: rgba(220,38,38,0.08); padding: 18px 22px; margin-bottom: 18px;
+      display: none;
+    }
+    #snap-missing-banner .missing-header {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 14px;
+    }
+    #snap-missing-banner .missing-icon { font-size: 24px; line-height: 1; }
+    #snap-missing-banner .missing-title { color: #f87171; font-size: 16px; font-weight: 700; }
+    #snap-missing-banner .missing-subtitle { color: #fca5a5; font-size: 12px; margin-top: 2px; }
+    .snap-missing-group { margin-bottom: 14px; }
+    .snap-missing-group-header {
+      font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+      color: #ef4444; margin-bottom: 6px; padding-bottom: 4px;
+      border-bottom: 1px solid rgba(220,38,38,0.3);
+    }
+    .snap-missing-list { list-style: none; margin: 0; padding: 0; }
+    .snap-missing-list li {
+      padding: 5px 12px; border-radius: 4px; font-size: 13px; margin-bottom: 3px;
+      background: rgba(220,38,38,0.10); color: #fecaca;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .snap-missing-list li::before { content: "✗"; color: #ef4444; font-weight: 700; font-size: 12px; }
+
+    /* Manual diff panel */
+    #snap-diff-panel {
+      margin-top: 20px; padding: 18px 20px;
+      background: #111827; border: 1px solid #2a3260; border-radius: 10px;
+    }
+    #snap-diff-panel h4 { margin: 0 0 14px; color: #a0b4ff; font-size: 15px; }
+    .snap-diff-meta { display: flex; gap: 24px; flex-wrap: wrap; margin-bottom: 16px; font-size: 13px; color: #8fa4e8; }
+    .snap-diff-meta span { background: #1a2040; padding: 4px 12px; border-radius: 6px; }
+    .snap-diff-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 700px) { .snap-diff-columns { grid-template-columns: 1fr; } }
+    .snap-diff-col h5 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; }
+    .snap-diff-col.added h5 { color: #4ade80; }
+    .snap-diff-col.removed h5 { color: #f87171; }
+    .snap-diff-list { list-style: none; margin: 0; padding: 0; max-height: 360px; overflow-y: auto; }
+    .snap-diff-list li { padding: 5px 10px; border-radius: 5px; margin-bottom: 4px; font-size: 13px; }
+    .snap-diff-list li.added   { background: rgba(34,197,94,0.12); color: #bbf7d0; }
+    .snap-diff-list li.removed { background: rgba(239,68,68,0.12); color: #fecaca; }
+    .snap-compare-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+    .snap-compare-row select { flex: 1; min-width: 180px; }
+    #snapStatus { margin-left: 12px; }
+    #snapshotsTakenAt { font-size: 12px; color: #6b7280; }
+  </style>
+</head>
+<body>
+  <div id="discPosterPopup"><img src="" alt="Full poster preview" /></div>
+  <div class="device-name">Plex Library</div>
+  <div class="theme-hero">Smash mode ready: drop your gorilla-bash graphic here for full arcade flavor.</div>
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+    <button class="tab-btn" data-tab="discovery">Discovery</button>
+    <button class="tab-btn" data-tab="snapshots">Snapshots</button>
+    <button class="tab-btn" data-tab="settings">Settings</button>
+  </div>
+
+  <section id="tab-dashboard" class="tab-panel active">
+    <div class="card">
+      <div class="row">
+        <button id="loadMoviesBtn" data-testid="load-movies-btn">Load Movies</button>
+        <span id="movieStatus" class="muted" data-testid="movie-status">Idle</span>
+      </div>
+      <p class="muted">Movies loaded: <span id="movieCount" data-testid="movie-count">0</span></p>
+      <ul id="movieList" data-testid="movie-list"></ul>
+    </div>
+
+    <div class="card">
+      <h3>Play Playlist</h3>
+      <div class="row">
+        <label for="playlistSelect">Playlist</label>
+        <select id="playlistSelect" data-testid="playlist-title"></select>
+        <button id="refreshPlaylistsBtn" type="button">Refresh Playlists</button>
+        <button id="playSelectedPlaylistBtn" data-testid="create-and-play-btn">Play Selected</button>
+      </div>
+      <div class="row" style="margin-top: 8px;">
+        <label for="clientName">Target Player</label>
+        <select id="clientName" data-testid="client-name"></select>
+        <button id="refreshPlayersBtn" type="button">Refresh Players</button>
+        <span id="playersStatus" class="muted">Uses discovered Plex players; falls back to configured default.</span>
+      </div>
+      <div class="row" style="margin-top: 8px;">
+        <span class="muted">Playlist items preview:</span>
+      </div>
+      <ul id="playlistItemsList" style="max-height: 180px; overflow-y: auto;"></ul>
+      <p id="playlistResult" class="muted" data-testid="playlist-result">No playlist action yet.</p>
+    </div>
+
+    <div class="card">
+      <h3>Create Playlist by Actor/Director</h3>
+      <div class="row">
+        <input id="peopleTitle" data-testid="people-title" value="People Picks" />
+        <input id="peopleCount" data-testid="people-count" value="8" />
+      </div>
+      <div class="row" style="margin-top: 8px;">
+        <input id="actorName" data-testid="actor-name" placeholder="Actor (optional)" list="personSuggestions" />
+        <input id="directorName" data-testid="director-name" placeholder="Director (optional)" list="personSuggestions" />
+        <button id="createPeoplePlaylistBtn" data-testid="create-people-playlist-btn">Create by Person</button>
+      </div>
+      <p id="peopleResult" class="muted" data-testid="people-result">No person-filtered playlist action yet.</p>
+    </div>
+
+    <div class="card">
+      <h3>Create Genre/Rated Playlist (1982-2016)</h3>
+      <div class="row">
+        <label for="genreSelect">Genre</label>
+        <select id="genreSelect" data-testid="genre-select"></select>
+        <label for="ratingSelect">Min Rating</label>
+        <select id="ratingSelect" data-testid="rating-select">
+          <option value="0">Any</option>
+          <option value="1.0">1.0+</option><option value="1.5">1.5+</option><option value="2.0">2.0+</option><option value="2.5">2.5+</option>
+          <option value="3.0">3.0+</option><option value="3.5">3.5+</option><option value="4.0">4.0+</option><option value="4.5">4.5+</option>
+          <option value="5.0">5.0+</option><option value="5.5">5.5+</option><option value="6.0">6.0+</option><option value="6.5">6.5+</option>
+          <option value="7.0">7.0+</option><option value="7.5">7.5+</option><option value="8.0">8.0+</option><option value="8.5">8.5+</option>
+          <option value="9.0">9.0+</option><option value="9.5">9.5+</option>
+        </select>
+        <button id="createGenrePlaylistBtn" data-testid="create-genre-playlist-btn">Create Genre Playlist</button>
+        <button id="previewGenrePlaylistBtn">Preview Only</button>
+      </div>
+      <p class="muted">Rule: includes all matching movies with year from 1982 through 2016.</p>
+      <p id="genreResult" class="muted" data-testid="genre-result">No genre/rating playlist action yet.</p>
+      <p id="previewResult" class="muted">No preview yet.</p>
+      <ul id="previewList"></ul>
+    </div>
+  </section>
+
+  <section id="tab-discovery" class="tab-panel">
+    <div class="card">
+      <h3>Discovery — filmography gaps</h3>
+      <p class="muted">Find TMDB credits missing from your Plex library. Hover a title for plot (from TMDB). Min rating uses TMDB vote average (0–10). <strong>Filtered out:</strong> documentaries (TMDB genre or “documentary” in text), TV movies / news, and typical “making of” / behind-the-scenes extras. <strong>Speed:</strong> TMDB responses are cached on disk under <code>data/tmdb-discovery-cache/</code> — repeat lookups get faster as the cache grows. <strong>Poster/debug:</strong> server appends diagnostics to <code>data/plexdash-discovery.log</code> (poster proxy + filmography poster field counts).</p>
+      <div class="row">
+        <input id="discoverPerson" placeholder="Actor or Director name" list="personSuggestions" data-testid="discover-person" />
+        <select id="discoverRole">
+          <option value="">Actor + Director</option>
+          <option value="actor">Actor only</option>
+          <option value="director">Director only</option>
+        </select>
+        <input id="discoverMinYear" placeholder="Min Year (optional)" style="width: 170px;" />
+        <input id="discoverMaxYear" placeholder="Max Year (optional)" style="width: 170px;" />
+      </div>
+      <div class="row" style="margin-top: 8px;">
+        <label for="discoverMinRating">Min TMDB rating</label>
+        <select id="discoverMinRating" data-testid="discover-min-rating">
+          <option value="0">Any</option>
+          <option value="5.0">5.0+</option>
+          <option value="5.5">5.5+</option>
+          <option value="6.0">6.0+</option>
+          <option value="6.5">6.5+</option>
+          <option value="7.0">7.0+</option>
+          <option value="7.5">7.5+</option>
+          <option value="8.0">8.0+</option>
+          <option value="8.5">8.5+</option>
+        </select>
+        <select id="discoverDirectorFilter">
+          <option value="">Director collaborator (optional)</option>
+        </select>
+        <select id="discoverCoActorFilter">
+          <option value="">Second actor collaborator (optional)</option>
+        </select>
+        <input id="discoverPlaylistTitle" placeholder="Compare against playlist title (optional)" />
+        <button id="runDiscoveryBtn" type="button" data-testid="run-discovery-btn">Analyze filmography</button>
+      </div>
+      <div class="row" style="margin-top: 10px;">
+        <button id="selectAllDiscoveryBtn" type="button">Select all missing</button>
+        <button id="addSelectedToRadarrBtn" type="button">Add selected to Radarr</button>
+        <button id="addSelectedToCartBtn" type="button" data-testid="add-selected-to-cart-btn">Add selected to cart</button>
+        <button id="copyMissingMarkdownBtn" type="button" data-testid="copy-missing-markdown-btn">Copy missing as Markdown</button>
+        <button id="copyAllTitlesMarkdownBtn" type="button" data-testid="copy-all-titles-md-btn">Copy all titles (Markdown)</button>
+        <span class="muted">Cart: <strong id="discoveryCartCount">0</strong></span>
+        <button id="copyDiscoveryCartBtn" type="button" data-testid="copy-discovery-cart-btn">Copy cart (Markdown)</button>
+        <button id="clearDiscoveryCartBtn" type="button">Clear cart</button>
+        <span id="discoveryStatus" class="muted" data-testid="discovery-status">Idle</span>
+      </div>
+      <div class="small">Click column headers to sort. Cart is saved in this browser (local). <strong>Copy missing</strong> = not in library; <strong>Copy all titles</strong> = every row in current order; <strong>Copy cart</strong> = items you added to the cart (Markdown, includes TMDB id).</div>
+      <div id="discoveryTableWrap">
+        <table>
+          <thead id="discoveryTableHead">
+            <tr>
+              <th scope="col"></th>
+              <th class="th-sort sorted-asc" data-sort="num" scope="col"># <span class="sort-ind" aria-hidden="true"></span></th>
+              <th scope="col">Cover</th>
+              <th class="th-sort" data-sort="title" scope="col">Title <span class="sort-ind"></span></th>
+              <th class="th-sort" data-sort="year" scope="col">Year <span class="sort-ind"></span></th>
+              <th class="th-sort" data-sort="genres" scope="col">Genres <span class="sort-ind"></span></th>
+              <th class="th-sort" data-sort="tmdb" scope="col">TMDB <span class="sort-ind"></span></th>
+              <th class="th-sort" data-sort="inLibrary" scope="col">In library <span class="sort-ind"></span></th>
+              <th class="th-sort" data-sort="inPlaylist" scope="col">In playlist <span class="sort-ind"></span></th>
+              <th class="th-sort" data-sort="knownFor" scope="col">Known for <span class="sort-ind"></span></th>
+              <th scope="col">Action</th>
+            </tr>
+          </thead>
+          <tbody id="discoveryRows"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── SNAPSHOTS TAB ─────────────────────────────────────── -->
+  <section id="tab-snapshots" class="tab-panel">
+
+    <!-- Controls bar -->
+    <div class="card" style="padding: 14px 20px;">
+      <div class="row" style="gap:14px; align-items:center; flex-wrap:wrap;">
+        <button id="takeSnapshotBtn" data-testid="take-snapshot-btn">📸 Take Snapshot</button>
+        <button id="snapRefreshBtn" data-testid="snap-refresh-btn" style="background:#1a2040; border-color:#2a3260;">↻ Refresh View</button>
+        <span id="snapStatus" class="muted" data-testid="snap-status">Loading…</span>
+      </div>
+    </div>
+
+    <!-- ⚠ Missing movies alert — only shown when movies have disappeared -->
+    <div id="snap-missing-banner" data-testid="snap-missing-banner">
+      <div class="missing-header">
+        <span class="missing-icon">⚠️</span>
+        <div>
+          <div class="missing-title">MISSING MOVIES DETECTED</div>
+          <div class="missing-subtitle" id="snapMissingSubtitle">Movies that have disappeared between snapshots</div>
+        </div>
+      </div>
+      <div id="snapMissingGroups"></div>
+    </div>
+
+    <!-- Last drop: newest vs previous -->
+    <div id="snap-last-drop" data-testid="snap-last-drop" style="display:none;">
+      <h3>📦 Latest Drop</h3>
+      <div class="snap-drop-meta" id="snapDropMeta">—</div>
+      <div class="snap-drop-columns">
+        <div class="snap-drop-col new-movies">
+          <h4>🆕 New Movies (<span id="snapDropAddedCount">0</span>)</h4>
+          <ul class="snap-drop-list" id="snapDropAddedList"></ul>
+        </div>
+        <div class="snap-drop-col gone-movies">
+          <h4>🚫 Went Missing (<span id="snapDropRemovedCount">0</span>)</h4>
+          <ul class="snap-drop-list" id="snapDropRemovedList"></ul>
+        </div>
+      </div>
+    </div>
+    <p id="snapNoDropMsg" class="muted" style="display:none; padding: 8px 0;">
+      Need at least 2 snapshots to show a latest drop. Take another snapshot to see changes.
+    </p>
+
+    <!-- History table -->
+    <div class="card">
+      <h3>Snapshot History</h3>
+      <div class="snap-compare-row">
+        <label style="font-size:13px; color:#8fa4e8; white-space:nowrap;">Compare any two:</label>
+        <select id="snapCompareFrom" data-testid="snap-compare-from">
+          <option value="">-- From snapshot --</option>
+        </select>
+        <select id="snapCompareTo" data-testid="snap-compare-to">
+          <option value="">-- To snapshot --</option>
+        </select>
+        <button id="snapCompareBtn" data-testid="snap-compare-btn">Compare</button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table id="snapshots-history">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Captured</th>
+              <th>Movies</th>
+              <th>Change vs Prev</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="snapshotRows" data-testid="snapshot-rows"></tbody>
+        </table>
+      </div>
+      <p id="snapEmptyMsg" class="muted" style="display:none; padding:12px 0;">No snapshots yet. Click "Take Snapshot" to capture your library now.</p>
+    </div>
+
+    <!-- Manual diff result panel -->
+    <div id="snap-diff-panel" style="display:none;" data-testid="snap-diff-panel">
+      <h4>Comparison Result</h4>
+      <div class="snap-diff-meta" id="snapDiffMeta"></div>
+      <div class="snap-diff-columns">
+        <div class="snap-diff-col added">
+          <h5>Added (<span id="snapAddedCount">0</span>)</h5>
+          <ul class="snap-diff-list" id="snapAddedList"></ul>
+        </div>
+        <div class="snap-diff-col removed">
+          <h5>Removed (<span id="snapRemovedCount">0</span>)</h5>
+          <ul class="snap-diff-list" id="snapRemovedList"></ul>
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+  <section id="tab-settings" class="tab-panel">
+    <div class="card">
+      <h3>Settings</h3>
+      <p class="muted">Environment values are loaded first. Save here to persist missing values between runs.</p>
+
+      <div class="row">
+        <div>
+          <label for="cfgPlexBase">Plex Base URL</label><br />
+          <input id="cfgPlexBase" placeholder="https://your-plex-host:32400" style="min-width: 360px;" />
+          <div class="small">Used for Plex API calls.</div>
+        </div>
+        <div>
+          <label for="cfgPlexToken">Plex Token</label><br />
+          <input id="cfgPlexToken" placeholder="X-Plex-Token" style="min-width: 360px;" />
+          <div class="small">Account token for Plex authentication.</div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="cfgLibraryKey">Plex Library Key</label><br />
+          <input id="cfgLibraryKey" placeholder="1" />
+          <div class="small">Movie section key, usually `1`.</div>
+        </div>
+        <div>
+          <label for="cfgTargetClient">Default Target Player Name</label><br />
+          <input id="cfgTargetClient" placeholder="Living Room" />
+          <div class="small">Fallback player name for Create &amp; Play.</div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="cfgTMDBKey">TMDB API Key (v3)</label><br />
+          <input id="cfgTMDBKey" placeholder="TMDB API Key" style="min-width: 360px;" />
+          <div class="small">Used for discovery search and filmography lookup.</div>
+        </div>
+        <div>
+          <label for="cfgTMDBReadToken">TMDB Read Access Token</label><br />
+          <input id="cfgTMDBReadToken" placeholder="TMDB Read Access Token" style="min-width: 360px;" />
+          <div class="small">Optional token; kept for compatibility/future use.</div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="cfgRadarrURL">Radarr URL</label><br />
+          <input id="cfgRadarrURL" placeholder="http://radarr-host:7878" style="min-width: 360px;" />
+          <div class="small">Radarr server used for add/import automation.</div>
+        </div>
+        <div>
+          <label for="cfgRadarrAPIKey">Radarr API Key</label><br />
+          <input id="cfgRadarrAPIKey" placeholder="Radarr API Key" style="min-width: 360px;" />
+          <div class="small">Required for `/api/v3/movie` requests.</div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="cfgRadarrRoot">Radarr Root Folder</label><br />
+          <input id="cfgRadarrRoot" placeholder="/movies" style="min-width: 360px;" />
+          <div class="small">Root folder path where Radarr stores movies.</div>
+        </div>
+        <div>
+          <label for="cfgRadarrProfile">Radarr Profile ID</label><br />
+          <input id="cfgRadarrProfile" placeholder="1" />
+          <div class="small">Quality profile ID used on add.</div>
+        </div>
+      </div>
+
+      <div class="row"><button id="saveSettingsBtn">Save Settings</button><span id="settingsStatus" class="muted">Not saved yet.</span></div>
+    </div>
+  </section>
+
+  <script>
+    let discoveryData = [];
+    /** @type {{ key: string, dir: 'asc'|'desc' }} */
+    let discoverySort = { key: 'num', dir: 'asc' };
+    const DISCOVERY_CART_KEY = 'plexdash.discovery.cart.v1';
+    let suggestTimer = null;
+    const moviesCacheKey = 'plexdash.movies.cache.v1';
+
+    function setStatus(id, message, ok) {
+      const el = document.getElementById(id);
+      el.textContent = message;
+      el.className = ok === undefined ? 'muted' : (ok ? 'ok' : 'err');
+    }
+
+    async function apiJson(url, options = {}) {
+      const res = await fetch(url, options);
+      const payload = await res.json();
+      if (!payload.success) throw new Error(payload.error || 'API error');
+      return payload.data;
+    }
+
+    function readMoviesCache() {
+      try {
+        const raw = localStorage.getItem(moviesCacheKey);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || !Array.isArray(parsed.movies)) return null;
+        return parsed;
+      } catch (err) {
+        return null;
+      }
+    }
+
+    function writeMoviesCache(data) {
+      try {
+        localStorage.setItem(moviesCacheKey, JSON.stringify(data));
+      } catch (err) {
+        // Ignore cache write issues (quota/private mode).
+      }
+    }
+
+    function setMoviesButtonLabel(hasCache) {
+      const btn = document.getElementById('loadMoviesBtn');
+      btn.textContent = hasCache ? 'Refresh Movies' : 'Load Movies';
+    }
+
+    function renderMovies(movies, totalCount) {
+      const list = document.getElementById('movieList');
+      list.innerHTML = '';
+      for (const movie of movies) {
+        const li = document.createElement('li');
+        li.textContent = `${movie.Title} (${movie.Year || 'n/a'})`;
+        list.appendChild(li);
+      }
+      document.getElementById('movieCount').textContent = String(totalCount || movies.length);
+    }
+
+    function hydrateMoviesFromCache() {
+      const cached = readMoviesCache();
+      if (!cached) {
+        setMoviesButtonLabel(false);
+        return;
+      }
+      renderMovies(cached.movies || [], cached.count || (cached.movies || []).length);
+      setMoviesButtonLabel(true);
+      setStatus('movieStatus', 'Loaded from cache', true);
+    }
+
+    function renderPersonSuggestions(names) {
+      const datalist = document.getElementById('personSuggestions');
+      datalist.innerHTML = '';
+      for (const name of names) {
+        const option = document.createElement('option');
+        option.value = name;
+        datalist.appendChild(option);
+      }
+    }
+
+    function fillSelectFromList(selectId, values, defaultLabel) {
+      const select = document.getElementById(selectId);
+      select.innerHTML = '';
+      const first = document.createElement('option');
+      first.value = '';
+      first.textContent = defaultLabel;
+      select.appendChild(first);
+      for (const value of values || []) {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = value;
+        select.appendChild(opt);
+      }
+    }
+
+    function wirePersonAutocomplete() {
+      const fields = ['discoverPerson', 'actorName', 'directorName'];
+      fields.forEach(id => {
+        const input = document.getElementById(id);
+        if (!input) return;
+        input.addEventListener('input', () => {
+          const query = input.value.trim();
+          if (suggestTimer) clearTimeout(suggestTimer);
+          suggestTimer = setTimeout(async () => {
+            if (query.length < 2) {
+              renderPersonSuggestions([]);
+              return;
+            }
+            try {
+              const data = await apiJson(`/api/discovery/person-suggest?q=${encodeURIComponent(query)}`);
+              renderPersonSuggestions(data.suggestions || []);
+              if (id === 'discoverPerson' && data.suggestedRole) {
+                document.getElementById('discoverRole').value = data.suggestedRole;
+              }
+            } catch (err) {
+              console.error('[Plex Dashboard] person suggest failed', err);
+            }
+          }, 180);
+        });
+
+        if (id === 'discoverPerson') {
+          input.addEventListener('change', async () => {
+            const person = input.value.trim();
+            if (!person) {
+              fillSelectFromList('discoverDirectorFilter', [], 'Director collaborator (optional)');
+              fillSelectFromList('discoverCoActorFilter', [], 'Second actor collaborator (optional)');
+              return;
+            }
+            try {
+              const data = await apiJson(`/api/discovery/collaborators?person=${encodeURIComponent(person)}`);
+              if (data.suggestedRole) {
+                document.getElementById('discoverRole').value = data.suggestedRole;
+              }
+              fillSelectFromList('discoverDirectorFilter', data.directors || [], 'Director collaborator (optional)');
+              fillSelectFromList('discoverCoActorFilter', data.actors || [], 'Second actor collaborator (optional)');
+            } catch (err) {
+              console.error('[Plex Dashboard] collaborators lookup failed', err);
+            }
+          });
+        }
+      });
+    }
+
+    function bindTabs() {
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+          document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+          btn.classList.add('active');
+          document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
+          document.dispatchEvent(new CustomEvent('tabChanged', { detail: btn.dataset.tab }));
+        });
+      });
+    }
+
+    function wireArcadeButtonSmash() {
+      document.querySelectorAll('button').forEach(btn => {
+        btn.addEventListener('pointerdown', () => {
+          btn.classList.remove('smash-active');
+          // Force reflow so repeat presses always retrigger animation.
+          void btn.offsetWidth;
+          btn.classList.add('smash-active');
+        });
+        btn.addEventListener('animationend', () => {
+          btn.classList.remove('smash-active');
+        });
+      });
+    }
+
+    async function loadMovies() {
+      const hasCache = !!readMoviesCache();
+      setStatus('movieStatus', hasCache ? 'Refreshing...' : 'Loading...');
+      try {
+        const data = await apiJson('/api/movies?limit=100');
+        const movies = data.movies || [];
+        renderMovies(movies, data.count || movies.length);
+        writeMoviesCache({ count: data.count || movies.length, movies, savedAt: Date.now() });
+        setMoviesButtonLabel(true);
+        setStatus('movieStatus', 'Loaded', true);
+      } catch (err) {
+        setStatus('movieStatus', `Failed: ${err.message}`, false);
+      }
+    }
+
+    async function playSelectedPlaylist() {
+      setStatus('playlistResult', 'Sending play command...');
+      try {
+        const title = document.getElementById('playlistSelect').value;
+        if (!title) throw new Error('Select a playlist first');
+        const clientName = document.getElementById('clientName').value || 'Living Room';
+        const data = await apiJson('/api/playlists/play', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, clientName }) });
+        setStatus('playlistResult', `Started "${data.PlaylistTitle}" on ${data.TargetClient}`, true);
+      } catch (err) {
+        setStatus('playlistResult', `Failed: ${err.message}`, false);
+      }
+    }
+
+    async function createByPeople() {
+      setStatus('peopleResult', 'Creating person-filtered playlist...');
+      try {
+        const title = document.getElementById('peopleTitle').value;
+        const count = Number(document.getElementById('peopleCount').value || '8');
+        const actor = document.getElementById('actorName').value;
+        const director = document.getElementById('directorName').value;
+        const data = await apiJson('/api/playlists/by-people', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, count, actor, director }) });
+        setStatus('peopleResult', `Created "${data.Title}" with ${data.Count} movies`, true);
+      } catch (err) {
+        setStatus('peopleResult', `Failed: ${err.message}`, false);
+      }
+    }
+
+    async function loadGenres() {
+      const genreSelect = document.getElementById('genreSelect');
+      genreSelect.innerHTML = '<option value="">All Genres</option>';
+      try {
+        const data = await apiJson('/api/genres');
+        for (const genre of (data.genres || [])) {
+          const opt = document.createElement('option');
+          opt.value = genre;
+          opt.textContent = genre;
+          genreSelect.appendChild(opt);
+        }
+      } catch (err) {
+        console.error('[Plex Dashboard] loadGenres failed', err);
+      }
+    }
+
+    async function createByGenreRating() {
+      setStatus('genreResult', 'Creating genre/rating playlist...');
+      try {
+        const genre = document.getElementById('genreSelect').value;
+        const minRating = Number(document.getElementById('ratingSelect').value || '0');
+        const data = await apiJson('/api/playlists/by-genre-rating', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ genre, minRating }) });
+        setStatus('genreResult', `Created "${data.playlist.Title}" with ${data.playlist.Count} movies`, true);
+      } catch (err) {
+        setStatus('genreResult', `Failed: ${err.message}`, false);
+      }
+    }
+
+    async function previewByGenreRating() {
+      setStatus('previewResult', 'Loading preview...');
+      const list = document.getElementById('previewList');
+      list.innerHTML = '';
+      try {
+        const genre = document.getElementById('genreSelect').value;
+        const minRating = Number(document.getElementById('ratingSelect').value || '0');
+        const data = await apiJson('/api/playlists/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            genre,
+            minRating,
+            minYear: 1982,
+            maxYear: 2016,
+            limit: 75
+          })
+        });
+        setStatus('previewResult', `Preview "${data.suggestedTitle}": ${data.totalMatched} matched, showing ${data.showing}`, true);
+        for (const movie of (data.movies || [])) {
+          const li = document.createElement('li');
+          li.textContent = `${movie.Title} (${movie.Year || 'n/a'}) rating ${movie.Rating || 0}`;
+          list.appendChild(li);
+        }
+      } catch (err) {
+        setStatus('previewResult', `Failed: ${err.message}`, false);
+      }
+    }
+
+    function readDiscoveryCart() {
+      try {
+        const raw = localStorage.getItem(DISCOVERY_CART_KEY);
+        if (!raw) return [];
+        const p = JSON.parse(raw);
+        return Array.isArray(p) ? p : [];
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function writeDiscoveryCart(items) {
+      try {
+        localStorage.setItem(DISCOVERY_CART_KEY, JSON.stringify(items));
+      } catch (e) {
+        console.warn('[Plex Dashboard] cart save failed', e);
+      }
+    }
+
+    function refreshDiscoveryCartCount() {
+      const el = document.getElementById('discoveryCartCount');
+      if (el) el.textContent = String(readDiscoveryCart().length);
+    }
+
+    function addToDiscoveryCart(item) {
+      const cart = readDiscoveryCart();
+      if (cart.some(x => x.tmdbId === item.tmdbId)) {
+        setStatus('discoveryStatus', `Already in cart: ${item.title}`, false);
+        console.log('[Plex Dashboard] cart duplicate', item.tmdbId);
+        return;
+      }
+      cart.push({
+        tmdbId: item.tmdbId,
+        title: item.title,
+        year: item.year,
+        addedAt: Date.now()
+      });
+      writeDiscoveryCart(cart);
+      refreshDiscoveryCartCount();
+      setStatus('discoveryStatus', `Added to cart — ${cart.length} item(s) total`, true);
+      console.log('[Plex Dashboard] discovery cart add', { tmdbId: item.tmdbId, title: item.title });
+    }
+
+    function copyAllTitlesMarkdown() {
+      if (!discoveryData.length) {
+        setStatus('discoveryStatus', 'Run analysis first (no rows).', false);
+        return;
+      }
+      const person = document.getElementById('discoverPerson').value.trim() || 'Filmography';
+      const lines = [];
+      lines.push(`## All titles — ${person}`);
+      lines.push('');
+      lines.push(`*${discoveryData.length} film(s), current table order*`);
+      lines.push('');
+      for (const m of discoveryData) {
+        const y = m.year != null && m.year !== 0 ? String(m.year) : 'n/a';
+        lines.push(`- **${m.title}** (${y})`);
+      }
+      const md = lines.join('\n');
+      navigator.clipboard.writeText(md).then(() => {
+        setStatus('discoveryStatus', `Copied ${discoveryData.length} title(s) + year as Markdown.`, true);
+        console.log('[Plex Dashboard] copy all titles md', { count: discoveryData.length });
+      }).catch(err => {
+        setStatus('discoveryStatus', `Clipboard failed: ${err.message}`, false);
+        console.error('[Plex Dashboard] clipboard error', err);
+      });
+    }
+
+    function addSelectedToCart() {
+      const selected = [];
+      document.querySelectorAll('#discoveryRows input[type="checkbox"]').forEach(cb => {
+        if (!cb.checked) return;
+        const row = discoveryData[Number(cb.dataset.row)];
+        if (row) selected.push(row);
+      });
+      if (selected.length === 0) {
+        setStatus('discoveryStatus', 'No rows selected.', false);
+        return;
+      }
+      const cart = readDiscoveryCart();
+      const inCart = new Set(cart.map(x => x.tmdbId));
+      let added = 0;
+      for (const row of selected) {
+        if (inCart.has(row.tmdbId)) continue;
+        inCart.add(row.tmdbId);
+        cart.push({ tmdbId: row.tmdbId, title: row.title, year: row.year, addedAt: Date.now() });
+        added++;
+      }
+      writeDiscoveryCart(cart);
+      refreshDiscoveryCartCount();
+      const skipped = selected.length - added;
+      setStatus('discoveryStatus', `Cart: added ${added} new, ${skipped} already in cart. Total ${cart.length} item(s).`, true);
+      console.log('[Plex Dashboard] cart bulk add', { added, skipped, total: cart.length });
+    }
+
+    function copyDiscoveryCartMarkdown() {
+      const cart = readDiscoveryCart();
+      if (!cart.length) {
+        setStatus('discoveryStatus', 'Cart is empty — add titles first.', false);
+        console.log('[Plex Dashboard] copy cart skipped', { reason: 'empty' });
+        return;
+      }
+      const person = document.getElementById('discoverPerson').value.trim() || 'Discovery';
+      const lines = [];
+      lines.push(`## Cart — ${person}`);
+      lines.push('');
+      lines.push(`*${cart.length} item(s) in cart*`);
+      lines.push('');
+      for (const m of cart) {
+        const y = m.year != null && m.year !== 0 ? String(m.year) : 'n/a';
+        const id = m.tmdbId != null ? String(m.tmdbId) : '';
+        lines.push(`- **${m.title}** (${y})${id ? ` — TMDB \`${id}\`` : ''}`);
+      }
+      const md = lines.join('\n');
+      navigator.clipboard.writeText(md).then(() => {
+        setStatus('discoveryStatus', `Copied ${cart.length} cart item(s) to clipboard (Markdown).`, true);
+        console.log('[Plex Dashboard] discovery cart copied to clipboard', { count: cart.length });
+      }).catch(err => {
+        setStatus('discoveryStatus', `Clipboard failed: ${err.message}`, false);
+        console.error('[Plex Dashboard] clipboard error', err);
+      });
+    }
+
+    function discoverySortValue(item, key) {
+      switch (key) {
+        case 'num': return item.recommendationNo ?? 0;
+        case 'title': return (item.title || '').toLowerCase();
+        case 'year': return item.year && item.year !== 0 ? item.year : 0;
+        case 'genres': return (Array.isArray(item.genres) && item.genres.length) ? item.genres.join(', ').toLowerCase() : '';
+        case 'tmdb': {
+          const v = item.voteAverage;
+          return typeof v === 'number' && v > 0 ? v : -1;
+        }
+        case 'inLibrary': return item.inLibrary ? 1 : 0;
+        case 'inPlaylist': return item.inPlaylist ? 1 : 0;
+        case 'knownFor': return (item.knownFor || '').toLowerCase();
+        default: return '';
+      }
+    }
+
+    function compareDiscoveryValues(va, vb) {
+      if (typeof va === 'string' && typeof vb === 'string') {
+        return va.localeCompare(vb, undefined, { sensitivity: 'base' });
+      }
+      if (va < vb) return -1;
+      if (va > vb) return 1;
+      return 0;
+    }
+
+    function compareDiscoveryRows(a, b, key, mult) {
+      const va = discoverySortValue(a, key);
+      const vb = discoverySortValue(b, key);
+      const primary = compareDiscoveryValues(va, vb);
+      if (primary !== 0) return primary * mult;
+      const tcmp = compareDiscoveryValues(
+        (a.title || '').toLowerCase(),
+        (b.title || '').toLowerCase()
+      );
+      if (tcmp !== 0) return tcmp;
+      return (a.tmdbId || 0) - (b.tmdbId || 0);
+    }
+
+    function updateDiscoverySortHeaders() {
+      document.querySelectorAll('#discoveryTableHead th.th-sort').forEach(th => {
+        th.classList.remove('sorted-asc', 'sorted-desc');
+        const col = th.dataset.sort;
+        if (col === discoverySort.key) {
+          th.classList.add(discoverySort.dir === 'asc' ? 'sorted-asc' : 'sorted-desc');
+          th.setAttribute('aria-sort', discoverySort.dir === 'asc' ? 'ascending' : 'descending');
+        } else {
+          th.removeAttribute('aria-sort');
+        }
+      });
+    }
+
+    function sortDiscoveryByColumn(columnKey) {
+      if (!discoveryData.length) return;
+      if (discoverySort.key === columnKey) {
+        discoverySort.dir = discoverySort.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        discoverySort.key = columnKey;
+        discoverySort.dir = 'asc';
+      }
+      const mult = discoverySort.dir === 'asc' ? 1 : -1;
+      discoveryData.sort((a, b) => compareDiscoveryRows(a, b, columnKey, mult));
+      renderDiscoveryRows(discoveryData);
+      updateDiscoverySortHeaders();
+      console.log('[Plex Dashboard] discovery sort', { ...discoverySort, rows: discoveryData.length });
+    }
+
+    function wireDiscoveryTableSort() {
+      const head = document.getElementById('discoveryTableHead');
+      if (!head) return;
+      head.addEventListener('click', (e) => {
+        const th = e.target.closest('th[data-sort]');
+        if (!th || !th.dataset.sort) return;
+        sortDiscoveryByColumn(th.dataset.sort);
+      });
+    }
+
+    /** Same-origin proxy for TMDB posters — avoids broken img loads from hotlink / Referer rules. */
+    function discoveryPosterDisplaySrc(posterUrl) {
+      const u = (posterUrl || '').trim();
+      if (!u) return '';
+      if (u.indexOf('image.tmdb.org') !== -1) {
+        try {
+          const parsed = new URL(u);
+          const m = parsed.pathname.match(/\/t\/p\/w\d+\/(.+)$/);
+          if (m && m[1]) {
+            const filePath = '/' + m[1].replace(/^\/+/, '');
+            return '/api/discovery/poster?path=' + encodeURIComponent(filePath);
+          }
+        } catch (e) {
+          console.warn('[Plex Dashboard] poster URL parse failed', { posterUrl: u, err: String(e) });
+        }
+      }
+      return u;
+    }
+
+    /** Build proxy URL from raw TMDB poster_path (e.g. /x.jpg) when posterUrl is missing. */
+    function discoveryPosterProxyFromPath(posterPath) {
+      let p = (posterPath || '').trim();
+      if (!p) return '';
+      if (!p.startsWith('/')) p = '/' + p;
+      return '/api/discovery/poster?path=' + encodeURIComponent(p);
+    }
+
+    function discoveryPosterDisplayFromItem(item) {
+      const full = (item.posterUrl || '').trim();
+      if (full) {
+        const fromFull = discoveryPosterDisplaySrc(full);
+        if (fromFull) return fromFull;
+      }
+      const fromPath = discoveryPosterProxyFromPath(item.posterPath);
+      if (fromPath) return fromPath;
+      console.debug('[Plex Dashboard] no poster fields for row (TMDB may have no art yet)', { tmdbId: item.tmdbId, title: item.title });
+      return '';
+    }
+
+    function reportPosterDiagnostics(items) {
+      const total = Array.isArray(items) ? items.length : 0;
+      const withMeta = (items || []).filter(x => {
+        return !!((x.posterUrl || '').trim() || (x.posterPath || '').trim());
+      }).length;
+      const imgs = Array.from(document.querySelectorAll('#discoveryRows img.disc-poster'));
+      const loaded = imgs.filter(img => img.complete && Number(img.naturalWidth || 0) > 0).length;
+      const pending = imgs.length - loaded;
+      console.log('[Plex Dashboard] poster diagnostics', {
+        totalRows: total,
+        rowsWithPosterMetadata: withMeta,
+        imgElements: imgs.length,
+        loadedImages: loaded,
+        pendingOrFailed: pending
+      });
+      return { total, withMeta, loaded, pending, imgCount: imgs.length };
+    }
+
+    /** Return the w500 proxy URL for a thumbnail src.
+     *  img.src is always absolute in browsers, so we use the URL API to manipulate it. */
+    function discPosterBigSrc(src) {
+      if (!src) return '';
+      try {
+        const u = new URL(src);
+        if (u.pathname.startsWith('/api/discovery/poster')) {
+          u.searchParams.set('size', 'w500');
+          return u.toString();
+        }
+        // Direct TMDB URL: swap the size token in the path
+        u.pathname = u.pathname.replace(/\/t\/p\/w\d+\//, '/t/p/w500/');
+        return u.toString();
+      } catch (e) {
+        // Relative URL fallback (shouldn't happen in modern browsers)
+        if (src.includes('/api/discovery/poster')) {
+          const noSize = src.replace(/[?&]size=[^&]*/g, '');
+          return noSize + (noSize.includes('?') ? '&' : '?') + 'size=w500';
+        }
+        return src.replace(/\/t\/p\/w\d+\//, '/t/p/w500/');
+      }
+    }
+
+    (function () {
+      const popup   = document.getElementById('discPosterPopup');
+      const popupImg = popup.querySelector('img');
+      let hideTimer = null;
+      let showTimer = null;
+
+      function positionPopup(thumbRect) {
+        const margin = 12;
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const pw = popup.offsetWidth;
+        const ph = popup.offsetHeight;
+        let left, top;
+        // Prefer right of thumbnail; fall back to left; centre if neither fits
+        if (thumbRect.right + margin + pw <= vw) {
+          left = thumbRect.right + margin;
+        } else if (thumbRect.left - margin - pw >= 0) {
+          left = thumbRect.left - margin - pw;
+        } else {
+          left = Math.max(margin, Math.round((vw - pw) / 2));
+        }
+        // Vertically align with thumbnail centre, then clamp
+        top = Math.round(thumbRect.top + (thumbRect.height - ph) / 2);
+        top = Math.max(margin, Math.min(top, vh - ph - margin));
+        popup.style.left = left + 'px';
+        popup.style.top  = top  + 'px';
+      }
+
+      window._showPosterPopup = function (thumbEl, thumbSrc) {
+        if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+        if (showTimer) { clearTimeout(showTimer); showTimer = null; }
+        const bigSrc = discPosterBigSrc(thumbSrc);
+        if (!bigSrc) return;
+        showTimer = setTimeout(() => {
+          popup.classList.remove('pp-visible');
+          popup.style.display = 'block';
+          popupImg.src = '';
+          popupImg.onload = () => {
+            const r = thumbEl.getBoundingClientRect();
+            positionPopup(r);
+            popup.classList.add('pp-visible');
+          };
+          popupImg.onerror = () => { popup.style.display = 'none'; };
+          popupImg.src = bigSrc;
+        }, 120);
+      };
+
+      window._hidePosterPopup = function () {
+        if (showTimer) { clearTimeout(showTimer); showTimer = null; }
+        popup.classList.remove('pp-visible');
+        hideTimer = setTimeout(() => {
+          popup.style.display = 'none';
+          popupImg.src = '';
+        }, 150);
+      };
+    }());
+
+    function renderDiscoveryRows(items) {
+      const tbody = document.getElementById('discoveryRows');
+      tbody.innerHTML = '';
+      items.forEach((item, idx) => {
+        const tr = document.createElement('tr');
+
+        const tdCb = document.createElement('td');
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.dataset.row = String(idx);
+        cb.checked = !item.inLibrary;
+        tdCb.appendChild(cb);
+        tr.appendChild(tdCb);
+
+        const tdNum = document.createElement('td');
+        tdNum.textContent = String(item.recommendationNo ?? '');
+        tr.appendChild(tdNum);
+
+        const tdPoster = document.createElement('td');
+        tdPoster.className = 'disc-poster-cell';
+        const displaySrc = discoveryPosterDisplayFromItem(item);
+        if (displaySrc) {
+          const img = document.createElement('img');
+          img.className = 'disc-poster';
+          img.src = displaySrc;
+          img.alt = `Poster: ${item.title || 'movie'}`;
+          img.decoding = 'async';
+          img.style.cursor = 'zoom-in';
+          img.addEventListener('mouseenter', () => window._showPosterPopup(img, img.src));
+          img.addEventListener('mouseleave', () => window._hidePosterPopup());
+          img.addEventListener('error', () => {
+            const direct = (item.posterUrl || '').trim();
+            const canRetryDirect = !!direct && displaySrc.startsWith('/api/discovery/poster') && img.dataset.retryDirect !== '1';
+            if (canRetryDirect) {
+              img.dataset.retryDirect = '1';
+              img.src = direct;
+              console.warn('[Plex Dashboard] poster proxy failed, retrying direct TMDB URL', {
+                title: item.title,
+                posterPath: item.posterPath,
+                proxySrc: displaySrc,
+                directSrc: direct
+              });
+              return;
+            }
+            console.error('[Plex Dashboard] poster img error', { title: item.title, posterUrl: item.posterUrl, posterPath: item.posterPath, displaySrc });
+            const fallback = document.createElement('div');
+            fallback.className = 'disc-poster-missing';
+            fallback.textContent = 'No art';
+            fallback.title = 'Poster failed to load';
+            img.replaceWith(fallback);
+          });
+          tdPoster.appendChild(img);
+        } else {
+          const ph = document.createElement('div');
+          ph.className = 'disc-poster-missing';
+          ph.textContent = '—';
+          ph.title = 'No poster path (unreleased or missing on TMDB)';
+          tdPoster.appendChild(ph);
+        }
+        tr.appendChild(tdPoster);
+
+        const tdTitle = document.createElement('td');
+        const titleSpan = document.createElement('span');
+        titleSpan.className = 'disc-title';
+        titleSpan.textContent = item.title || '';
+        const plot = (item.overview || '').trim();
+        if (plot) titleSpan.title = plot;
+        tdTitle.appendChild(titleSpan);
+        tr.appendChild(tdTitle);
+
+        const tdYear = document.createElement('td');
+        tdYear.textContent = item.year != null && item.year !== 0 ? String(item.year) : '';
+        tr.appendChild(tdYear);
+
+        const tdGenres = document.createElement('td');
+        tdGenres.textContent = Array.isArray(item.genres) && item.genres.length ? item.genres.join(', ') : '—';
+        tr.appendChild(tdGenres);
+
+        const tdVote = document.createElement('td');
+        const v = item.voteAverage;
+        tdVote.textContent = typeof v === 'number' && v > 0 ? v.toFixed(1) : '—';
+        tr.appendChild(tdVote);
+
+        const tdLib = document.createElement('td');
+        tdLib.textContent = item.inLibrary ? 'Yes' : 'No';
+        tr.appendChild(tdLib);
+
+        const tdPl = document.createElement('td');
+        tdPl.textContent = item.inPlaylist ? 'Yes' : 'No';
+        tr.appendChild(tdPl);
+
+        const tdKnown = document.createElement('td');
+        tdKnown.textContent = item.knownFor || '';
+        tr.appendChild(tdKnown);
+
+        const tdAct = document.createElement('td');
+        tdAct.className = 'disc-actions-cell';
+        const actWrap = document.createElement('div');
+        actWrap.className = 'disc-actions';
+
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.dataset.addRow = String(idx);
+        addBtn.textContent = 'Add to Radarr';
+
+        const cartBtn = document.createElement('button');
+        cartBtn.type = 'button';
+        cartBtn.dataset.cartRow = String(idx);
+        cartBtn.textContent = 'Add to cart';
+
+        actWrap.appendChild(addBtn);
+        actWrap.appendChild(cartBtn);
+        tdAct.appendChild(actWrap);
+        tr.appendChild(tdAct);
+
+        tbody.appendChild(tr);
+      });
+
+      tbody.querySelectorAll('button[data-add-row]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const row = discoveryData[Number(btn.dataset.addRow)];
+          if (!row) return;
+          try {
+            const payload = { items: [{ tmdbId: row.tmdbId, title: row.title, year: row.year }] };
+            const data = await apiJson('/api/discovery/radarr/add', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            setStatus('discoveryStatus', `Added ${data.added.length} item(s), failed ${Object.keys(data.failed || {}).length}`, true);
+            console.log('[Plex Dashboard] radarr add row', { tmdbId: row.tmdbId, title: row.title });
+          } catch (err) {
+            setStatus('discoveryStatus', `Failed row add: ${err.message}`, false);
+          }
+        });
+      });
+
+      tbody.querySelectorAll('button[data-cart-row]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const row = discoveryData[Number(btn.dataset.cartRow)];
+          if (!row) return;
+          addToDiscoveryCart(row);
+        });
+      });
+    }
+
+    function copyMissingAsMarkdown() {
+      const person = document.getElementById('discoverPerson').value.trim() || 'Filmography';
+      const missing = discoveryData.filter(i => !i.inLibrary);
+      if (missing.length === 0) {
+        setStatus('discoveryStatus', 'No missing titles to copy.', false);
+        console.log('[Plex Dashboard] copy markdown: empty missing list');
+        return;
+      }
+      const lines = [];
+      lines.push(`## Movies to add — ${person}`);
+      lines.push('');
+      lines.push(`*${missing.length} title(s) not in library*`);
+      lines.push('');
+      for (const m of missing) {
+        const genres = Array.isArray(m.genres) && m.genres.length ? m.genres.join(', ') : '—';
+        const rating = typeof m.voteAverage === 'number' && m.voteAverage > 0
+          ? ` · TMDB ${m.voteAverage.toFixed(1)}/10` : '';
+        const y = m.year != null && m.year !== 0 ? String(m.year) : 'n/a';
+        lines.push(`- **${m.title}** (${y}) — ${genres}${rating}`);
+        const ov = (m.overview || '').trim();
+        if (ov) {
+          const oneLine = ov.replace(/\s+/g, ' ').trim();
+          lines.push(`  - ${oneLine}`);
+        }
+      }
+      const md = lines.join('\n');
+      navigator.clipboard.writeText(md).then(() => {
+        setStatus('discoveryStatus', `Copied ${missing.length} missing title(s) as Markdown.`, true);
+        console.log('[Plex Dashboard] markdown report copied', { count: missing.length });
+      }).catch(err => {
+        setStatus('discoveryStatus', `Clipboard failed: ${err.message}`, false);
+        console.error('[Plex Dashboard] clipboard error', err);
+      });
+    }
+
+    function formatDiscoveryCacheLine(c) {
+      if (!c) return '';
+      const bits = [];
+      if (c.personIdHit) bits.push('person ID from cache');
+      if (c.filmographyHit) bits.push('filmography from cache');
+      const mdTot = (c.movieDetailsHits || 0) + (c.movieDetailsMisses || 0);
+      if (mdTot > 0) {
+        bits.push(`TMDB movie details ${c.movieDetailsHits}/${mdTot} from disk`);
+      }
+      const crTot = (c.creditsHits || 0) + (c.creditsMisses || 0);
+      if (crTot > 0) {
+        bits.push(`cast/crew credits ${c.creditsHits}/${crTot} from disk`);
+      }
+      return bits.length ? 'Cache: ' + bits.join('; ') : '';
+    }
+
+    async function runDiscovery() {
+      setStatus('discoveryStatus', 'Analyzing...');
+      try {
+        const person = document.getElementById('discoverPerson').value.trim();
+        const role = document.getElementById('discoverRole').value;
+        const minYear = document.getElementById('discoverMinYear').value.trim();
+        const maxYear = document.getElementById('discoverMaxYear').value.trim();
+        const director = document.getElementById('discoverDirectorFilter').value.trim();
+        const coActor = document.getElementById('discoverCoActorFilter').value.trim();
+        const playlistTitle = document.getElementById('discoverPlaylistTitle').value.trim();
+        const minRating = document.getElementById('discoverMinRating').value || '0';
+        const params = new URLSearchParams({ person, role, playlistTitle, director, coActor, minYear, maxYear, minRating });
+        const data = await apiJson(`/api/discovery/filmography?${params.toString()}`);
+        discoveryData = data.items || [];
+        discoverySort = { key: 'num', dir: 'asc' };
+        discoveryData.sort((a, b) => (a.recommendationNo ?? 0) - (b.recommendationNo ?? 0));
+        renderDiscoveryRows(discoveryData);
+        updateDiscoverySortHeaders();
+        const cacheHint = formatDiscoveryCacheLine(data.cache);
+        setStatus('discoveryStatus', `Found ${data.total} titles, missing ${data.missing}${cacheHint ? '. ' + cacheHint : ''}`, true);
+        setTimeout(() => {
+          const d = reportPosterDiagnostics(discoveryData);
+          const diagLine = `. Posters loaded ${d.loaded}/${d.withMeta} (rows with metadata)`;
+          setStatus('discoveryStatus', `Found ${data.total} titles, missing ${data.missing}${cacheHint ? '. ' + cacheHint : ''}${diagLine}`, true);
+        }, 1200);
+        console.log('[Plex Dashboard] discovery filmography result', {
+          total: data.total,
+          missing: data.missing,
+          filter: 'feature_films_excludes_docs_tv_making_of',
+          cache: data.cache || null
+        });
+      } catch (err) {
+        setStatus('discoveryStatus', `Failed: ${err.message}`, false);
+      }
+    }
+
+    function selectAllMissing() {
+      document.querySelectorAll('#discoveryRows input[type="checkbox"]').forEach(cb => {
+        const row = discoveryData[Number(cb.dataset.row)];
+        cb.checked = !!row && !row.inLibrary;
+      });
+    }
+
+    async function addSelectedToRadarr() {
+      const selected = [];
+      document.querySelectorAll('#discoveryRows input[type="checkbox"]').forEach(cb => {
+        if (!cb.checked) return;
+        const row = discoveryData[Number(cb.dataset.row)];
+        if (row) selected.push({ tmdbId: row.tmdbId, title: row.title, year: row.year });
+      });
+      if (selected.length === 0) {
+        setStatus('discoveryStatus', 'No selected rows to add.', false);
+        return;
+      }
+      setStatus('discoveryStatus', `Adding ${selected.length} to Radarr...`);
+      try {
+        const data = await apiJson('/api/discovery/radarr/add', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: selected }) });
+        setStatus('discoveryStatus', `Radarr added ${data.added.length}, failed ${Object.keys(data.failed || {}).length}`, true);
+      } catch (err) {
+        setStatus('discoveryStatus', `Failed: ${err.message}`, false);
+      }
+    }
+
+    async function loadSettings() {
+      try {
+        const cfg = await apiJson('/api/settings');
+        document.getElementById('cfgPlexBase').value = cfg.PlexBaseURL || '';
+        document.getElementById('cfgPlexToken').value = cfg.PlexToken || '';
+        document.getElementById('cfgLibraryKey').value = cfg.LibraryKey || '1';
+        document.getElementById('cfgTargetClient').value = cfg.TargetClientName || 'Living Room';
+        document.getElementById('cfgTMDBKey').value = cfg.TMDBAPIKey || '';
+        document.getElementById('cfgTMDBReadToken').value = cfg.TMDBReadToken || '';
+        document.getElementById('cfgRadarrURL').value = cfg.RadarrURL || '';
+        document.getElementById('cfgRadarrAPIKey').value = cfg.RadarrAPIKey || '';
+        document.getElementById('cfgRadarrRoot').value = cfg.RadarrRootFolder || '';
+        document.getElementById('cfgRadarrProfile').value = cfg.RadarrProfileID || 1;
+      } catch (err) {
+        setStatus('settingsStatus', `Failed to load: ${err.message}`, false);
+      }
+    }
+
+    async function loadPlayers() {
+      const select = document.getElementById('clientName');
+      select.innerHTML = '';
+      try {
+        const data = await apiJson('/api/players');
+        const targetClient = data.targetClient || 'Living Room';
+        const players = data.players || [];
+
+        if (players.length === 0) {
+          const option = document.createElement('option');
+          option.value = targetClient;
+          option.textContent = `${targetClient} (default, not discovered)`;
+          select.appendChild(option);
+          setStatus('playersStatus', 'No players discovered; using default target.', false);
+          return;
+        }
+
+        for (const player of players) {
+          const option = document.createElement('option');
+          option.value = player.Name || player.name;
+          option.textContent = `${player.Name || player.name} (${player.Product || player.product || 'player'})`;
+          select.appendChild(option);
+        }
+
+        const targetLower = String(targetClient).toLowerCase();
+        const matching = players.find(p => String(p.Name || p.name || '').toLowerCase().includes(targetLower));
+        if (matching) {
+          select.value = matching.Name || matching.name;
+        } else if (players[0]) {
+          select.value = players[0].Name || players[0].name;
+        }
+        setStatus('playersStatus', `Loaded ${players.length} player(s).`, true);
+      } catch (err) {
+        const fallback = document.createElement('option');
+        fallback.value = 'Living Room';
+        fallback.textContent = `Living Room (players unavailable)`;
+        select.appendChild(fallback);
+        setStatus('playersStatus', `Player refresh failed: ${err.message}`, false);
+      }
+    }
+
+    async function loadPlaylists() {
+      const select = document.getElementById('playlistSelect');
+      select.innerHTML = '';
+      try {
+        const data = await apiJson('/api/playlists');
+        const playlists = data.playlists || [];
+        if (playlists.length === 0) {
+          const option = document.createElement('option');
+          option.value = '';
+          option.textContent = 'No playlists available';
+          select.appendChild(option);
+          document.getElementById('playlistItemsList').innerHTML = '';
+          return;
+        }
+        for (const playlist of playlists) {
+          const option = document.createElement('option');
+          option.value = playlist.Title || playlist.title;
+          option.textContent = playlist.Title || playlist.title;
+          select.appendChild(option);
+        }
+        await loadPlaylistItems();
+      } catch (err) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = `Playlist load failed`;
+        select.appendChild(option);
+      }
+    }
+
+    async function loadPlaylistItems() {
+      const title = document.getElementById('playlistSelect').value;
+      const list = document.getElementById('playlistItemsList');
+      list.innerHTML = '';
+      if (!title) return;
+      try {
+        const data = await apiJson(`/api/playlists/items?title=${encodeURIComponent(title)}&limit=250`);
+        for (const movie of (data.movies || [])) {
+          const li = document.createElement('li');
+          li.textContent = `${movie.Title} (${movie.Year || 'n/a'})`;
+          list.appendChild(li);
+        }
+        if ((data.movies || []).length === 0) {
+          const li = document.createElement('li');
+          li.textContent = 'No items in this playlist.';
+          list.appendChild(li);
+        }
+      } catch (err) {
+        const li = document.createElement('li');
+        li.textContent = `Failed to load items: ${err.message}`;
+        list.appendChild(li);
+      }
+    }
+
+    async function saveSettings() {
+      setStatus('settingsStatus', 'Saving...');
+      try {
+        const payload = {
+          Port: '8081',
+          PlexBaseURL: document.getElementById('cfgPlexBase').value.trim(),
+          PlexToken: document.getElementById('cfgPlexToken').value.trim(),
+          LibraryKey: document.getElementById('cfgLibraryKey').value.trim(),
+          TargetClientName: document.getElementById('cfgTargetClient').value.trim(),
+          TMDBAPIKey: document.getElementById('cfgTMDBKey').value.trim(),
+          TMDBReadToken: document.getElementById('cfgTMDBReadToken').value.trim(),
+          RadarrURL: document.getElementById('cfgRadarrURL').value.trim(),
+          RadarrAPIKey: document.getElementById('cfgRadarrAPIKey').value.trim(),
+          RadarrRootFolder: document.getElementById('cfgRadarrRoot').value.trim(),
+          RadarrProfileID: Number(document.getElementById('cfgRadarrProfile').value || '1'),
+        };
+        await apiJson('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        setStatus('settingsStatus', 'Saved settings (persisted).', true);
+      } catch (err) {
+        setStatus('settingsStatus', `Failed: ${err.message}`, false);
+      }
+    }
+
+    bindTabs();
+    hydrateMoviesFromCache();
+    loadGenres();
+    loadSettings();
+    loadPlayers();
+    loadPlaylists();
+    wirePersonAutocomplete();
+    wireDiscoveryTableSort();
+    wireArcadeButtonSmash();
+    refreshDiscoveryCartCount();
+
+    document.getElementById('loadMoviesBtn').addEventListener('click', loadMovies);
+    document.getElementById('playSelectedPlaylistBtn').addEventListener('click', playSelectedPlaylist);
+    document.getElementById('refreshPlayersBtn').addEventListener('click', loadPlayers);
+    document.getElementById('refreshPlaylistsBtn').addEventListener('click', loadPlaylists);
+    document.getElementById('playlistSelect').addEventListener('change', loadPlaylistItems);
+    document.getElementById('createPeoplePlaylistBtn').addEventListener('click', createByPeople);
+    document.getElementById('createGenrePlaylistBtn').addEventListener('click', createByGenreRating);
+    document.getElementById('previewGenrePlaylistBtn').addEventListener('click', previewByGenreRating);
+    document.getElementById('runDiscoveryBtn').addEventListener('click', runDiscovery);
+    document.getElementById('selectAllDiscoveryBtn').addEventListener('click', selectAllMissing);
+    document.getElementById('addSelectedToRadarrBtn').addEventListener('click', addSelectedToRadarr);
+    document.getElementById('addSelectedToCartBtn').addEventListener('click', addSelectedToCart);
+    document.getElementById('copyMissingMarkdownBtn').addEventListener('click', copyMissingAsMarkdown);
+    document.getElementById('copyAllTitlesMarkdownBtn').addEventListener('click', copyAllTitlesMarkdown);
+    document.getElementById('copyDiscoveryCartBtn').addEventListener('click', copyDiscoveryCartMarkdown);
+    document.getElementById('clearDiscoveryCartBtn').addEventListener('click', () => {
+      writeDiscoveryCart([]);
+      refreshDiscoveryCartCount();
+      setStatus('discoveryStatus', 'Cart cleared.', true);
+      console.log('[Plex Dashboard] discovery cart cleared');
+    });
+    document.getElementById('saveSettingsBtn').addEventListener('click', saveSettings);
+
+    // ── SNAPSHOTS ────────────────────────────────────────────────────────────
+    (function initSnapshots() {
+      let _snapshots = []; // cached list of SnapshotMeta, newest first
+
+      function fmtDate(iso) {
+        if (!iso) return '—';
+        const d = new Date(iso);
+        return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+      }
+
+      function setSnapStatus(msg, ok) {
+        const el = document.getElementById('snapStatus');
+        if (!el) return;
+        el.textContent = msg;
+        el.style.color = ok === false ? '#f87171' : ok === true ? '#4ade80' : '#8fa4e8';
+      }
+
+      function movieLabel(m) {
+        return m.year ? `${m.title} (${m.year})` : m.title;
+      }
+
+      function renderMovieUL(ul, movies, cls) {
+        ul.innerHTML = '';
+        if (!movies || !movies.length) {
+          const li = document.createElement('li');
+          li.className = 'none-item';
+          li.textContent = 'None';
+          ul.appendChild(li);
+          return;
+        }
+        movies.forEach(m => {
+          const li = document.createElement('li');
+          li.className = cls;
+          li.textContent = movieLabel(m);
+          ul.appendChild(li);
+        });
+      }
+
+      // ── Last Drop ──────────────────────────────────────────
+      async function loadLatestDrop() {
+        const card     = document.getElementById('snap-last-drop');
+        const noMsg    = document.getElementById('snapNoDropMsg');
+        const meta     = document.getElementById('snapDropMeta');
+        const addedUL  = document.getElementById('snapDropAddedList');
+        const removedUL= document.getElementById('snapDropRemovedList');
+        const addedCnt = document.getElementById('snapDropAddedCount');
+        const removedCnt=document.getElementById('snapDropRemovedCount');
+
+        try {
+          const data = await apiJson('/api/snapshots/latest-diff');
+          const diff = data.diff;
+          if (!diff) {
+            card.style.display = 'none';
+            noMsg.style.display = 'block';
+            console.log('[Snapshots] no latest diff (< 2 snapshots)');
+            return;
+          }
+          noMsg.style.display = 'none';
+          card.style.display = 'block';
+
+          meta.textContent = `${fmtDate(diff.from.capturedAt)} → ${fmtDate(diff.to.capturedAt)}  (${diff.from.count} → ${diff.to.count} movies)`;
+          addedCnt.textContent   = diff.added.length;
+          removedCnt.textContent = diff.removed.length;
+
+          renderMovieUL(addedUL,   diff.added,   'new-item');
+          renderMovieUL(removedUL, diff.removed, 'gone-item');
+
+          // If movies went missing in this drop, colour the header red
+          const goneHeader = document.querySelector('#snap-last-drop .gone-movies h4');
+          if (goneHeader) {
+            goneHeader.style.color = diff.removed.length > 0 ? '#ef4444' : '#f87171';
+          }
+          console.log('[Snapshots] latest drop: +' + diff.added.length + ' / -' + diff.removed.length);
+        } catch (err) {
+          console.error('[Snapshots] latest drop error:', err);
+        }
+      }
+
+      // ── All-time missing banner ────────────────────────────
+      async function loadMissingBanner() {
+        const banner   = document.getElementById('snap-missing-banner');
+        const subtitle = document.getElementById('snapMissingSubtitle');
+        const groups   = document.getElementById('snapMissingGroups');
+
+        try {
+          const data   = await apiJson('/api/snapshots/missing');
+          const events = data.missing || [];
+          if (!events.length) {
+            banner.style.display = 'none';
+            console.log('[Snapshots] no missing movies');
+            return;
+          }
+          banner.style.display = 'block';
+          subtitle.textContent = `${events.length} disappearance event(s) across your snapshot history`;
+
+          // Group events by goneId (same transition = one group heading)
+          const groupMap = new Map();
+          events.forEach(ev => {
+            const key = ev.goneId;
+            if (!groupMap.has(key)) groupMap.set(key, { ev, movies: [] });
+            groupMap.get(key).movies.push(ev.movie);
+          });
+
+          groups.innerHTML = '';
+          groupMap.forEach(({ ev, movies }) => {
+            const wrap = document.createElement('div');
+            wrap.className = 'snap-missing-group';
+
+            const hdr = document.createElement('div');
+            hdr.className = 'snap-missing-group-header';
+            hdr.textContent = `Disappeared between ${fmtDate(ev.lastSeenAt)} → ${fmtDate(ev.goneAt)}`;
+            wrap.appendChild(hdr);
+
+            const ul = document.createElement('ul');
+            ul.className = 'snap-missing-list';
+            movies.forEach(m => {
+              const li = document.createElement('li');
+              li.textContent = movieLabel(m);
+              ul.appendChild(li);
+            });
+            wrap.appendChild(ul);
+            groups.appendChild(wrap);
+          });
+          console.log('[Snapshots] missing banner: ' + events.length + ' event(s)');
+        } catch (err) {
+          console.error('[Snapshots] missing banner error:', err);
+        }
+      }
+
+      // ── Snapshot list ──────────────────────────────────────
+      function populateCompareSelects(snaps) {
+        ['snapCompareFrom', 'snapCompareTo'].forEach((id, idx) => {
+          const sel = document.getElementById(id);
+          sel.innerHTML = '';
+          const ph = document.createElement('option');
+          ph.value = '';
+          ph.textContent = idx === 0 ? '-- From snapshot --' : '-- To snapshot --';
+          sel.appendChild(ph);
+          snaps.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s.id;
+            opt.textContent = fmtDate(s.capturedAt) + '  (' + s.count + ' movies)';
+            sel.appendChild(opt);
+          });
+        });
+      }
+
+      function renderSnapshotRows(snaps) {
+        const tbody = document.getElementById('snapshotRows');
+        const empty = document.getElementById('snapEmptyMsg');
+        tbody.innerHTML = '';
+        if (!snaps.length) {
+          empty.style.display = 'block';
+          return;
+        }
+        empty.style.display = 'none';
+
+        snaps.forEach((snap, idx) => {
+          const prev = snaps[idx + 1]; // newest-first, so prev = next element
+          const tr   = document.createElement('tr');
+          tr.dataset.snapId = snap.id;
+
+          let badge = '<span class="snap-badge neutral">baseline</span>';
+          if (prev) {
+            const d = snap.count - prev.count;
+            if (d > 0)       badge = `<span class="snap-badge added">+${d}</span>`;
+            else if (d < 0)  badge = `<span class="snap-badge removed">${d}</span>`;
+            else             badge = `<span class="snap-badge neutral">±0</span>`;
+          }
+
+          tr.innerHTML = `
+            <td>${snaps.length - idx}</td>
+            <td>${fmtDate(snap.capturedAt)}</td>
+            <td>${snap.count.toLocaleString()}</td>
+            <td>${badge}</td>
+            <td>${prev
+              ? `<button class="snap-diff-btn" data-from="${prev.id}" data-to="${snap.id}" style="font-size:11px;padding:4px 10px;">View Changes</button>`
+              : '<span style="color:#4b5563;font-size:12px;">—</span>'
+            }</td>`;
+          tbody.appendChild(tr);
+        });
+
+        tbody.querySelectorAll('.snap-diff-btn').forEach(btn => {
+          btn.addEventListener('click', e => {
+            e.stopPropagation();
+            loadManualDiff(btn.dataset.from, btn.dataset.to);
+          });
+        });
+      }
+
+      async function loadSnapshots(silent = false) {
+        if (!silent) setSnapStatus('Loading…');
+        try {
+          const data = await apiJson('/api/snapshots');
+          _snapshots = data.snapshots || [];
+          renderSnapshotRows(_snapshots);
+          populateCompareSelects(_snapshots);
+          if (!silent) {
+            setSnapStatus(_snapshots.length
+              ? `${_snapshots.length} snapshot(s) on disk.`
+              : 'No snapshots yet.', true);
+          }
+          console.log('[Snapshots] loaded', _snapshots.length);
+        } catch (err) {
+          setSnapStatus('Failed to load: ' + err.message, false);
+          console.error('[Snapshots] load error:', err);
+        }
+      }
+
+      // ── Full refresh (list + latest drop + missing) ────────
+      async function refreshAll(silent = false) {
+        await Promise.all([
+          loadSnapshots(silent),
+          loadLatestDrop(),
+          loadMissingBanner(),
+        ]);
+      }
+
+      // ── Take snapshot ──────────────────────────────────────
+      async function takeSnapshot() {
+        setSnapStatus('Fetching library from Plex…');
+        document.getElementById('takeSnapshotBtn').disabled = true;
+        try {
+          const data = await apiJson('/api/snapshots', { method: 'POST' });
+          const snap = data.snapshot;
+          await refreshAll(true);
+          setSnapStatus(`✓ Captured ${snap.count} movies  (${fmtDate(snap.capturedAt)})`, true);
+          console.log('[Snapshots] new snapshot:', snap.id, snap.count);
+        } catch (err) {
+          setSnapStatus('Snapshot failed: ' + err.message, false);
+          console.error('[Snapshots] take error:', err);
+        } finally {
+          document.getElementById('takeSnapshotBtn').disabled = false;
+        }
+      }
+
+      // ── Manual diff panel ──────────────────────────────────
+      async function loadManualDiff(fromId, toId) {
+        const panel      = document.getElementById('snap-diff-panel');
+        const meta       = document.getElementById('snapDiffMeta');
+        const addedUL    = document.getElementById('snapAddedList');
+        const removedUL  = document.getElementById('snapRemovedList');
+        const addedCnt   = document.getElementById('snapAddedCount');
+        const removedCnt = document.getElementById('snapRemovedCount');
+
+        panel.style.display = 'none';
+        setSnapStatus('Computing diff…');
+        try {
+          const data = await apiJson(`/api/snapshots/diff?from=${encodeURIComponent(fromId)}&to=${encodeURIComponent(toId)}`);
+          const diff = data.diff;
+
+          document.querySelectorAll('#snapshotRows tr').forEach(r => r.classList.remove('snap-active'));
+          const row = document.querySelector(`#snapshotRows tr[data-snap-id="${toId}"]`);
+          if (row) row.classList.add('snap-active');
+
+          const netSign = diff.netChange > 0 ? '+' : '';
+          const netColor = diff.netChange >= 0 ? '#4ade80' : '#f87171';
+          meta.innerHTML = `
+            <span>From: ${fmtDate(diff.from.capturedAt)} (${diff.from.count})</span>
+            <span>To: ${fmtDate(diff.to.capturedAt)} (${diff.to.count})</span>
+            <span>Net: <strong style="color:${netColor}">${netSign}${diff.netChange}</strong></span>`;
+
+          addedCnt.textContent   = diff.added.length;
+          removedCnt.textContent = diff.removed.length;
+          renderMovieUL(addedUL,   diff.added,   'added');
+          renderMovieUL(removedUL, diff.removed, 'removed');
+
+          panel.style.display = 'block';
+          panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          setSnapStatus(`+${diff.added.length} added, −${diff.removed.length} removed.`, true);
+          console.log('[Snapshots] diff from', fromId, 'to', toId);
+        } catch (err) {
+          setSnapStatus('Diff failed: ' + err.message, false);
+          console.error('[Snapshots] diff error:', err);
+        }
+      }
+
+      // ── Wiring ─────────────────────────────────────────────
+      document.getElementById('takeSnapshotBtn').addEventListener('click', takeSnapshot);
+      document.getElementById('snapRefreshBtn').addEventListener('click', () => refreshAll(false));
+      document.getElementById('snapCompareBtn').addEventListener('click', () => {
+        const from = document.getElementById('snapCompareFrom').value;
+        const to   = document.getElementById('snapCompareTo').value;
+        if (!from || !to)   { setSnapStatus('Select both snapshots to compare.', false); return; }
+        if (from === to)    { setSnapStatus('Select two different snapshots.', false); return; }
+        loadManualDiff(from, to);
+      });
+
+      document.addEventListener('tabChanged', e => {
+        if (e.detail === 'snapshots') refreshAll(false);
+      });
+
+      console.log('[Snapshots] initialized');
+    })();
+  </script>
+  <datalist id="personSuggestions"></datalist>
+</body>
+</html>

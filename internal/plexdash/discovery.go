@@ -1,0 +1,850 @@
+package plexdash
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+)
+
+type DiscoveryItem struct {
+	TMDBID             int      `json:"tmdbId"`
+	Title              string   `json:"title"`
+	Year               int      `json:"year"`
+	KnownFor           string   `json:"knownFor"`
+	Overview           string   `json:"overview"`
+	Genres             []string `json:"genres"`
+	VoteAverage        float64  `json:"voteAverage"`
+	PosterURL          string   `json:"posterUrl"`
+	PosterPath         string   `json:"posterPath"` // raw TMDB path; UI can build /api/discovery/poster when posterUrl is empty
+	InLibrary          bool     `json:"inLibrary"`
+	InPlaylist         bool     `json:"inPlaylist"`
+	RecommendationNo   int      `json:"recommendationNo"`
+}
+
+type RadarrAddItem struct {
+	TMDBID int    `json:"tmdbId"`
+	Title  string `json:"title"`
+	Year   int    `json:"year"`
+}
+
+type RadarrAddResult struct {
+	Added  []string          `json:"added"`
+	Failed map[string]string `json:"failed"`
+}
+
+// Word-boundary match for "documentary" / "documentaries" in title or overview (avoids junk substrings).
+var reDiscoveryDocWord = regexp.MustCompile(`(?i)\b(documentary|documentaries)\b`)
+
+// "Making of" as its own phrase (avoids matching inside "remaking of").
+var reDiscoveryMakingOf = regexp.MustCompile(`(?i)\bmaking of\b`)
+
+// excludedFromDiscovery drops documentaries, TV / made-for-TV, news, and typical bonus-feature
+// titles (making-of, behind the scenes) using TMDB genres plus title/overview heuristics.
+func excludedFromDiscovery(title, overview string, genres []string) bool {
+	for _, g := range genres {
+		switch strings.ToLower(strings.TrimSpace(g)) {
+		case "documentary", "tv movie", "news":
+			return true
+		}
+	}
+	if reDiscoveryDocWord.MatchString(title) || reDiscoveryDocWord.MatchString(overview) {
+		return true
+	}
+	combined := strings.TrimSpace(title + " " + overview)
+	if reDiscoveryMakingOf.MatchString(combined) {
+		return true
+	}
+	combinedLower := strings.ToLower(combined)
+	phrases := []string{
+		"behind the scenes",
+		"behind-the-scenes",
+		"behind the scene",
+		"tv special",
+		"television special",
+		"made-for-television",
+		"made for television",
+		"miniseries",
+		"mini-series",
+	}
+	for _, p := range phrases {
+		if strings.Contains(combinedLower, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func AnalyzeFilmography(ctx context.Context, cfg Config, plex *PlexClient, personName, role, playlistTitle, directorFilter, coActorFilter string, minYear, maxYear int, minVoteAverage float64, stats *DiscoveryCacheStats) ([]DiscoveryItem, error) {
+	if strings.TrimSpace(cfg.TMDBAPIKey) == "" {
+		return nil, fmt.Errorf("TMDB API key not configured")
+	}
+	cache := newDiskDiscoveryCache(defaultDiscoveryCacheDir())
+
+	personID, err := resolvePersonID(ctx, cfg.TMDBAPIKey, personName, cache, stats)
+	if err != nil {
+		return nil, err
+	}
+	credits, err := loadFilmography(ctx, cfg.TMDBAPIKey, personID, role, cache, stats)
+	if err != nil {
+		return nil, err
+	}
+
+	movies, err := plex.ListMovies(ctx, cfg.LibraryKey)
+	if err != nil {
+		return nil, err
+	}
+	inLibrary := map[string]struct{}{}
+	for _, movie := range movies {
+		inLibrary[normalizeTitleYear(movie.Title, strconv.Itoa(movie.Year))] = struct{}{}
+	}
+
+	inPlaylist := map[string]struct{}{}
+	if strings.TrimSpace(playlistTitle) != "" {
+		inPlaylist, _ = plex.PlaylistMovieTitles(ctx, playlistTitle)
+	}
+
+	directorFilter = strings.TrimSpace(directorFilter)
+	coActorFilter = strings.TrimSpace(coActorFilter)
+	creditCache := map[int]tmdbMovieCredits{}
+	filtered := make([]tmdbCredit, 0, len(credits))
+	for _, credit := range credits {
+		if minYear > 0 && credit.Year > 0 && credit.Year < minYear {
+			continue
+		}
+		if maxYear > 0 && credit.Year > 0 && credit.Year > maxYear {
+			continue
+		}
+
+		if directorFilter != "" || coActorFilter != "" {
+			creditsForMovie, ok := creditCache[credit.ID]
+			if !ok {
+				var fetchErr error
+				creditsForMovie, fetchErr = tmdbMovieCreditsForMovieCached(ctx, cfg.TMDBAPIKey, credit.ID, cache, stats)
+				if fetchErr != nil {
+					continue
+				}
+				creditCache[credit.ID] = creditsForMovie
+			}
+			if directorFilter != "" && !containsIgnoreCase(creditsForMovie.Directors, directorFilter) {
+				continue
+			}
+			if coActorFilter != "" && !containsIgnoreCase(creditsForMovie.Actors, coActorFilter) {
+				continue
+			}
+		}
+		filtered = append(filtered, credit)
+	}
+
+	detailIDs := uniqueMovieIDs(filtered)
+	detailsMap := fetchMovieDetailsBatch(ctx, cfg.TMDBAPIKey, detailIDs, cache, stats)
+
+	today := time.Now().Truncate(24 * time.Hour)
+
+	items := make([]DiscoveryItem, 0, len(filtered))
+	recNo := 1
+	for _, credit := range filtered {
+		// Drop films with a known future release date.
+		if credit.ReleaseDate != "" {
+			if rd, err := time.Parse("2006-01-02", credit.ReleaseDate); err == nil && rd.After(today) {
+				continue
+			}
+		}
+
+		det, hasDet := detailsMap[credit.ID]
+		if minVoteAverage > 0 && hasDet && det.OK {
+			if det.VoteAverage+1e-9 < minVoteAverage {
+				continue
+			}
+		}
+
+		// Drop short films / featurettes (runtime known and ≤ 50 minutes).
+		if hasDet && det.OK && det.Runtime > 0 && det.Runtime <= 50 {
+			continue
+		}
+
+		// Use the richer /movie/{id} synopsis for filtering; fall back to credit overview.
+		overview := strings.TrimSpace(credit.Overview)
+		if hasDet && det.OK && det.Overview != "" {
+			overview = det.Overview
+		}
+		genres := []string{}
+		if hasDet && det.OK && len(det.Genres) > 0 {
+			genres = append(genres, det.Genres...)
+		}
+		vote := 0.0
+		rawPosterPath := mergePosterRawPath(credit, det, hasDet)
+		posterURL := ""
+		if hasDet && det.OK {
+			vote = det.VoteAverage
+			posterURL = det.PosterURL
+		}
+		if posterURL == "" && rawPosterPath != "" {
+			posterURL = tmdbPosterURLFromPath(rawPosterPath)
+		}
+
+		// Drop documentaries, TV movies, news, making-of extras, and any film
+		// whose overview mentions "documentary".
+		if excludedFromDiscovery(credit.Title, overview, genres) {
+			continue
+		}
+
+		key := normalizeTitleYear(credit.Title, strconv.Itoa(credit.Year))
+		_, hasLibrary := inLibrary[key]
+		_, hasPlaylist := inPlaylist[key]
+		items = append(items, DiscoveryItem{
+			TMDBID:             credit.ID,
+			Title:              credit.Title,
+			Year:               credit.Year,
+			KnownFor:           credit.KnownFor,
+			Overview:           overview,
+			Genres:             genres,
+			VoteAverage:        vote,
+			PosterURL:          posterURL,
+			PosterPath:         rawPosterPath,
+			InLibrary:          hasLibrary,
+			InPlaylist:         hasPlaylist,
+			RecommendationNo:   recNo,
+		})
+		recNo++
+	}
+
+	return items, nil
+}
+
+func mergePosterRawPath(credit tmdbCredit, det fetchedMovieDetails, hasDet bool) string {
+	raw := strings.TrimSpace(credit.PosterPath)
+	if hasDet && det.OK && raw == "" {
+		raw = strings.TrimSpace(det.PosterPath)
+	}
+	return raw
+}
+
+func resolvePersonID(ctx context.Context, apiKey, personName string, cache *diskDiscoveryCache, stats *DiscoveryCacheStats) (int, error) {
+	personName = strings.TrimSpace(personName)
+	if id, ok := cache.getPersonID(personName); ok {
+		if stats != nil {
+			stats.PersonIDHit = true
+		}
+		return id, nil
+	}
+	id, err := tmdbFindPersonID(ctx, apiKey, personName)
+	if err != nil {
+		return 0, err
+	}
+	cache.putPersonID(personName, id)
+	return id, nil
+}
+
+func loadFilmography(ctx context.Context, apiKey string, personID int, role string, cache *diskDiscoveryCache, stats *DiscoveryCacheStats) ([]tmdbCredit, error) {
+	if list, ok := cache.getFilmography(personID, role); ok {
+		if stats != nil {
+			stats.FilmographyHit = true
+		}
+		return list, nil
+	}
+	list, err := tmdbFilmography(ctx, apiKey, personID, role)
+	if err != nil {
+		return nil, err
+	}
+	cache.putFilmography(personID, role, list)
+	return list, nil
+}
+
+func tmdbMovieCreditsForMovieCached(ctx context.Context, apiKey string, movieID int, cache *diskDiscoveryCache, stats *DiscoveryCacheStats) (tmdbMovieCredits, error) {
+	if mc, ok := cache.getMovieCredits(movieID); ok {
+		if stats != nil {
+			stats.CreditsHits++
+		}
+		return mc, nil
+	}
+	if stats != nil {
+		stats.CreditsMisses++
+	}
+	mc, err := tmdbMovieCreditsForMovie(ctx, apiKey, movieID)
+	if err != nil {
+		return mc, err
+	}
+	cache.putMovieCredits(movieID, mc)
+	return mc, nil
+}
+
+type fetchedMovieDetails struct {
+	OK          bool
+	Overview    string
+	Genres      []string
+	VoteAverage float64
+	Runtime     int    // minutes; 0 means unknown
+	PosterURL   string
+	PosterPath  string // raw TMDB poster_path
+}
+
+func uniqueMovieIDs(credits []tmdbCredit) []int {
+	seen := map[int]struct{}{}
+	out := make([]int, 0, len(credits))
+	for _, c := range credits {
+		if _, ok := seen[c.ID]; ok {
+			continue
+		}
+		seen[c.ID] = struct{}{}
+		out = append(out, c.ID)
+	}
+	return out
+}
+
+func fetchMovieDetailsBatch(ctx context.Context, apiKey string, ids []int, cache *diskDiscoveryCache, stats *DiscoveryCacheStats) map[int]fetchedMovieDetails {
+	out := make(map[int]fetchedMovieDetails)
+	if len(ids) == 0 {
+		return out
+	}
+	missing := make([]int, 0, len(ids))
+	for _, id := range ids {
+		if det, ok := cache.getMovieDetails(id); ok && det.OK {
+			out[id] = det
+			if stats != nil {
+				stats.MovieDetailsHits++
+			}
+			continue
+		}
+		missing = append(missing, id)
+		if stats != nil {
+			stats.MovieDetailsMisses++
+		}
+	}
+	if len(missing) == 0 {
+		return out
+	}
+	var mu sync.Mutex
+	sem := make(chan struct{}, 10)
+	var wg sync.WaitGroup
+	for _, id := range missing {
+		wg.Add(1)
+		go func(movieID int) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			d, err := tmdbFetchMovieDetails(ctx, apiKey, movieID)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				det := fetchedMovieDetails{OK: false}
+				out[movieID] = det
+				return
+			}
+			det := fetchedMovieDetails{
+				OK:          true,
+				Overview:    d.Overview,
+				Genres:      d.GenreNames,
+				VoteAverage: d.VoteAverage,
+				Runtime:     d.Runtime,
+				PosterURL:   d.PosterURL,
+				PosterPath:  strings.TrimSpace(d.PosterPath),
+			}
+			out[movieID] = det
+			cache.putMovieDetails(movieID, det)
+		}(id)
+	}
+	wg.Wait()
+	return out
+}
+
+type tmdbMovieDetailsResult struct {
+	Overview    string
+	GenreNames  []string
+	VoteAverage float64
+	Runtime     int // minutes
+	PosterURL   string
+	PosterPath  string
+}
+
+func tmdbFetchMovieDetails(ctx context.Context, apiKey string, movieID int) (tmdbMovieDetailsResult, error) {
+	var empty tmdbMovieDetailsResult
+	endpoint := fmt.Sprintf("https://api.themoviedb.org/3/movie/%d", movieID)
+	q := url.Values{}
+	q.Set("api_key", apiKey)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?"+q.Encode(), nil)
+	if err != nil {
+		return empty, err
+	}
+	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+	if err != nil {
+		return empty, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return empty, fmt.Errorf("tmdb movie %d: status %s", movieID, resp.Status)
+	}
+	var body struct {
+		Overview    string  `json:"overview"`
+		VoteAverage float64 `json:"vote_average"`
+		PosterPath  string  `json:"poster_path"`
+		Runtime     int     `json:"runtime"`
+		Genres      []struct {
+			Name string `json:"name"`
+		} `json:"genres"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return empty, err
+	}
+	names := make([]string, 0, len(body.Genres))
+	for _, g := range body.Genres {
+		n := strings.TrimSpace(g.Name)
+		if n != "" {
+			names = append(names, n)
+		}
+	}
+	rawPath := strings.TrimSpace(body.PosterPath)
+	posterURL := tmdbPosterURLFromPath(body.PosterPath)
+	return tmdbMovieDetailsResult{
+		Overview:    strings.TrimSpace(body.Overview),
+		GenreNames:  names,
+		VoteAverage: body.VoteAverage,
+		Runtime:     body.Runtime,
+		PosterURL:   posterURL,
+		PosterPath:  rawPath,
+	}, nil
+}
+
+type Collaborators struct {
+	SuggestedRole string   `json:"suggestedRole"`
+	Directors     []string `json:"directors"`
+	Actors        []string `json:"actors"`
+}
+
+func DiscoverCollaborators(plexMovies []Movie, person string) Collaborators {
+	person = strings.TrimSpace(person)
+	if person == "" {
+		return Collaborators{SuggestedRole: "", Directors: []string{}, Actors: []string{}}
+	}
+
+	actorHits := 0
+	directorHits := 0
+	directorsSet := map[string]struct{}{}
+	actorsSet := map[string]struct{}{}
+
+	for _, movie := range plexMovies {
+		isActor := containsIgnoreCase(movie.Actors, person)
+		isDirector := containsIgnoreCase(movie.Directors, person)
+		if isActor {
+			actorHits++
+			for _, director := range movie.Directors {
+				if !strings.EqualFold(strings.TrimSpace(director), person) && strings.TrimSpace(director) != "" {
+					directorsSet[director] = struct{}{}
+				}
+			}
+			for _, actor := range movie.Actors {
+				if !strings.EqualFold(strings.TrimSpace(actor), person) && strings.TrimSpace(actor) != "" {
+					actorsSet[actor] = struct{}{}
+				}
+			}
+		}
+		if isDirector {
+			directorHits++
+			for _, actor := range movie.Actors {
+				if strings.TrimSpace(actor) != "" {
+					actorsSet[actor] = struct{}{}
+				}
+			}
+		}
+	}
+
+	role := ""
+	if actorHits > directorHits {
+		role = "actor"
+	} else if directorHits > actorHits {
+		role = "director"
+	}
+
+	directors := setToSortedSlice(directorsSet)
+	actors := setToSortedSlice(actorsSet)
+	return Collaborators{SuggestedRole: role, Directors: directors, Actors: actors}
+}
+
+func SuggestPeople(ctx context.Context, cfg Config, query string) ([]string, error) {
+	if strings.TrimSpace(cfg.TMDBAPIKey) == "" {
+		return nil, fmt.Errorf("TMDB API key not configured")
+	}
+	query = strings.TrimSpace(query)
+	if len(query) < 2 {
+		return []string{}, nil
+	}
+
+	endpoint := "https://api.themoviedb.org/3/search/person"
+	params := url.Values{}
+	params.Set("api_key", cfg.TMDBAPIKey)
+	params.Set("query", query)
+
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?"+params.Encode(), nil)
+	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var body struct {
+		Results []struct {
+			Name string `json:"name"`
+		} `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, err
+	}
+
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(body.Results))
+	for _, result := range body.Results {
+		name := strings.TrimSpace(result.Name)
+		if name == "" {
+			continue
+		}
+		key := strings.ToLower(name)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, name)
+		if len(out) >= 10 {
+			break
+		}
+	}
+	return out, nil
+}
+
+func AddMoviesToRadarr(ctx context.Context, cfg Config, items []RadarrAddItem) (RadarrAddResult, error) {
+	if strings.TrimSpace(cfg.RadarrURL) == "" || strings.TrimSpace(cfg.RadarrAPIKey) == "" {
+		return RadarrAddResult{}, fmt.Errorf("radarr settings missing URL or API key")
+	}
+	if strings.TrimSpace(cfg.RadarrRootFolder) == "" {
+		return RadarrAddResult{}, fmt.Errorf("radarr root folder is required")
+	}
+
+	client := &http.Client{Timeout: 25 * time.Second}
+	result := RadarrAddResult{
+		Added:  []string{},
+		Failed: map[string]string{},
+	}
+
+	for _, item := range items {
+		payload := map[string]any{
+			"title":            item.Title,
+			"qualityProfileId": cfg.RadarrProfileID,
+			"tmdbId":           item.TMDBID,
+			"year":             item.Year,
+			"rootFolderPath":   cfg.RadarrRootFolder,
+			"monitored":        true,
+			"addOptions": map[string]any{
+				"searchForMovie": true,
+			},
+		}
+
+		encoded, _ := json.Marshal(payload)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(cfg.RadarrURL, "/")+"/api/v3/movie", strings.NewReader(string(encoded)))
+		if err != nil {
+			result.Failed[item.Title] = err.Error()
+			continue
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Api-Key", cfg.RadarrAPIKey)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			result.Failed[item.Title] = err.Error()
+			continue
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			result.Failed[item.Title] = "radarr rejected request"
+		} else {
+			result.Added = append(result.Added, item.Title)
+		}
+		resp.Body.Close()
+	}
+	return result, nil
+}
+
+type tmdbCredit struct {
+	ID          int
+	Title       string
+	Year        int
+	ReleaseDate string // ISO-8601 e.g. "2024-03-15"; empty when TMDB has no date
+	KnownFor    string
+	Overview    string
+	PosterPath  string // from movie_credits poster_path; fallback when /movie/{id} fails
+}
+
+type tmdbMovieCredits struct {
+	Directors []string
+	Actors    []string
+}
+
+func tmdbFindPersonID(ctx context.Context, apiKey, personName string) (int, error) {
+	personName = strings.TrimSpace(personName)
+	if personName == "" {
+		return 0, fmt.Errorf("person name is required")
+	}
+	endpoint := "https://api.themoviedb.org/3/search/person"
+	query := url.Values{}
+	query.Set("api_key", apiKey)
+	query.Set("query", personName)
+
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?"+query.Encode(), nil)
+	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return 0, fmt.Errorf("tmdb search/person: %s — %s", resp.Status, truncateErrBody(bodyBytes))
+	}
+
+	var body struct {
+		Results []struct {
+			ID int `json:"id"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(bodyBytes, &body); err != nil {
+		return 0, err
+	}
+	if len(body.Results) == 0 {
+		return 0, fmt.Errorf("no TMDB person found for %q", personName)
+	}
+	return body.Results[0].ID, nil
+}
+
+func tmdbFilmography(ctx context.Context, apiKey string, personID int, role string) ([]tmdbCredit, error) {
+	endpoint := fmt.Sprintf("https://api.themoviedb.org/3/person/%d/movie_credits", personID)
+	query := url.Values{}
+	query.Set("api_key", apiKey)
+
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?"+query.Encode(), nil)
+	resp, err := (&http.Client{Timeout: 25 * time.Second}).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("tmdb movie_credits: %s — %s", resp.Status, truncateErrBody(bodyBytes))
+	}
+
+	var body struct {
+		Cast []struct {
+			ID          int    `json:"id"`
+			Title       string `json:"title"`
+			ReleaseDate string `json:"release_date"`
+			Character   string `json:"character"`
+			Overview    string `json:"overview"`
+			PosterPath  string `json:"poster_path"`
+		} `json:"cast"`
+		Crew []struct {
+			ID          int    `json:"id"`
+			Title       string `json:"title"`
+			ReleaseDate string `json:"release_date"`
+			Job         string `json:"job"`
+			Overview    string `json:"overview"`
+			PosterPath  string `json:"poster_path"`
+		} `json:"crew"`
+	}
+	if err := json.Unmarshal(bodyBytes, &body); err != nil {
+		return nil, err
+	}
+
+	role = strings.ToLower(strings.TrimSpace(role))
+	dedup := map[int]tmdbCredit{}
+	if role == "" || role == "actor" {
+		for _, cast := range body.Cast {
+			dedup[cast.ID] = tmdbCredit{
+				ID:          cast.ID,
+				Title:       cast.Title,
+				Year:        yearFromDate(cast.ReleaseDate),
+				ReleaseDate: strings.TrimSpace(cast.ReleaseDate),
+				KnownFor:    cast.Character,
+				Overview:    cast.Overview,
+				PosterPath:  strings.TrimSpace(cast.PosterPath),
+			}
+		}
+	}
+	if role == "" || role == "director" {
+		for _, crew := range body.Crew {
+			if strings.ToLower(crew.Job) != "director" {
+				continue
+			}
+			pc := strings.TrimSpace(crew.PosterPath)
+			if ex, ok := dedup[crew.ID]; ok {
+				dedup[crew.ID] = tmdbCredit{
+					ID:          crew.ID,
+					Title:       crew.Title,
+					Year:        yearFromDate(crew.ReleaseDate),
+					ReleaseDate: strings.TrimSpace(crew.ReleaseDate),
+					KnownFor:    crew.Job,
+					Overview:    crew.Overview,
+					PosterPath:  pickPosterPath(ex.PosterPath, pc),
+				}
+				continue
+			}
+			dedup[crew.ID] = tmdbCredit{
+				ID:          crew.ID,
+				Title:       crew.Title,
+				Year:        yearFromDate(crew.ReleaseDate),
+				ReleaseDate: strings.TrimSpace(crew.ReleaseDate),
+				KnownFor:    crew.Job,
+				Overview:    crew.Overview,
+				PosterPath:  pc,
+			}
+		}
+	}
+
+	out := make([]tmdbCredit, 0, len(dedup))
+	for _, item := range dedup {
+		out = append(out, item)
+	}
+	sortCredits(out)
+	return out, nil
+}
+
+func tmdbMovieCreditsForMovie(ctx context.Context, apiKey string, movieID int) (tmdbMovieCredits, error) {
+	endpoint := fmt.Sprintf("https://api.themoviedb.org/3/movie/%d/credits", movieID)
+	query := url.Values{}
+	query.Set("api_key", apiKey)
+
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?"+query.Encode(), nil)
+	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+	if err != nil {
+		return tmdbMovieCredits{}, err
+	}
+	defer resp.Body.Close()
+
+	var body struct {
+		Cast []struct {
+			Name string `json:"name"`
+		} `json:"cast"`
+		Crew []struct {
+			Name string `json:"name"`
+			Job  string `json:"job"`
+		} `json:"crew"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return tmdbMovieCredits{}, err
+	}
+
+	actorSet := map[string]struct{}{}
+	directorSet := map[string]struct{}{}
+	for _, cast := range body.Cast {
+		if strings.TrimSpace(cast.Name) != "" {
+			actorSet[cast.Name] = struct{}{}
+		}
+	}
+	for _, crew := range body.Crew {
+		if strings.EqualFold(strings.TrimSpace(crew.Job), "director") && strings.TrimSpace(crew.Name) != "" {
+			directorSet[crew.Name] = struct{}{}
+		}
+	}
+
+	return tmdbMovieCredits{
+		Directors: setToSortedSlice(directorSet),
+		Actors:    setToSortedSlice(actorSet),
+	}, nil
+}
+
+func sortCredits(items []tmdbCredit) {
+	for i := 0; i < len(items)-1; i++ {
+		for j := i + 1; j < len(items); j++ {
+			if items[i].Year == 0 || (items[j].Year != 0 && items[j].Year < items[i].Year) {
+				items[i], items[j] = items[j], items[i]
+			}
+		}
+	}
+}
+
+func yearFromDate(date string) int {
+	if len(date) < 4 {
+		return 0
+	}
+	year, _ := strconv.Atoi(date[:4])
+	return year
+}
+
+func pickPosterPath(a, b string) string {
+	a, b = strings.TrimSpace(a), strings.TrimSpace(b)
+	if a != "" {
+		return a
+	}
+	return b
+}
+
+// tmdbPosterURLFromPath builds a w185 image URL from TMDB poster_path.
+// Paths are usually like "/abc.jpg"; if the leading slash is missing, the URL is invalid (404).
+func tmdbPosterURLFromPath(posterPath string) string {
+	s := strings.TrimSpace(posterPath)
+	if s == "" {
+		return ""
+	}
+	if !strings.HasPrefix(s, "/") {
+		s = "/" + s
+	}
+	return "https://image.tmdb.org/t/p/w185" + s
+}
+
+func truncateErrBody(b []byte) string {
+	s := strings.TrimSpace(string(b))
+	if len(s) > 280 {
+		return s[:280] + "…"
+	}
+	return s
+}
+
+func normalizeTitleYear(title, year string) string {
+	clean := strings.ToLower(strings.TrimSpace(title))
+	clean = strings.ReplaceAll(clean, ":", "")
+	clean = strings.ReplaceAll(clean, "-", " ")
+	clean = strings.Join(strings.Fields(clean), " ")
+	year = strings.TrimSpace(year)
+	if clean == "" {
+		return ""
+	}
+	if year == "" || year == "0" {
+		return clean
+	}
+	return clean + "|" + year
+}
+
+func containsIgnoreCase(values []string, query string) bool {
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query == "" {
+		return false
+	}
+	for _, value := range values {
+		if strings.Contains(strings.ToLower(value), query) {
+			return true
+		}
+	}
+	return false
+}
+
+func setToSortedSlice(set map[string]struct{}) []string {
+	out := make([]string, 0, len(set))
+	for item := range set {
+		out = append(out, item)
+	}
+	for i := 0; i < len(out)-1; i++ {
+		for j := i + 1; j < len(out); j++ {
+			if strings.ToLower(out[j]) < strings.ToLower(out[i]) {
+				out[i], out[j] = out[j], out[i]
+			}
+		}
+	}
+	return out
+}
