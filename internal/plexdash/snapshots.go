@@ -14,11 +14,12 @@ const defaultSnapshotDir = "data/movie-snapshots"
 
 // SnapshotMovie is the lightweight movie record stored inside each snapshot.
 type SnapshotMovie struct {
-	Title     string `json:"title"`
-	Year      int    `json:"year"`
-	Rating    float64 `json:"rating,omitempty"`
+	Title     string   `json:"title"`
+	Year      int      `json:"year"`
+	Rating    float64  `json:"rating,omitempty"`
 	Genres    []string `json:"genres,omitempty"`
 	Directors []string `json:"directors,omitempty"`
+	Actors    []string `json:"actors,omitempty"`
 }
 
 // Snapshot is a full point-in-time capture of the Plex library.
@@ -106,6 +107,9 @@ func TakeSnapshot(movies []Movie) (Snapshot, error) {
 		}
 		if len(m.Directors) > 0 {
 			sm.Directors = append([]string(nil), m.Directors...)
+		}
+		if len(m.Actors) > 0 {
+			sm.Actors = append([]string(nil), m.Actors...)
 		}
 		snap.Movies = append(snap.Movies, sm)
 	}
@@ -280,6 +284,55 @@ func FindAllMissing() ([]MissingMovieEvent, error) {
 		return events[i].GoneAt.After(events[j].GoneAt)
 	})
 	return events, nil
+}
+
+// TakeSnapshotDedup takes a snapshot and immediately diffs it against the
+// previous one. If nothing has changed (same movies by title+year), the new
+// file is deleted and removed from the index. Returns nil when the snapshot was
+// a duplicate and discarded.
+func TakeSnapshotDedup(movies []Movie) (*SnapshotMeta, error) {
+	snap, err := TakeSnapshot(movies)
+	if err != nil {
+		return nil, err
+	}
+
+	list, err := ListSnapshots()
+	if err != nil {
+		// Can't verify dedup — keep the snapshot.
+		meta := SnapshotMeta{ID: snap.ID, CapturedAt: snap.CapturedAt, Count: snap.Count}
+		return &meta, nil
+	}
+
+	// Need at least two entries (new + previous) to compare.
+	if len(list) < 2 {
+		meta := SnapshotMeta{ID: snap.ID, CapturedAt: snap.CapturedAt, Count: snap.Count}
+		return &meta, nil
+	}
+
+	// list[0] is the just-written snapshot; list[1] is the previous one.
+	diff, err := DiffSnapshots(list[1].ID, list[0].ID)
+	if err != nil {
+		meta := SnapshotMeta{ID: snap.ID, CapturedAt: snap.CapturedAt, Count: snap.Count}
+		return &meta, nil
+	}
+
+	if len(diff.Added) == 0 && len(diff.Removed) == 0 {
+		// No change — discard the new snapshot.
+		_ = os.Remove(snapshotFilePath(snap.ID))
+		pruned := make([]SnapshotMeta, 0, len(list)-1)
+		for _, m := range list {
+			if m.ID != snap.ID {
+				pruned = append(pruned, m)
+			}
+		}
+		_ = saveSnapshotIndex(pruned)
+		fmt.Printf("[snapshot] daily snapshot %s had no diff — discarded\n", snap.ID)
+		return nil, nil
+	}
+
+	fmt.Printf("[snapshot] daily snapshot %s: +%d added, -%d removed\n", snap.ID, len(diff.Added), len(diff.Removed))
+	meta := SnapshotMeta{ID: snap.ID, CapturedAt: snap.CapturedAt, Count: snap.Count}
+	return &meta, nil
 }
 
 func snapshotKey(m SnapshotMovie) string {

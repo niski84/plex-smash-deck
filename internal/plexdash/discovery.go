@@ -46,12 +46,13 @@ var reDiscoveryDocWord = regexp.MustCompile(`(?i)\b(documentary|documentaries)\b
 // "Making of" as its own phrase (avoids matching inside "remaking of").
 var reDiscoveryMakingOf = regexp.MustCompile(`(?i)\bmaking of\b`)
 
-// excludedFromDiscovery drops documentaries, TV / made-for-TV, news, and typical bonus-feature
-// titles (making-of, behind the scenes) using TMDB genres plus title/overview heuristics.
+// excludedFromDiscovery drops documentaries, TV / made-for-TV, news, music/concert films,
+// and typical bonus-feature titles (making-of, behind the scenes) using TMDB genres plus
+// title/overview heuristics.
 func excludedFromDiscovery(title, overview string, genres []string) bool {
 	for _, g := range genres {
 		switch strings.ToLower(strings.TrimSpace(g)) {
-		case "documentary", "tv movie", "news":
+		case "documentary", "tv movie", "news", "music":
 			return true
 		}
 	}
@@ -101,9 +102,13 @@ func AnalyzeFilmography(ctx context.Context, cfg Config, plex *PlexClient, perso
 	if err != nil {
 		return nil, err
 	}
-	inLibrary := map[string]struct{}{}
+	// plexTitleYears maps normalized title → all years that title exists in Plex.
+	// This lets us do a fuzzy ±2-year match so that slight release-year discrepancies
+	// between TMDB and Plex metadata don't cause a film to appear missing.
+	plexTitleYears := make(map[string][]int, len(movies))
 	for _, movie := range movies {
-		inLibrary[normalizeTitleYear(movie.Title, strconv.Itoa(movie.Year))] = struct{}{}
+		key := normalizeTitle(movie.Title)
+		plexTitleYears[key] = append(plexTitleYears[key], movie.Year)
 	}
 
 	inPlaylist := map[string]struct{}{}
@@ -170,6 +175,11 @@ func AnalyzeFilmography(ctx context.Context, cfg Config, plex *PlexClient, perso
 			continue
 		}
 
+		// Drop non-English-language films (original_language from TMDB).
+		if hasDet && det.OK && det.OriginalLanguage != "" && det.OriginalLanguage != "en" {
+			continue
+		}
+
 		// Use the richer /movie/{id} synopsis for filtering; fall back to credit overview.
 		overview := strings.TrimSpace(credit.Overview)
 		if hasDet && det.OK && det.Overview != "" {
@@ -196,8 +206,8 @@ func AnalyzeFilmography(ctx context.Context, cfg Config, plex *PlexClient, perso
 			continue
 		}
 
+		hasLibrary := titleYearInLibrary(plexTitleYears, credit.Title, credit.Year)
 		key := normalizeTitleYear(credit.Title, strconv.Itoa(credit.Year))
-		_, hasLibrary := inLibrary[key]
 		_, hasPlaylist := inPlaylist[key]
 		items = append(items, DiscoveryItem{
 			TMDBID:             credit.ID,
@@ -244,18 +254,33 @@ func resolvePersonID(ctx context.Context, apiKey, personName string, cache *disk
 }
 
 func loadFilmography(ctx context.Context, apiKey string, personID int, role string, cache *diskDiscoveryCache, stats *DiscoveryCacheStats) ([]tmdbCredit, error) {
-	if list, ok := cache.getFilmography(personID, role); ok {
+	var list []tmdbCredit
+	if cached, ok := cache.getFilmography(personID, role); ok {
 		if stats != nil {
 			stats.FilmographyHit = true
 		}
-		return list, nil
+		list = cached
+	} else {
+		fresh, err := tmdbFilmography(ctx, apiKey, personID, role)
+		if err != nil {
+			return nil, err
+		}
+		cache.putFilmography(personID, role, fresh)
+		list = fresh
 	}
-	list, err := tmdbFilmography(ctx, apiKey, personID, role)
-	if err != nil {
-		return nil, err
+	// Apply exclusion rules regardless of whether the list came from cache or the
+	// API — this ensures stale cached entries are filtered when rules change.
+	filtered := list[:0]
+	for _, c := range list {
+		if c.Video {
+			continue
+		}
+		if isMinorCastRole(c.KnownFor) {
+			continue
+		}
+		filtered = append(filtered, c)
 	}
-	cache.putFilmography(personID, role, list)
-	return list, nil
+	return filtered, nil
 }
 
 func tmdbMovieCreditsForMovieCached(ctx context.Context, apiKey string, movieID int, cache *diskDiscoveryCache, stats *DiscoveryCacheStats) (tmdbMovieCredits, error) {
@@ -277,13 +302,14 @@ func tmdbMovieCreditsForMovieCached(ctx context.Context, apiKey string, movieID 
 }
 
 type fetchedMovieDetails struct {
-	OK          bool
-	Overview    string
-	Genres      []string
-	VoteAverage float64
-	Runtime     int    // minutes; 0 means unknown
-	PosterURL   string
-	PosterPath  string // raw TMDB poster_path
+	OK               bool
+	Overview         string
+	Genres           []string
+	VoteAverage      float64
+	Runtime          int    // minutes; 0 means unknown
+	PosterURL        string
+	PosterPath       string // raw TMDB poster_path
+	OriginalLanguage string // ISO 639-1, e.g. "en", "fr", "it"
 }
 
 func uniqueMovieIDs(credits []tmdbCredit) []int {
@@ -338,15 +364,16 @@ func fetchMovieDetailsBatch(ctx context.Context, apiKey string, ids []int, cache
 				out[movieID] = det
 				return
 			}
-			det := fetchedMovieDetails{
-				OK:          true,
-				Overview:    d.Overview,
-				Genres:      d.GenreNames,
-				VoteAverage: d.VoteAverage,
-				Runtime:     d.Runtime,
-				PosterURL:   d.PosterURL,
-				PosterPath:  strings.TrimSpace(d.PosterPath),
-			}
+		det := fetchedMovieDetails{
+			OK:               true,
+			Overview:         d.Overview,
+			Genres:           d.GenreNames,
+			VoteAverage:      d.VoteAverage,
+			Runtime:          d.Runtime,
+			PosterURL:        d.PosterURL,
+			PosterPath:       strings.TrimSpace(d.PosterPath),
+			OriginalLanguage: d.OriginalLanguage,
+		}
 			out[movieID] = det
 			cache.putMovieDetails(movieID, det)
 		}(id)
@@ -356,12 +383,13 @@ func fetchMovieDetailsBatch(ctx context.Context, apiKey string, ids []int, cache
 }
 
 type tmdbMovieDetailsResult struct {
-	Overview    string
-	GenreNames  []string
-	VoteAverage float64
-	Runtime     int // minutes
-	PosterURL   string
-	PosterPath  string
+	Overview         string
+	GenreNames       []string
+	VoteAverage      float64
+	Runtime          int // minutes
+	PosterURL        string
+	PosterPath       string
+	OriginalLanguage string
 }
 
 func tmdbFetchMovieDetails(ctx context.Context, apiKey string, movieID int) (tmdbMovieDetailsResult, error) {
@@ -382,11 +410,12 @@ func tmdbFetchMovieDetails(ctx context.Context, apiKey string, movieID int) (tmd
 		return empty, fmt.Errorf("tmdb movie %d: status %s", movieID, resp.Status)
 	}
 	var body struct {
-		Overview    string  `json:"overview"`
-		VoteAverage float64 `json:"vote_average"`
-		PosterPath  string  `json:"poster_path"`
-		Runtime     int     `json:"runtime"`
-		Genres      []struct {
+		Overview         string  `json:"overview"`
+		VoteAverage      float64 `json:"vote_average"`
+		PosterPath       string  `json:"poster_path"`
+		Runtime          int     `json:"runtime"`
+		OriginalLanguage string  `json:"original_language"`
+		Genres           []struct {
 			Name string `json:"name"`
 		} `json:"genres"`
 	}
@@ -403,12 +432,13 @@ func tmdbFetchMovieDetails(ctx context.Context, apiKey string, movieID int) (tmd
 	rawPath := strings.TrimSpace(body.PosterPath)
 	posterURL := tmdbPosterURLFromPath(body.PosterPath)
 	return tmdbMovieDetailsResult{
-		Overview:    strings.TrimSpace(body.Overview),
-		GenreNames:  names,
-		VoteAverage: body.VoteAverage,
-		Runtime:     body.Runtime,
-		PosterURL:   posterURL,
-		PosterPath:  rawPath,
+		Overview:         strings.TrimSpace(body.Overview),
+		GenreNames:       names,
+		VoteAverage:      body.VoteAverage,
+		Runtime:          body.Runtime,
+		PosterURL:        posterURL,
+		PosterPath:       rawPath,
+		OriginalLanguage: strings.TrimSpace(body.OriginalLanguage),
 	}, nil
 }
 
@@ -576,6 +606,7 @@ type tmdbCredit struct {
 	KnownFor    string
 	Overview    string
 	PosterPath  string // from movie_credits poster_path; fallback when /movie/{id} fails
+	Video       bool   // TMDB "video" flag: true = direct-to-video / bonus content / supplement
 }
 
 type tmdbMovieCredits struct {
@@ -648,6 +679,7 @@ func tmdbFilmography(ctx context.Context, apiKey string, personID int, role stri
 			Character   string `json:"character"`
 			Overview    string `json:"overview"`
 			PosterPath  string `json:"poster_path"`
+			Video       bool   `json:"video"`
 		} `json:"cast"`
 		Crew []struct {
 			ID          int    `json:"id"`
@@ -656,6 +688,7 @@ func tmdbFilmography(ctx context.Context, apiKey string, personID int, role stri
 			Job         string `json:"job"`
 			Overview    string `json:"overview"`
 			PosterPath  string `json:"poster_path"`
+			Video       bool   `json:"video"`
 		} `json:"crew"`
 	}
 	if err := json.Unmarshal(bodyBytes, &body); err != nil {
@@ -666,6 +699,12 @@ func tmdbFilmography(ctx context.Context, apiKey string, personID int, role stri
 	dedup := map[int]tmdbCredit{}
 	if role == "" || role == "actor" {
 		for _, cast := range body.Cast {
+			if cast.Video {
+				continue // skip direct-to-video / bonus content
+			}
+			if isMinorCastRole(cast.Character) {
+				continue // skip uncredited cameos and voice-only appearances
+			}
 			dedup[cast.ID] = tmdbCredit{
 				ID:          cast.ID,
 				Title:       cast.Title,
@@ -681,6 +720,9 @@ func tmdbFilmography(ctx context.Context, apiKey string, personID int, role stri
 		for _, crew := range body.Crew {
 			if strings.ToLower(crew.Job) != "director" {
 				continue
+			}
+			if crew.Video {
+				continue // skip direct-to-video / bonus content
 			}
 			pc := strings.TrimSpace(crew.PosterPath)
 			if ex, ok := dedup[crew.ID]; ok {
@@ -806,6 +848,43 @@ func truncateErrBody(b []byte) string {
 	return s
 }
 
+// normalizeTitle normalizes a movie title for comparison (lowercase, strip punctuation).
+func normalizeTitle(title string) string {
+	clean := strings.ToLower(strings.TrimSpace(title))
+	clean = strings.ReplaceAll(clean, ":", "")
+	clean = strings.ReplaceAll(clean, "-", " ")
+	clean = strings.Join(strings.Fields(clean), " ")
+	return clean
+}
+
+// titleYearInLibrary returns true if the Plex library contains a movie with the
+// same normalized title whose year is within ±2 of the given TMDB year.
+// This tolerates the common case where TMDB and Plex metadata disagree on the
+// release year by one or two years (e.g. festival year vs. wide-release year).
+func titleYearInLibrary(plexTitleYears map[string][]int, title string, tmdbYear int) bool {
+	key := normalizeTitle(title)
+	years, ok := plexTitleYears[key]
+	if !ok {
+		return false
+	}
+	if tmdbYear == 0 {
+		return true // no year from TMDB — title match alone is sufficient
+	}
+	for _, plexYear := range years {
+		if plexYear == 0 || abs(plexYear-tmdbYear) <= 2 {
+			return true
+		}
+	}
+	return false
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
+}
+
 func normalizeTitleYear(title, year string) string {
 	clean := strings.ToLower(strings.TrimSpace(title))
 	clean = strings.ReplaceAll(clean, ":", "")
@@ -819,6 +898,14 @@ func normalizeTitleYear(title, year string) string {
 		return clean
 	}
 	return clean + "|" + year
+}
+
+// isMinorCastRole returns true for character strings that indicate an
+// uncredited cameo or a voice-only appearance — roles too minor or peripheral
+// to count as a real acting credit for Discovery purposes.
+func isMinorCastRole(character string) bool {
+	ch := strings.ToLower(character)
+	return strings.Contains(ch, "(uncredited)") || strings.Contains(ch, "(voice)")
 }
 
 func containsIgnoreCase(values []string, query string) bool {

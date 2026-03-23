@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -16,6 +17,9 @@ func main() {
 
 	client := plexdash.NewPlexClient(cfg)
 	server := plexdash.NewServer(cfg, client)
+
+	ctx := context.Background()
+	go server.StartDailySnapshotWorker(ctx)
 
 	addr := ":" + cfg.Port
 	fmt.Printf("[BOOT] plex-dashboard listening on %s\n", addr)

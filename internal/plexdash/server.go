@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -59,6 +60,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/snapshots/latest-diff", s.handleSnapshotLatestDiff)
 	mux.HandleFunc("/api/snapshots/missing", s.handleSnapshotMissing)
 	mux.HandleFunc("/api/snapshots/diff", s.handleSnapshotDiff)
+	mux.HandleFunc("/api/snapshots/patterns", s.handleSnapshotPatterns)
 	mux.HandleFunc("/api/snapshots/", s.handleSnapshotByID)
 	mux.HandleFunc("/api/snapshots", s.handleSnapshots)
 
@@ -541,6 +543,9 @@ func (s *Server) handlePreviewPlaylist(w http.ResponseWriter, r *http.Request) {
 		movies = filterMoviesByPeople(movies, req.Actor, req.Director)
 	}
 	movies = filterMoviesByGenreRatingYear(movies, req.Genre, req.MinRating, req.MinYear, req.MaxYear)
+
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	movies = ReorderMoviesByViewCountShuffleTies(movies, rng)
 
 	total := len(movies)
 	if req.Limit > len(movies) {
