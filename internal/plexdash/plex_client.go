@@ -15,9 +15,11 @@ import (
 )
 
 type PlexClient struct {
-	baseURL string
-	token   string
-	client  *http.Client
+	baseURL       string
+	token         string
+	client        *http.Client
+	lgtvAddr      string // LG TV local IP for SSAP direct control
+	lgtvClientKey string // SSAP client key (from one-time pairing)
 }
 
 type Movie struct {
@@ -26,6 +28,7 @@ type Movie struct {
 	Year              int
 	DurationMillis    int64
 	LastViewedAtEpoch int64
+	ViewCount         int
 	Rating            float64
 	Actors            []string
 	Directors         []string
@@ -59,8 +62,10 @@ type Playlist struct {
 
 func NewPlexClient(cfg Config) *PlexClient {
 	return &PlexClient{
-		baseURL: cfg.PlexBaseURL,
-		token:   cfg.PlexToken,
+		baseURL:       cfg.PlexBaseURL,
+		token:         cfg.PlexToken,
+		lgtvAddr:      cfg.LGTVAddr,
+		lgtvClientKey: cfg.LGTVClientKey,
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -89,6 +94,7 @@ func (p *PlexClient) ListMovies(ctx context.Context, libraryKey string) ([]Movie
 		duration, _ := strconv.ParseInt(video.Duration, 10, 64)
 		lastViewedAt, _ := strconv.ParseInt(video.LastViewedAt, 10, 64)
 		rating, _ := strconv.ParseFloat(video.Rating, 64)
+		viewCount, _ := strconv.Atoi(video.ViewCount)
 
 		movies = append(movies, Movie{
 			RatingKey:         video.RatingKey,
@@ -96,6 +102,7 @@ func (p *PlexClient) ListMovies(ctx context.Context, libraryKey string) ([]Movie
 			Year:              year,
 			DurationMillis:    duration,
 			LastViewedAtEpoch: lastViewedAt,
+			ViewCount:         viewCount,
 			Rating:            rating,
 			Actors:            tagsToStrings(video.Roles),
 			Directors:         tagsToStrings(video.Directors),
@@ -125,11 +132,9 @@ func (p *PlexClient) CreateRandomPlaylist(ctx context.Context, libraryKey, title
 		count = len(movies)
 	}
 
-	indices := rand.New(rand.NewSource(time.Now().UnixNano())).Perm(len(movies))[:count]
-	ratingKeys := make([]string, 0, count)
-	for _, idx := range indices {
-		ratingKeys = append(ratingKeys, movies[idx].RatingKey)
-	}
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	ordered := ratingKeysOrderedByViewCountShuffleTies(movies, rng)
+	ratingKeys := ordered[:count]
 	result, err := p.createPlaylistFromRatingKeys(ctx, title, ratingKeys)
 	if err != nil {
 		return CreatePlaylistResult{}, err
@@ -160,11 +165,9 @@ func (p *PlexClient) CreatePlaylistByPeople(ctx context.Context, libraryKey, tit
 		count = len(filtered)
 	}
 
-	indices := rand.New(rand.NewSource(time.Now().UnixNano())).Perm(len(filtered))[:count]
-	ratingKeys := make([]string, 0, count)
-	for _, idx := range indices {
-		ratingKeys = append(ratingKeys, filtered[idx].RatingKey)
-	}
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	ordered := ratingKeysOrderedByViewCountShuffleTies(filtered, rng)
+	ratingKeys := ordered[:count]
 
 	result, err := p.createPlaylistFromRatingKeys(ctx, title, ratingKeys)
 	if err != nil {
@@ -185,10 +188,8 @@ func (p *PlexClient) CreatePlaylistByGenreRatingYear(ctx context.Context, librar
 		return CreatePlaylistResult{}, fmt.Errorf("no movies matched genre=%q rating>=%.1f years=%d-%d", genre, minRating, minYear, maxYear)
 	}
 
-	ratingKeys := make([]string, 0, len(filtered))
-	for _, movie := range filtered {
-		ratingKeys = append(ratingKeys, movie.RatingKey)
-	}
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	ratingKeys := ratingKeysOrderedByViewCountShuffleTies(filtered, rng)
 
 	title := strings.ToUpper(strings.TrimSpace(genre))
 	if title == "" {
@@ -233,31 +234,108 @@ func (p *PlexClient) ListGenres(ctx context.Context, libraryKey string) ([]strin
 	return genres, nil
 }
 
+// ListPlayers finds Plex players in up to three places:
+//  1. Static config — if LGTV_ADDR is set, the LG TV is always present.
+//  2. plex.tv/api/resources — desktop/registered players (direct URI).
+//  3. /status/sessions on the local server — actively-streaming players
+//     that didn't register with plex.tv (LG, Samsung, etc. embedded apps).
 func (p *PlexClient) ListPlayers(ctx context.Context) ([]Player, error) {
-	resources, err := p.listResources(ctx)
-	if err != nil {
-		return nil, err
+	seen := map[string]Player{} // keyed by ClientIdentifier
+
+	// Source 1: static LG TV from config (always available, no session needed).
+	if p.lgtvAddr != "" && p.lgtvClientKey != "" {
+		const lgtvStaticID = "lgtv-ssap-static"
+		seen[lgtvStaticID] = Player{
+			Name:             "LG TV (SSAP)",
+			ClientIdentifier: lgtvStaticID,
+			Product:          "Plex for LG",
+			URI:              "ssap://" + p.lgtvAddr,
+		}
 	}
 
-	players := make([]Player, 0)
-	for _, device := range resources.Devices {
-		if !strings.Contains(device.Provides, "player") {
-			continue
+	// Source 2: cloud-registered resources.
+	if resources, err := p.listResources(ctx); err == nil {
+		for _, device := range resources.Devices {
+			if !strings.Contains(device.Provides, "player") || len(device.Connections) == 0 {
+				continue
+			}
+			seen[device.ClientIdentifier] = Player{
+				Name:             device.Name,
+				ClientIdentifier: device.ClientIdentifier,
+				Product:          device.Product,
+				URI:              device.Connections[0].URI,
+			}
 		}
-		if len(device.Connections) == 0 {
-			continue
-		}
-		players = append(players, Player{
-			Name:             device.Name,
-			ClientIdentifier: device.ClientIdentifier,
-			Product:          device.Product,
-			URI:              device.Connections[0].URI,
-		})
+	} else {
+		fmt.Printf("[players] cloud resources unavailable: %v\n", err)
 	}
 
+	// Source 3: active streaming sessions (enriches with live machine ID).
+	if sessionPlayers, err := p.listSessionPlayers(ctx); err == nil {
+		for _, sp := range sessionPlayers {
+			if _, exists := seen[sp.ClientIdentifier]; !exists {
+				seen[sp.ClientIdentifier] = sp
+			}
+			// If this session player is the configured LG TV, update the static
+			// entry with the live machine identifier from the session.
+			if strings.EqualFold(sp.Product, "Plex for LG") && p.lgtvAddr != "" {
+				const lgtvStaticID = "lgtv-ssap-static"
+				if s, ok := seen[lgtvStaticID]; ok {
+					s.Name = sp.Name
+					seen[lgtvStaticID] = s
+				}
+			}
+		}
+	} else {
+		fmt.Printf("[players] session discovery unavailable: %v\n", err)
+	}
+
+	players := make([]Player, 0, len(seen))
+	for _, pl := range seen {
+		players = append(players, pl)
+	}
 	sort.SliceStable(players, func(i, j int) bool {
 		return strings.ToLower(players[i].Name) < strings.ToLower(players[j].Name)
 	})
+	return players, nil
+}
+
+// listSessionPlayers reads /status/sessions on the Plex server and returns a
+// Player for each active streaming client. Commands to these players are sent
+// via the plex.tv relay (URI = "https://plex.tv") since embedded TV apps
+// (webOS, Tizen, etc.) are not reachable on the LAN directly.
+func (p *PlexClient) listSessionPlayers(ctx context.Context) ([]Player, error) {
+	body, err := p.get(ctx, p.baseURL+"/status/sessions")
+	if err != nil {
+		return nil, err
+	}
+	var root struct {
+		XMLName xml.Name `xml:"MediaContainer"`
+		Videos  []struct {
+			Player struct {
+				MachineIdentifier string `xml:"machineIdentifier,attr"`
+				Title             string `xml:"title,attr"`
+				Product           string `xml:"product,attr"`
+				State             string `xml:"state,attr"`
+			} `xml:"Player"`
+		} `xml:"Video"`
+	}
+	if err := xml.Unmarshal(body, &root); err != nil {
+		return nil, fmt.Errorf("decode sessions: %w", err)
+	}
+	players := make([]Player, 0, len(root.Videos))
+	for _, v := range root.Videos {
+		pl := v.Player
+		if pl.MachineIdentifier == "" {
+			continue
+		}
+		players = append(players, Player{
+			Name:             pl.Title,
+			ClientIdentifier: pl.MachineIdentifier,
+			Product:          pl.Product,
+			URI:              "https://plex.tv", // relay — no direct LAN access needed
+		})
+	}
 	return players, nil
 }
 
@@ -311,6 +389,7 @@ func (p *PlexClient) PlaylistMovies(ctx context.Context, playlistTitle string, l
 		duration, _ := strconv.ParseInt(video.Duration, 10, 64)
 		lastViewedAt, _ := strconv.ParseInt(video.LastViewedAt, 10, 64)
 		rating, _ := strconv.ParseFloat(video.Rating, 64)
+		viewCount, _ := strconv.Atoi(video.ViewCount)
 
 		movies = append(movies, Movie{
 			RatingKey:         video.RatingKey,
@@ -318,6 +397,7 @@ func (p *PlexClient) PlaylistMovies(ctx context.Context, playlistTitle string, l
 			Year:              year,
 			DurationMillis:    duration,
 			LastViewedAtEpoch: lastViewedAt,
+			ViewCount:         viewCount,
 			Rating:            rating,
 			Actors:            tagsToStrings(video.Roles),
 			Directors:         tagsToStrings(video.Directors),
@@ -367,12 +447,20 @@ func (p *PlexClient) PlaylistMovieTitles(ctx context.Context, playlistTitle stri
 }
 
 func (p *PlexClient) PlayPlaylistOnClient(ctx context.Context, playlistTitle, targetClientName string) (CreateAndPlayResult, error) {
-	items, err := p.PlaylistMovies(ctx, playlistTitle, 1)
+	playlists, err := p.ListPlaylists(ctx)
 	if err != nil {
 		return CreateAndPlayResult{}, err
 	}
-	if len(items) == 0 {
-		return CreateAndPlayResult{}, fmt.Errorf("playlist %q has no items", playlistTitle)
+	target2 := strings.ToLower(strings.TrimSpace(playlistTitle))
+	var playlistID string
+	for _, pl := range playlists {
+		if strings.ToLower(strings.TrimSpace(pl.Title)) == target2 {
+			playlistID = pl.RatingKey
+			break
+		}
+	}
+	if playlistID == "" {
+		return CreateAndPlayResult{}, fmt.Errorf("playlist %q not found", playlistTitle)
 	}
 
 	players, err := p.ListPlayers(ctx)
@@ -384,7 +472,35 @@ func (p *PlexClient) PlayPlaylistOnClient(ctx context.Context, playlistTitle, ta
 		return CreateAndPlayResult{}, err
 	}
 
-	if err := p.playMovieOnClient(ctx, target, items[0].RatingKey); err != nil {
+	// For the LG TV, stream directly through the webOS native media player
+	// using direct Plex HTTP URLs — the Plex companion protocol is not supported.
+	if strings.EqualFold(target.Product, "Plex for LG") && p.lgtvAddr != "" && p.lgtvClientKey != "" {
+		streamItems, err := p.fetchPlaylistStreamItems(ctx, playlistID)
+		if err != nil {
+			return CreateAndPlayResult{}, fmt.Errorf("fetch stream items: %w", err)
+		}
+		fmt.Printf("[player] LG TV: streaming %d items via webOS native player\n", len(streamItems))
+		if err := PlayPlaylistViaWebOS(ctx, p.lgtvAddr, p.lgtvClientKey, streamItems); err != nil {
+			return CreateAndPlayResult{}, err
+		}
+		return CreateAndPlayResult{
+			PlaylistTitle: playlistTitle,
+			PlaylistCount: len(streamItems),
+			TargetClient:  target.Name,
+			PlaybackKey:   "",
+		}, nil
+	}
+
+	items, err := p.PlaylistMovies(ctx, playlistTitle, 1)
+	if err != nil {
+		return CreateAndPlayResult{}, err
+	}
+	if len(items) == 0 {
+		return CreateAndPlayResult{}, fmt.Errorf("playlist %q has no items", playlistTitle)
+	}
+
+	containerKey := "/playlists/" + playlistID + "/items"
+	if err := p.sendPlayCommand(ctx, target, items[0].RatingKey, containerKey); err != nil {
 		return CreateAndPlayResult{}, err
 	}
 
@@ -394,6 +510,43 @@ func (p *PlexClient) PlayPlaylistOnClient(ctx context.Context, playlistTitle, ta
 		TargetClient:  target.Name,
 		PlaybackKey:   items[0].RatingKey,
 	}, nil
+}
+
+// fetchPlaylistStreamItems returns direct HTTP stream items for all videos in a
+// Plex playlist, shuffled into a random order, suitable for the webOS native media player.
+func (p *PlexClient) fetchPlaylistStreamItems(ctx context.Context, playlistID string) ([]WebOSStreamItem, error) {
+	body, err := p.get(ctx, fmt.Sprintf("%s/playlists/%s/items", p.baseURL, playlistID))
+	if err != nil {
+		return nil, err
+	}
+	var root mediaContainer
+	if err := xml.Unmarshal(body, &root); err != nil {
+		return nil, fmt.Errorf("decode playlist items: %w", err)
+	}
+
+	items := make([]WebOSStreamItem, 0, len(root.Videos))
+	for _, v := range root.Videos {
+		if len(v.Medias) == 0 || len(v.Medias[0].Parts) == 0 {
+			continue
+		}
+		part := v.Medias[0].Parts[0]
+		container := v.Medias[0].Container
+		size, _ := strconv.ParseInt(part.Size, 10, 64)
+		title := v.Title
+		if v.Year != "" {
+			title = fmt.Sprintf("%s (%s)", v.Title, v.Year)
+		}
+		items = append(items, WebOSStreamItem{
+			StreamURL: p.baseURL + part.Key + "?X-Plex-Token=" + p.token,
+			Title:     title,
+			Container: container,
+			Size:      size,
+		})
+	}
+
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	rng.Shuffle(len(items), func(i, j int) { items[i], items[j] = items[j], items[i] })
+	return items, nil
 }
 
 func (p *PlexClient) CreateRandomPlaylistAndPlay(ctx context.Context, libraryKey, playlistTitle string, count int, targetClientName string) (CreateAndPlayResult, error) {
@@ -412,7 +565,7 @@ func (p *PlexClient) CreateRandomPlaylistAndPlay(ctx context.Context, libraryKey
 		return CreateAndPlayResult{}, err
 	}
 
-	if err := p.playMovieOnClient(ctx, target, created.FirstRatingKey); err != nil {
+	if err := p.sendPlayCommand(ctx, target, created.FirstRatingKey, "/library/metadata/"+created.FirstRatingKey); err != nil {
 		return CreateAndPlayResult{}, err
 	}
 
@@ -467,6 +620,66 @@ func (p *PlexClient) MachineIdentifier(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("machineIdentifier missing from Plex root response")
 	}
 	return root.MachineIdentifier, nil
+}
+
+// sendPlayCommand routes to the correct play mechanism based on the player type.
+// For all known players it uses the standard Plex HTTP companion protocol.
+// The LG TV path is handled earlier in PlayPlaylistOnClient via PlayPlaylistViaWebOS.
+func (p *PlexClient) sendPlayCommand(ctx context.Context, player Player, ratingKey, containerKey string) error {
+	return p.playOnClientWithContainer(ctx, player, ratingKey, containerKey)
+}
+
+// playOnClientWithContainer sends a playMedia command to the Plex player, using
+// containerKey as the queue context. When containerKey is a playlist items path
+// (e.g. /playlists/{id}/items), the player advances through all items automatically.
+func (p *PlexClient) playOnClientWithContainer(ctx context.Context, player Player, ratingKey, containerKey string) error {
+	serverMachineIdentifier, err := p.MachineIdentifier(ctx)
+	if err != nil {
+		return err
+	}
+	serverURL, err := url.Parse(p.baseURL)
+	if err != nil {
+		return fmt.Errorf("parse base server URL: %w", err)
+	}
+	playerURL, err := url.Parse(player.URI)
+	if err != nil {
+		return fmt.Errorf("parse player URI: %w", err)
+	}
+
+	q := url.Values{}
+	q.Set("X-Plex-Token", p.token)
+	q.Set("key", "/library/metadata/"+ratingKey)
+	q.Set("offset", "0")
+	q.Set("machineIdentifier", serverMachineIdentifier)
+	q.Set("address", serverURL.Hostname())
+	q.Set("port", serverURL.Port())
+	q.Set("protocol", serverURL.Scheme)
+	q.Set("containerKey", containerKey)
+	q.Set("type", "video")
+	q.Set("providerIdentifier", "com.plexapp.plugins.library")
+
+	playerURL.Path = "/player/playback/playMedia"
+	playerURL.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, playerURL.String(), nil)
+	if err != nil {
+		return fmt.Errorf("build play request: %w", err)
+	}
+	req.Header.Set("X-Plex-Client-Identifier", "plex-dashboard")
+	req.Header.Set("X-Plex-Target-Client-Identifier", player.ClientIdentifier)
+	req.Header.Set("X-Plex-Product", "plex-dashboard")
+	req.Header.Set("X-Plex-Version", "0.1.0")
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("send play command: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("play command failed for %q: status=%d body=%s", player.Name, resp.StatusCode, string(body))
+	}
+	return nil
 }
 
 func (p *PlexClient) playMovieOnClient(ctx context.Context, player Player, ratingKey string) error {
@@ -529,7 +742,23 @@ func selectPlayer(players []Player, targetClientName string) (Player, error) {
 			return player, nil
 		}
 	}
-	return Player{}, fmt.Errorf("no Plex player found matching %q", targetClientName)
+	// No name match — prefer the SSAP player (identified by ssap:// URI) if
+	// one exists. This handles the common case where the configured name
+	// ("Living Room") is stale but the LG TV is still discoverable via SSAP.
+	for _, player := range players {
+		if strings.HasPrefix(player.URI, "ssap://") {
+			fmt.Printf("[player] %q not matched; falling back to SSAP player %q\n",
+				targetClientName, player.Name)
+			return player, nil
+		}
+	}
+	// Last resort: only one player available.
+	if len(players) == 1 {
+		fmt.Printf("[player] %q not matched; falling back to only available player %q\n",
+			targetClientName, players[0].Name)
+		return players[0], nil
+	}
+	return Player{}, fmt.Errorf("no Plex player found matching %q (discovered: %d players)", targetClientName, len(players))
 }
 
 func filterMoviesByPeople(movies []Movie, actor, director string) []Movie {
@@ -576,6 +805,49 @@ func containsAny(values []string, query string) bool {
 		}
 	}
 	return false
+}
+
+// ratingKeysOrderedByViewCountShuffleTies builds playlist order: lower Plex viewCount first
+// (items watched less often play sooner), with a random shuffle within each view-count bucket.
+func ratingKeysOrderedByViewCountShuffleTies(movies []Movie, rng *rand.Rand) []string {
+	if len(movies) == 0 {
+		return nil
+	}
+	buckets := make(map[int][]Movie)
+	for _, m := range movies {
+		c := m.ViewCount
+		buckets[c] = append(buckets[c], m)
+	}
+	counts := make([]int, 0, len(buckets))
+	for c := range buckets {
+		counts = append(counts, c)
+	}
+	sort.Ints(counts)
+	keys := make([]string, 0, len(movies))
+	for _, c := range counts {
+		bucket := buckets[c]
+		rng.Shuffle(len(bucket), func(i, j int) { bucket[i], bucket[j] = bucket[j], bucket[i] })
+		for _, m := range bucket {
+			keys = append(keys, m.RatingKey)
+		}
+	}
+	return keys
+}
+
+// ReorderMoviesByViewCountShuffleTies matches playlist ordering for previews (same rules as ratingKeysOrderedByViewCountShuffleTies).
+func ReorderMoviesByViewCountShuffleTies(movies []Movie, rng *rand.Rand) []Movie {
+	keys := ratingKeysOrderedByViewCountShuffleTies(movies, rng)
+	byKey := make(map[string]Movie, len(movies))
+	for _, m := range movies {
+		byKey[m.RatingKey] = m
+	}
+	out := make([]Movie, 0, len(keys))
+	for _, k := range keys {
+		if m, ok := byKey[k]; ok {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 func (p *PlexClient) listResources(ctx context.Context) (resourcesContainer, error) {
@@ -668,15 +940,27 @@ type mediaContainerRoot struct {
 }
 
 type video struct {
-	RatingKey    string     `xml:"ratingKey,attr"`
-	Title        string     `xml:"title,attr"`
-	Year         string     `xml:"year,attr"`
-	Duration     string     `xml:"duration,attr"`
-	LastViewedAt string     `xml:"lastViewedAt,attr"`
-	Rating       string     `xml:"rating,attr"`
-	Roles        []mediaTag `xml:"Role"`
-	Directors    []mediaTag `xml:"Director"`
-	Genres       []mediaTag `xml:"Genre"`
+	RatingKey    string       `xml:"ratingKey,attr"`
+	Title        string       `xml:"title,attr"`
+	Year         string       `xml:"year,attr"`
+	Duration     string       `xml:"duration,attr"`
+	LastViewedAt string       `xml:"lastViewedAt,attr"`
+	ViewCount    string       `xml:"viewCount,attr"`
+	Rating       string       `xml:"rating,attr"`
+	Roles        []mediaTag   `xml:"Role"`
+	Directors    []mediaTag   `xml:"Director"`
+	Genres       []mediaTag   `xml:"Genre"`
+	Medias       []videoMedia `xml:"Media"`
+}
+
+type videoMedia struct {
+	Container string      `xml:"container,attr"`
+	Parts     []videoPart `xml:"Part"`
+}
+
+type videoPart struct {
+	Key  string `xml:"key,attr"`
+	Size string `xml:"size,attr"`
 }
 
 type mediaTag struct {

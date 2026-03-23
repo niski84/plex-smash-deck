@@ -21,6 +21,11 @@ type Config struct {
 	RadarrAPIKey     string
 	RadarrRootFolder string
 	RadarrProfileID  int
+	// LG webOS TV direct control via SSAP WebSocket (port 3001).
+	// LGTVAddr is the TV's local IP (e.g. "192.168.4.153").
+	// LGTVClientKey is the key obtained during one-time pairing.
+	LGTVAddr      string
+	LGTVClientKey string
 }
 
 func LoadConfig() (Config, error) {
@@ -38,6 +43,8 @@ func LoadConfig() (Config, error) {
 		RadarrAPIKey:     os.Getenv("RADARR_API_KEY"),
 		RadarrRootFolder: os.Getenv("RADARR_ROOT_FOLDER"),
 		RadarrProfileID:  getenvInt("RADARR_PROFILE_ID", 1),
+		LGTVAddr:         os.Getenv("LGTV_ADDR"),
+		LGTVClientKey:    os.Getenv("LGTV_CLIENT_KEY"),
 	}
 
 	// Source from .env first, then fill missing values from persisted settings.
@@ -152,5 +159,11 @@ func mergeMissingConfig(dst *Config, src Config) {
 	}
 	if dst.RadarrProfileID == 0 {
 		dst.RadarrProfileID = src.RadarrProfileID
+	}
+	if dst.LGTVAddr == "" {
+		dst.LGTVAddr = src.LGTVAddr
+	}
+	if dst.LGTVClientKey == "" {
+		dst.LGTVClientKey = src.LGTVClientKey
 	}
 }

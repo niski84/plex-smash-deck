@@ -8,10 +8,13 @@ Previously lived under the RV sale monorepo; this is its own repository.
 
 ```bash
 # Optional: copy .env with PLEX_BASE_URL, PLEX_TOKEN, TMDB_API_KEY, etc.
+# If you split from the RV sale repo, you can copy its .env here, or symlink it.
 go run ./cmd/plex-dashboard
 ```
 
 Default port: **8081** (override with `PORT`).
+
+**Data / cache:** This repo ships with an empty `data/` folder. To reuse TMDB cache, snapshots, and saved Plex settings from the old monorepo, copy `data/tmdb-discovery-cache/`, `data/movie-snapshots/`, and `data/plexdash-settings.json` from your **rv sale** project (or run with `cwd` there — settings paths are relative to the working directory).
 
 ## Build & deploy (local)
 

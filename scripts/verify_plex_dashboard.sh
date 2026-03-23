@@ -37,6 +37,11 @@ echo "$MOVIES_JSON" | rg '"success"\s*:\s*true' >/dev/null
 MOVIE_COUNT="$(echo "$MOVIES_JSON" | rg -o '"count"\s*:\s*[0-9]+' | rg -o '[0-9]+' | sed -n '1p')"
 echo "$MOVIES_JSON" | rg '"Actors"\s*:' >/dev/null
 echo "$MOVIES_JSON" | rg '"Directors"\s*:' >/dev/null
+if echo "$MOVIES_JSON" | rg -q '"ViewCount"'; then
+  echo "[ok] movies include Plex ViewCount (play count)"
+else
+  echo "[warn] ViewCount not present in movies sample (empty library or older Plex XML?)"
+fi
 echo "[ok] movies endpoint count=${MOVIE_COUNT:-unknown}"
 
 echo "[verify] checking /api/players"

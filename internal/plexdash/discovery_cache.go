@@ -20,7 +20,7 @@ const (
 	discoveryCachePersonIDTTL     = 180 * 24 * time.Hour
 )
 
-const discoveryCacheJSONVersion = 3
+const discoveryCacheJSONVersion = 4
 
 func defaultDiscoveryCacheDir() string {
 	return filepath.Clean("data/tmdb-discovery-cache")
@@ -153,6 +153,7 @@ type creditRecord struct {
 	KnownFor    string `json:"knownFor"`
 	Overview    string `json:"overview"`
 	PosterPath  string `json:"posterPath"`
+	Video       bool   `json:"video,omitempty"`
 }
 
 type cachedFilmography struct {
@@ -184,6 +185,7 @@ func creditsToRecords(in []tmdbCredit) []creditRecord {
 		out = append(out, creditRecord{
 			ID: c.ID, Title: c.Title, Year: c.Year, ReleaseDate: c.ReleaseDate,
 			KnownFor: c.KnownFor, Overview: c.Overview, PosterPath: c.PosterPath,
+			Video: c.Video,
 		})
 	}
 	return out
@@ -195,6 +197,7 @@ func recordsToCredits(in []creditRecord) []tmdbCredit {
 		out = append(out, tmdbCredit{
 			ID: c.ID, Title: c.Title, Year: c.Year, ReleaseDate: c.ReleaseDate,
 			KnownFor: c.KnownFor, Overview: c.Overview, PosterPath: c.PosterPath,
+			Video: c.Video,
 		})
 	}
 	return out
@@ -286,13 +289,14 @@ func (d *diskDiscoveryCache) putMovieCredits(movieID int, mc tmdbMovieCredits) {
 
 type cachedMovieDetails struct {
 	cachedEnvelope
-	OK          bool     `json:"ok"`
-	Overview    string   `json:"overview"`
-	Genres      []string `json:"genres"`
-	VoteAverage float64  `json:"voteAverage"`
-	Runtime     int      `json:"runtime,omitempty"` // minutes; 0 = unknown
-	PosterURL   string   `json:"posterUrl"`
-	PosterPath  string   `json:"posterPath"` // raw TMDB poster_path (e.g. /x.jpg)
+	OK               bool     `json:"ok"`
+	Overview         string   `json:"overview"`
+	Genres           []string `json:"genres"`
+	VoteAverage      float64  `json:"voteAverage"`
+	Runtime          int      `json:"runtime,omitempty"` // minutes; 0 = unknown
+	PosterURL        string   `json:"posterUrl"`
+	PosterPath       string   `json:"posterPath"` // raw TMDB poster_path (e.g. /x.jpg)
+	OriginalLanguage string   `json:"originalLanguage,omitempty"`
 }
 
 func movieDetailsCacheFile(movieID int) string {
@@ -315,13 +319,14 @@ func (d *diskDiscoveryCache) getMovieDetails(movieID int) (fetchedMovieDetails, 
 		return fetchedMovieDetails{}, false
 	}
 	return fetchedMovieDetails{
-		OK:          c.OK,
-		Overview:    c.Overview,
-		Genres:      append([]string(nil), c.Genres...),
-		VoteAverage: c.VoteAverage,
-		Runtime:     c.Runtime,
-		PosterURL:   c.PosterURL,
-		PosterPath:  strings.TrimSpace(c.PosterPath),
+		OK:               c.OK,
+		Overview:         c.Overview,
+		Genres:           append([]string(nil), c.Genres...),
+		VoteAverage:      c.VoteAverage,
+		Runtime:          c.Runtime,
+		PosterURL:        c.PosterURL,
+		PosterPath:       strings.TrimSpace(c.PosterPath),
+		OriginalLanguage: c.OriginalLanguage,
 	}, true
 }
 
@@ -336,13 +341,14 @@ func (d *diskDiscoveryCache) putMovieDetails(movieID int, det fetchedMovieDetail
 			CachedAt:   time.Now().UTC(),
 			TTLSeconds: int64(discoveryCacheMovieDetailsTTL / time.Second),
 		},
-		OK:          det.OK,
-		Overview:    det.Overview,
-		Genres:      append([]string(nil), det.Genres...),
-		VoteAverage: det.VoteAverage,
-		Runtime:     det.Runtime,
-		PosterURL:   det.PosterURL,
-		PosterPath:  det.PosterPath,
+		OK:               det.OK,
+		Overview:         det.Overview,
+		Genres:           append([]string(nil), det.Genres...),
+		VoteAverage:      det.VoteAverage,
+		Runtime:          det.Runtime,
+		PosterURL:        det.PosterURL,
+		PosterPath:       det.PosterPath,
+		OriginalLanguage: det.OriginalLanguage,
 	}
 	_ = writeJSONAtomic(path, c)
 }

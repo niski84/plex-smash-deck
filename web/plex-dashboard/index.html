@@ -260,6 +260,29 @@
     .snap-compare-row select { flex: 1; min-width: 180px; }
     #snapStatus { margin-left: 12px; }
     #snapshotsTakenAt { font-size: 12px; color: #6b7280; }
+
+    /* Pattern analysis card */
+    #snapDropPatterns, #snapDiffPatterns { margin-top: 18px; display: none; }
+    .snap-patterns-card {
+      border: 1px solid #2d3a6a; border-radius: 10px;
+      background: linear-gradient(135deg, #0d1429 0%, #111827 100%);
+      padding: 16px 20px;
+    }
+    .snap-patterns-title {
+      font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+      color: #7c8db8; margin: 0 0 14px; display: flex; align-items: center; gap: 10px;
+    }
+    .snap-patterns-title::after { content: ''; flex: 1; height: 1px; background: #1e2a4a; }
+    .snap-insight-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+    .snap-insight {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 8px 12px; border-radius: 7px;
+      background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);
+    }
+    .snap-insight-icon { font-size: 15px; line-height: 1.5; flex-shrink: 0; }
+    .snap-insight-body { flex: 1; min-width: 0; }
+    .snap-insight-label { font-size: 13px; color: #e2e8f0; }
+    .snap-insight-films { font-size: 11px; color: #6b7280; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   </style>
 </head>
 <body>
@@ -451,6 +474,7 @@
           <ul class="snap-drop-list" id="snapDropRemovedList"></ul>
         </div>
       </div>
+      <div id="snapDropPatterns"></div>
     </div>
     <p id="snapNoDropMsg" class="muted" style="display:none; padding: 8px 0;">
       Need at least 2 snapshots to show a latest drop. Take another snapshot to see changes.
@@ -500,6 +524,7 @@
           <ul class="snap-diff-list" id="snapRemovedList"></ul>
         </div>
       </div>
+      <div id="snapDiffPatterns"></div>
     </div>
 
   </section>
@@ -809,6 +834,7 @@
         const genre = document.getElementById('genreSelect').value;
         const minRating = Number(document.getElementById('ratingSelect').value || '0');
         const data = await apiJson('/api/playlists/by-genre-rating', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ genre, minRating }) });
+        console.log('[Plex Dashboard] genre playlist created', { title: data.playlist?.Title, count: data.playlist?.Count, order: 'viewCount asc, shuffle within ties' });
         setStatus('genreResult', `Created "${data.playlist.Title}" with ${data.playlist.Count} movies`, true);
       } catch (err) {
         setStatus('genreResult', `Failed: ${err.message}`, false);
@@ -834,9 +860,11 @@
           })
         });
         setStatus('previewResult', `Preview "${data.suggestedTitle}": ${data.totalMatched} matched, showing ${data.showing}`, true);
+        const first = (data.movies || [])[0];
+        console.log('[Plex Dashboard] playlist preview order', { firstTitle: first?.Title, firstViewCount: first?.ViewCount, rule: 'lower Plex ViewCount first, random within same count' });
         for (const movie of (data.movies || [])) {
           const li = document.createElement('li');
-          li.textContent = `${movie.Title} (${movie.Year || 'n/a'}) rating ${movie.Rating || 0}`;
+          li.textContent = `${movie.Title} (${movie.Year || 'n/a'}) rating ${movie.Rating || 0} · ${movie.ViewCount ?? 0} plays`;
           list.appendChild(li);
         }
       } catch (err) {
@@ -1631,6 +1659,71 @@
         return m.year ? `${m.title} (${m.year})` : m.title;
       }
 
+      function escHtml(s) {
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      }
+
+      // Fetch pattern analysis from the server and render a summary card.
+      async function renderPatterns(containerId, fromId, toId) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        container.style.display = 'none';
+        container.innerHTML = '';
+        try {
+          let url = '/api/snapshots/patterns';
+          if (fromId && toId) url += `?from=${encodeURIComponent(fromId)}&to=${encodeURIComponent(toId)}`;
+          const data = await apiJson(url);
+          const patterns = data.patterns;
+          if (!patterns || !patterns.insights || patterns.insights.length === 0) {
+            console.log('[Snapshots] patterns: no recurring patterns found');
+            return;
+          }
+
+          const kindIcon  = { director: '🎬', actor: '🎭', genre: '🎞️', decade: '📅' };
+          const kindColor = { director: '#93c5fd', actor: '#c4b5fd', genre: '#fde68a', decade: '#6ee7b7' };
+          const kindLabel = { director: 'Director', actor: 'Actor', genre: 'Genre', decade: 'Era' };
+
+          const card = document.createElement('div');
+          card.className = 'snap-patterns-card';
+          const title = document.createElement('p');
+          title.className = 'snap-patterns-title';
+          title.textContent = `✦ Pattern Analysis — ${patterns.totalAdded} new addition${patterns.totalAdded === 1 ? '' : 's'}`;
+          card.appendChild(title);
+
+          const ul = document.createElement('ul');
+          ul.className = 'snap-insight-list';
+
+          patterns.insights.forEach(ins => {
+            const icon  = kindIcon[ins.kind]  || '◈';
+            const color = kindColor[ins.kind] || '#a0aec0';
+            const label = kindLabel[ins.kind] || ins.kind;
+            const pct   = Math.round((ins.count / ins.total) * 100);
+            const filmsPreview = ins.movies.slice(0, 4).join(', ') + (ins.movies.length > 4 ? ` +${ins.movies.length - 4} more` : '');
+
+            const li = document.createElement('li');
+            li.className = 'snap-insight';
+            li.innerHTML = `
+              <span class="snap-insight-icon">${icon}</span>
+              <div class="snap-insight-body">
+                <div class="snap-insight-label">
+                  <span style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#4b5563;">${escHtml(label)}</span>
+                  &nbsp;<strong style="color:${color}">${escHtml(ins.name)}</strong>
+                  <span style="color:#6b7280;font-size:12px;"> · ${ins.count} of ${ins.total} (${pct}%)</span>
+                </div>
+                <div class="snap-insight-films">${escHtml(filmsPreview)}</div>
+              </div>`;
+            ul.appendChild(li);
+          });
+
+          card.appendChild(ul);
+          container.appendChild(card);
+          container.style.display = 'block';
+          console.log('[Snapshots] patterns:', patterns.insights.length, 'insights for', patterns.totalAdded, 'movies');
+        } catch (err) {
+          console.error('[Snapshots] patterns error:', err);
+        }
+      }
+
       function renderMovieUL(ul, movies, cls) {
         ul.innerHTML = '';
         if (!movies || !movies.length) {
@@ -1683,6 +1776,7 @@
             goneHeader.style.color = diff.removed.length > 0 ? '#ef4444' : '#f87171';
           }
           console.log('[Snapshots] latest drop: +' + diff.added.length + ' / -' + diff.removed.length);
+          if (diff.added.length >= 2) renderPatterns('snapDropPatterns');
         } catch (err) {
           console.error('[Snapshots] latest drop error:', err);
         }
@@ -1881,6 +1975,7 @@
           panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
           setSnapStatus(`+${diff.added.length} added, −${diff.removed.length} removed.`, true);
           console.log('[Snapshots] diff from', fromId, 'to', toId);
+          if (diff.added.length >= 2) renderPatterns('snapDiffPatterns', fromId, toId);
         } catch (err) {
           setSnapStatus('Diff failed: ' + err.message, false);
           console.error('[Snapshots] diff error:', err);
