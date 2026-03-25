@@ -49,7 +49,14 @@ test('plex-dashboard demo walkthrough', async ({ page }) => {
     () => document.querySelectorAll('#movieGrid .movie-card').length > 10,
     { timeout: 30000 }
   );
-  await page.waitForTimeout(800);
+  // Scroll to the top of the grid so the first row of posters is in the
+  // viewport — lazy loading only fires for visible images.
+  await page.locator('#movieGrid').scrollIntoViewIfNeeded();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  // Let poster images finish loading — networkidle = no more than 2 in-flight
+  // requests for 500 ms. Cap at 20 s for a cold start against a real Plex.
+  await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
+  await page.waitForTimeout(2000);
   await shot(page, 'dashboard-grid');
 
   // ── 2. Search for "Sneakers" ────────────────────────────────────────────────
@@ -64,7 +71,10 @@ test('plex-dashboard demo walkthrough', async ({ page }) => {
   await shot(page, 'search-sneak');
 
   await searchBox.type('ers', { delay: 100 });
-  await page.waitForTimeout(500);
+  // Wait for the filtered grid to settle and any visible-card images to load.
+  await page.waitForTimeout(400);
+  await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+  await page.waitForTimeout(600);
   await shot(page, 'search-sneakers');
 
   // Hover the first visible card to show the info popup
@@ -78,9 +88,10 @@ test('plex-dashboard demo walkthrough', async ({ page }) => {
   await page.mouse.move(0, 0); // dismiss popup
   await page.waitForTimeout(300);
 
-  // Clear search
+  // Clear search — wait for the full grid to re-render and images to reload.
   await searchBox.fill('');
-  await page.waitForTimeout(600);
+  await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+  await page.waitForTimeout(1200);
   await shot(page, 'search-cleared');
 
   // ── 3. Select a few movies ──────────────────────────────────────────────────
@@ -157,7 +168,8 @@ test('plex-dashboard demo walkthrough', async ({ page }) => {
   // Scroll down to see results
   await page.locator('#discoveryTableWrap').scrollIntoViewIfNeeded();
   await page.keyboard.press('PageDown');
-  await page.waitForTimeout(600);
+  await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+  await page.waitForTimeout(800);
   await shot(page, 'discovery-results-scrolled');
 
   // Hover first result row for plot popup
