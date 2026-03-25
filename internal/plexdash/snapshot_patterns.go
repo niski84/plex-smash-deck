@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 )
 
 // PatternInsight describes a recurring trait shared across multiple newly added movies.
 type PatternInsight struct {
-	Kind   string   `json:"kind"`   // "director" | "actor" | "genre" | "decade"
-	Name   string   `json:"name"`   // e.g. "John Carpenter", "Horror", "1980s"
+	Kind   string   `json:"kind"`   // "director" | "studio" | "actor" | "genre" | "decade"
+	Name   string   `json:"name"`   // e.g. "John Carpenter", "A24", "Horror", "1980s"
 	Count  int      `json:"count"`  // how many of the added movies share this trait
 	Total  int      `json:"total"`  // total movies in the added set
 	Movies []string `json:"movies"` // titles that carry this trait
@@ -31,11 +32,15 @@ func analyzeAddedMovies(added []SnapshotMovie, plexMovies []Movie) PatternsResul
 		return PatternsResult{TotalAdded: 0, Insights: []PatternInsight{}}
 	}
 
-	// Build title+year key → actors from the live Plex library (fallback for old snapshots).
-	liveActors := make(map[string][]string, len(plexMovies))
+	// Build title+year key → live metadata from the Plex library (fallback for old snapshots).
+	type liveData struct {
+		Actors []string
+		Studio string
+	}
+	live := make(map[string]liveData, len(plexMovies))
 	for _, m := range plexMovies {
 		key := snapshotKey(SnapshotMovie{Title: m.Title, Year: m.Year})
-		liveActors[key] = m.Actors
+		live[key] = liveData{Actors: m.Actors, Studio: m.Studio}
 	}
 
 	type bucket struct {
@@ -61,10 +66,21 @@ func analyzeAddedMovies(added []SnapshotMovie, plexMovies []Movie) PatternsResul
 			touch("genre", g, m.Title)
 		}
 
+		ld := live[snapshotKey(m)]
+
+		// Studio: prefer snapshot value, fall back to live library.
+		studio := strings.TrimSpace(m.Studio)
+		if studio == "" {
+			studio = strings.TrimSpace(ld.Studio)
+		}
+		if studio != "" {
+			touch("studio", studio, m.Title)
+		}
+
 		// Prefer actors stored in the snapshot; fall back to live library.
 		actors := m.Actors
 		if len(actors) == 0 {
-			actors = liveActors[snapshotKey(m)]
+			actors = ld.Actors
 		}
 		// Cap actors at top 5 billed to avoid noise from deep cast lists.
 		for i, a := range actors {
@@ -80,7 +96,7 @@ func analyzeAddedMovies(added []SnapshotMovie, plexMovies []Movie) PatternsResul
 		}
 	}
 
-	kindOrder := map[string]int{"director": 0, "actor": 1, "genre": 2, "decade": 3}
+	kindOrder := map[string]int{"director": 0, "studio": 1, "actor": 2, "genre": 3, "decade": 4}
 
 	insights := make([]PatternInsight, 0, len(buckets))
 	for _, b := range buckets {

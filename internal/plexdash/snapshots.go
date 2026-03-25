@@ -17,6 +17,7 @@ type SnapshotMovie struct {
 	Title     string   `json:"title"`
 	Year      int      `json:"year"`
 	Rating    float64  `json:"rating,omitempty"`
+	Studio    string   `json:"studio,omitempty"`
 	Genres    []string `json:"genres,omitempty"`
 	Directors []string `json:"directors,omitempty"`
 	Actors    []string `json:"actors,omitempty"`
@@ -101,6 +102,7 @@ func TakeSnapshot(movies []Movie) (Snapshot, error) {
 			Title:  m.Title,
 			Year:   m.Year,
 			Rating: m.Rating,
+			Studio: m.Studio,
 		}
 		if len(m.Genres) > 0 {
 			sm.Genres = append([]string(nil), m.Genres...)
