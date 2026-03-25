@@ -42,13 +42,13 @@ jobs:
           EXT=""
           [ "$GOOS" = "windows" ] && EXT=".exe"
           go build -trimpath -ldflags="-s -w" \
-            -o "dist/plex-dashboard-${{ matrix.goos }}-${{ matrix.goarch }}${EXT}" \
+            -o "dist/plex-smash-deck-${{ matrix.goos }}-${{ matrix.goarch }}${EXT}" \
             ./cmd/plex-dashboard
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: plex-dashboard-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: plex-smash-deck-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/
 
   release:
