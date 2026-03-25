@@ -88,6 +88,36 @@ test('plex-dashboard demo walkthrough', async ({ page }) => {
   await page.mouse.move(0, 0); // dismiss popup
   await page.waitForTimeout(300);
 
+  // Click the poster thumbnail to open the full-screen lightbox.
+  // We use evaluate() to fire the click directly on the img element to avoid
+  // any overlay or popup that may intercept mouse events in headless mode.
+  const posterImg = firstVisible.locator('.movie-card-poster img');
+  await posterImg.waitFor({ state: 'visible' });
+  await page.evaluate(() => {
+    // Dismiss the hover popup first, then simulate a click on the poster img.
+    if (typeof (window as any)._hideMovieInfo === 'function') {
+      (window as any)._hideMovieInfo();
+    }
+    const card = document.querySelector('#movieGrid .movie-card:not([hidden])') as HTMLElement;
+    const img = card?.querySelector('.movie-card-poster img') as HTMLElement;
+    img?.click();
+  });
+  // Wait for lightbox to open and the full-res image to finish loading
+  await page.waitForSelector('#posterLightbox.lb-open', { timeout: 8000 });
+  await page.waitForFunction(
+    () => {
+      const img = document.getElementById('posterLightboxImg') as HTMLImageElement;
+      return img && img.complete && img.naturalHeight > 0;
+    },
+    { timeout: 12000 }
+  );
+  await page.waitForTimeout(600);
+  await shot(page, 'sneakers-lightbox');
+
+  // Close lightbox before continuing
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+
   // Clear search — wait for the full grid to re-render and images to reload.
   await searchBox.fill('');
   await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});

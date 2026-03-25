@@ -258,8 +258,9 @@
       cursor: pointer;
       width: 100%;
       padding: 0;
+      pointer-events: none; /* clicks fall through to poster img when not hovering */
     }
-    .movie-card:hover .movie-card-play-overlay { opacity: 1; }
+    .movie-card:hover .movie-card-play-overlay { opacity: 1; pointer-events: auto; }
     .movie-card-check {
       position: absolute;
       top: 4px;
@@ -468,9 +469,52 @@
     .snap-insight-body { flex: 1; min-width: 0; }
     .snap-insight-label { font-size: 13px; color: #e2e8f0; }
     .snap-insight-films { font-size: 11px; color: #6b7280; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* ── Poster lightbox ─────────────────────────────────────────────────────── */
+    #posterLightbox {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 9000;
+      background: rgba(0,0,0,0.88);
+      align-items: center;
+      justify-content: center;
+      cursor: zoom-out;
+    }
+    #posterLightbox.lb-open { display: flex; }
+    #posterLightbox img {
+      max-width: min(520px, 90vw);
+      max-height: 90vh;
+      border-radius: 8px;
+      box-shadow: 0 8px 48px rgba(0,0,0,0.8);
+      object-fit: contain;
+      animation: lb-in 0.18s ease;
+    }
+    #posterLightboxClose {
+      position: absolute;
+      top: 18px; right: 22px;
+      font-size: 28px;
+      line-height: 1;
+      color: rgba(255,255,255,0.7);
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+    #posterLightboxClose:hover { color: #fff; background: rgba(255,255,255,0.1); }
+    .movie-card-poster img { cursor: zoom-in; }
+    @keyframes lb-in {
+      from { opacity: 0; transform: scale(0.92); }
+      to   { opacity: 1; transform: scale(1); }
+    }
   </style>
 </head>
 <body>
+<div id="posterLightbox" role="dialog" aria-modal="true" aria-label="Poster preview">
+  <button id="posterLightboxClose" aria-label="Close">✕</button>
+  <img id="posterLightboxImg" src="" alt="" />
+</div>
   <div id="discPosterPopup"><img src="" alt="Full poster preview" /></div>
   <div id="movieInfoPopup">
     <div class="mip-layout">
@@ -973,6 +1017,10 @@
       img.src = thumbUrl;
       img.onload = () => img.classList.remove('mc-loading');
       img.onerror = () => { img.style.display = 'none'; };
+      img.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openPosterLightbox(thumbUrl, movie.Title);
+      });
       poster.appendChild(img);
 
       const playBtn = document.createElement('button');
@@ -1736,6 +1784,28 @@
         }, 140);
       };
     }());
+
+    // ── Poster lightbox ──────────────────────────────────────────────────────
+    const lbOverlay = document.getElementById('posterLightbox');
+    const lbImg     = document.getElementById('posterLightboxImg');
+
+    function openPosterLightbox(src, alt) {
+      lbImg.src = src;
+      lbImg.alt = alt || '';
+      lbOverlay.classList.add('lb-open');
+      window._hideMovieInfo();
+    }
+    function closePosterLightbox() {
+      lbOverlay.classList.remove('lb-open');
+      lbImg.src = '';
+    }
+    lbOverlay.addEventListener('click', (e) => {
+      if (e.target === lbOverlay || e.target === lbImg) closePosterLightbox();
+    });
+    document.getElementById('posterLightboxClose').addEventListener('click', closePosterLightbox);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && lbOverlay.classList.contains('lb-open')) closePosterLightbox();
+    });
 
     function renderDiscoveryRows(items) {
       const tbody = document.getElementById('discoveryRows');
