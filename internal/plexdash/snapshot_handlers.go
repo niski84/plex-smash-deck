@@ -19,11 +19,11 @@ func (s *Server) handleSnapshots(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"snapshots": list}})
 
 	case http.MethodPost:
-		cfg := s.snapshot()
-		client := NewPlexClient(cfg)
 		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 		defer cancel()
-		movies, err := client.ListMovies(ctx, cfg.LibraryKey)
+		// Snapshots must capture the true current library state.
+		s.invalidateMovieListCache()
+		movies, err := s.cachedListMovies(ctx)
 		if err != nil {
 			respondJSON(w, http.StatusInternalServerError, apiResponse{Error: "failed to fetch movies: " + err.Error()})
 			return

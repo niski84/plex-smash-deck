@@ -101,12 +101,20 @@ func (p *PlexClient) ListMovies(ctx context.Context, libraryKey string) ([]Movie
 		rating, _ := strconv.ParseFloat(video.Rating, 64)
 		viewCount, _ := strconv.Atoi(video.ViewCount)
 
+		// Pick the media version with the largest file — Plex can store
+		// multiple quality versions (e.g. 4K + 1080p) under one entry.
 		var partKey, fileContainer string
 		var partSize int64
-		if len(video.Medias) > 0 && len(video.Medias[0].Parts) > 0 {
-			partKey = video.Medias[0].Parts[0].Key
-			fileContainer = video.Medias[0].Container
-			partSize, _ = strconv.ParseInt(video.Medias[0].Parts[0].Size, 10, 64)
+		for _, media := range video.Medias {
+			if len(media.Parts) == 0 {
+				continue
+			}
+			sz, _ := strconv.ParseInt(media.Parts[0].Size, 10, 64)
+			if sz > partSize {
+				partSize = sz
+				partKey = media.Parts[0].Key
+				fileContainer = media.Container
+			}
 		}
 
 		movies = append(movies, Movie{
