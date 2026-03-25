@@ -15,6 +15,7 @@ declare -A DELAYS=(
   ["search-sneak"]=80
   ["search-sneakers"]=150
   ["search-sneakers-hover"]=250
+  ["sneakers-lightbox"]=350
   ["search-cleared"]=150
   ["movies-selected"]=200
   ["snapshots-tab"]=100
