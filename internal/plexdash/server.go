@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math/rand"
 	"net/http"
 	"path/filepath"
@@ -245,35 +244,28 @@ func (s *Server) handleMovies(w http.ResponseWriter, r *http.Request) {
 }
 
 // handlePlexThumb proxies a Plex poster thumbnail by ratingKey, keeping the
-// Plex token server-side. Responses are cached by the browser for one week.
+// Plex token server-side. Images are cached permanently on disk so Plex is
+// only hit once per movie poster; the browser also caches for 1 year.
 func (s *Server) handlePlexThumb(w http.ResponseWriter, r *http.Request) {
 	ratingKey := r.URL.Query().Get("ratingKey")
 	if ratingKey == "" {
 		http.NotFound(w, r)
 		return
 	}
+	// Sanitise ratingKey — must be numeric-ish to form a safe filename.
+	for _, c := range ratingKey {
+		if (c < '0' || c > '9') && c != '-' {
+			http.Error(w, "invalid ratingKey", http.StatusBadRequest)
+			return
+		}
+	}
 	cfg := s.snapshot()
 	thumbURL := cfg.PlexBaseURL + "/library/metadata/" + ratingKey + "/thumb?X-Plex-Token=" + cfg.PlexToken
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, thumbURL, nil)
-	if err != nil {
+	cachePath := plexThumbCacheDir + "/" + ratingKey + ".jpg"
+
+	if !serveOrCachePoster(w, thumbURL, cachePath, "image/jpeg") {
 		http.NotFound(w, r)
-		return
 	}
-	hc := &http.Client{Timeout: 10 * time.Second}
-	resp, err := hc.Do(req)
-	if err != nil || resp.StatusCode != http.StatusOK {
-		if resp != nil {
-			resp.Body.Close()
-		}
-		http.NotFound(w, r)
-		return
-	}
-	defer resp.Body.Close()
-	if ct := resp.Header.Get("Content-Type"); ct != "" {
-		w.Header().Set("Content-Type", ct)
-	}
-	w.Header().Set("Cache-Control", "public, max-age=604800")
-	io.Copy(w, resp.Body) //nolint:errcheck
 }
 
 // handleMoviesPlay streams a caller-supplied list of Plex movies to the TV via
