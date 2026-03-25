@@ -24,13 +24,13 @@ It turned into something a bit bigger than that.
 - A **free [TMDB API account](https://www.themoviedb.org/settings/api)** — used for discovery, filmography lookups, and poster art
 - An **LG Smart TV** on the same local network (for direct playback; everything else works without it)
 - [Radarr](https://radarr.video) (optional, for one-click movie adds)
-- Go 1.21+ to build from source, or grab a [pre-built binary](https://github.com/niski84/plex-dashboard/releases)
+- Go 1.21+ to build from source, or grab a [pre-built binary](https://github.com/niski84/plex-smash-deck/releases)
 
 ## Quick start
 
 ```bash
-git clone https://github.com/niski84/plex-dashboard
-cd plex-dashboard
+git clone https://github.com/niski84/plex-smash-deck
+cd plex-smash-deck
 cp .env.example .env   # fill in your values
 go run ./cmd/plex-dashboard
 # Open http://localhost:8081
@@ -59,7 +59,7 @@ All settings can also be saved through the Settings tab in the UI — no restart
 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o plex-dashboard ./cmd/plex-dashboard
 ```
 
-Pre-built binaries for Linux, macOS, and Windows are attached to every [GitHub Release](https://github.com/niski84/plex-dashboard/releases) via CI.
+Pre-built binaries for Linux, macOS, and Windows are attached to every [GitHub Release](https://github.com/niski84/plex-smash-deck/releases) via CI.
 
 ## How it's built
 
