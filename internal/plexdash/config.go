@@ -26,6 +26,12 @@ type Config struct {
 	// LGTVClientKey is the key obtained during one-time pairing.
 	LGTVAddr      string
 	LGTVClientKey string
+
+	// Snapshot schedule. SnapshotDisabled=false (zero) means enabled — correct
+	// default without needing special handling. SnapshotHour is 0–23 UTC;
+	// zero value means midnight, which is a valid choice.
+	SnapshotDisabled bool
+	SnapshotHour     int
 }
 
 func LoadConfig() (Config, error) {
@@ -166,4 +172,8 @@ func mergeMissingConfig(dst *Config, src Config) {
 	if dst.LGTVClientKey == "" {
 		dst.LGTVClientKey = src.LGTVClientKey
 	}
+	// Snapshot schedule: stored value always wins since zero-value is a valid
+	// explicit choice (enabled=true via !Disabled=false, hour=0=midnight).
+	dst.SnapshotDisabled = src.SnapshotDisabled
+	dst.SnapshotHour = src.SnapshotHour
 }
