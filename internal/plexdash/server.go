@@ -170,6 +170,9 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		if req.RadarrProfileID <= 0 {
 			req.RadarrProfileID = 1
 		}
+		if req.SnapshotHour < 0 || req.SnapshotHour > 23 {
+			req.SnapshotHour = 2
+		}
 
 		// Persist settings and refresh in-memory configuration.
 		if err := SavePersistedConfig(s.settingsPath, req); err != nil {

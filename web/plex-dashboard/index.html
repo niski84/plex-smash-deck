@@ -820,9 +820,44 @@
 
       <div class="row"><button id="saveSettingsBtn">Save Settings</button><span id="settingsStatus" class="muted">Not saved yet.</span></div>
     </div>
+
+    <div class="card" style="margin-top:1rem;">
+      <h3>Snapshot Schedule</h3>
+      <p class="muted">The server takes one automatic snapshot per day and skips it silently if the movie count hasn't changed since the previous snapshot.</p>
+      <div class="row" style="align-items:flex-start;gap:2rem;">
+        <div>
+          <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;">
+            <input type="checkbox" id="cfgSnapshotEnabled" style="width:16px;height:16px;" />
+            Enable daily auto-snapshot
+          </label>
+          <div class="small" style="margin-top:.25rem;">Uncheck to disable automatic daily snapshots entirely.</div>
+        </div>
+        <div>
+          <label for="cfgSnapshotHour">Time of Day (UTC)</label><br />
+          <select id="cfgSnapshotHour" style="min-width:160px;"></select>
+          <div class="small" style="margin-top:.25rem;">Hour when the snapshot fires each day (server timezone: UTC).</div>
+        </div>
+      </div>
+    </div>
   </section>
 
   <script>
+    // Populate snapshot hour select (0–23 UTC).
+    (function() {
+      const sel = document.getElementById('cfgSnapshotHour');
+      const labels = ['12:00 AM','1:00 AM','2:00 AM','3:00 AM','4:00 AM','5:00 AM',
+                      '6:00 AM','7:00 AM','8:00 AM','9:00 AM','10:00 AM','11:00 AM',
+                      '12:00 PM','1:00 PM','2:00 PM','3:00 PM','4:00 PM','5:00 PM',
+                      '6:00 PM','7:00 PM','8:00 PM','9:00 PM','10:00 PM','11:00 PM'];
+      labels.forEach((lbl, h) => {
+        const opt = document.createElement('option');
+        opt.value = h;
+        opt.textContent = `${lbl} UTC`;
+        sel.appendChild(opt);
+      });
+      sel.value = 2; // default: 2:00 AM
+    })();
+
     let discoveryData = [];
     /** @type {{ key: string, dir: 'asc'|'desc' }} */
     let discoverySort = { key: 'num', dir: 'asc' };
@@ -1988,6 +2023,8 @@
         document.getElementById('cfgRadarrAPIKey').value = cfg.RadarrAPIKey || '';
         document.getElementById('cfgRadarrRoot').value = cfg.RadarrRootFolder || '';
         document.getElementById('cfgRadarrProfile').value = cfg.RadarrProfileID || 1;
+        document.getElementById('cfgSnapshotEnabled').checked = !cfg.SnapshotDisabled;
+        document.getElementById('cfgSnapshotHour').value = cfg.SnapshotHour ?? 2;
       } catch (err) {
         setStatus('settingsStatus', `Failed to load: ${err.message}`, false);
       }
@@ -2102,6 +2139,8 @@
           RadarrAPIKey: document.getElementById('cfgRadarrAPIKey').value.trim(),
           RadarrRootFolder: document.getElementById('cfgRadarrRoot').value.trim(),
           RadarrProfileID: Number(document.getElementById('cfgRadarrProfile').value || '1'),
+          SnapshotDisabled: !document.getElementById('cfgSnapshotEnabled').checked,
+          SnapshotHour: Number(document.getElementById('cfgSnapshotHour').value),
         };
         await apiJson('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         setStatus('settingsStatus', 'Saved settings (persisted).', true);
