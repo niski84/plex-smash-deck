@@ -27,6 +27,8 @@ type Server struct {
 	mlMovies   []Movie
 	mlCachedAt time.Time
 	mlKey      string // library key the cache was built for
+
+	discJobs *discoveryJobStore
 }
 
 const (
@@ -39,6 +41,7 @@ func NewServer(cfg Config, client *PlexClient) *Server {
 	return &Server{
 		cfg:          cfg,
 		settingsPath: defaultSettingsPath(),
+		discJobs:     newDiscoveryJobStore(),
 	}
 }
 
@@ -100,6 +103,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/discovery/collaborators", s.handleDiscoveryCollaborators)
 	mux.HandleFunc("/api/discovery/filmography", s.handleDiscoveryFilmography)
 	mux.HandleFunc("/api/discovery/studio", s.handleDiscoveryStudio)
+	mux.HandleFunc("/api/discovery/start", s.handleDiscoveryStart)
+	mux.HandleFunc("/api/discovery/poll", s.handleDiscoveryPoll)
 	mux.HandleFunc("/api/discovery/poster", s.handleDiscoveryPoster)
 	mux.HandleFunc("/api/discovery/radarr/add", s.handleDiscoveryAddToRadarr)
 	mux.HandleFunc("/api/snapshots/latest-diff", s.handleSnapshotLatestDiff)
@@ -485,6 +490,136 @@ func (s *Server) handleDiscoveryStudio(w http.ResponseWriter, r *http.Request) {
 		Data: map[string]any{
 			"company": resolvedName,
 			"items":   items,
+		},
+	})
+}
+
+// handleDiscoveryStart kicks off a filmography or studio analysis in the
+// background and returns a jobId immediately. The caller polls
+// /api/discovery/poll?jobId=<id> until State == "done" or "error".
+// This avoids holding a long-lived HTTP connection open, which causes browsers
+// to show "this tab is taking too long" dialogs.
+func (s *Server) handleDiscoveryStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+		return
+	}
+
+	var req struct {
+		Mode          string  `json:"mode"`
+		Person        string  `json:"person"`
+		Role          string  `json:"role"`
+		PlaylistTitle string  `json:"playlistTitle"`
+		Director      string  `json:"director"`
+		CoActor       string  `json:"coActor"`
+		Company       string  `json:"company"`
+		MinYear       int     `json:"minYear"`
+		MaxYear       int     `json:"maxYear"`
+		MinRating     float64 `json:"minRating"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "invalid JSON"})
+		return
+	}
+
+	job := s.discJobs.create()
+	cfg := s.snapshot()
+	client := NewPlexClient(cfg)
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+		defer cancel()
+
+		s.discJobs.setRunning(job, "Loading library…")
+		plexMovies, err := s.cachedListMovies(ctx)
+		if err != nil {
+			s.discJobs.setFailed(job, "Plex library unavailable: "+err.Error())
+			return
+		}
+
+		if req.Mode == "studio" {
+			s.discJobs.setRunning(job, "Searching TMDB for "+req.Company+"…")
+			items, resolvedName, err := AnalyzeStudio(ctx, cfg, client, plexMovies, req.Company, req.MinYear, req.MaxYear, req.MinRating)
+			if err != nil {
+				s.discJobs.setFailed(job, err.Error())
+				return
+			}
+			missing := 0
+			for _, it := range items {
+				if !it.InLibrary {
+					missing++
+				}
+			}
+			s.discJobs.setDone(job, map[string]any{
+				"company": resolvedName,
+				"total":   len(items),
+				"missing": missing,
+				"items":   items,
+			})
+		} else {
+			s.discJobs.setRunning(job, "Fetching TMDB filmography for "+req.Person+"…")
+			var cacheStats DiscoveryCacheStats
+			items, err := AnalyzeFilmography(ctx, cfg, client, plexMovies, req.Person, req.Role,
+				req.PlaylistTitle, req.Director, req.CoActor, req.MinYear, req.MaxYear, req.MinRating, &cacheStats)
+			if err != nil {
+				s.discJobs.setFailed(job, err.Error())
+				return
+			}
+			missing := 0
+			for _, it := range items {
+				if !it.InLibrary {
+					missing++
+				}
+			}
+			s.discJobs.setDone(job, map[string]any{
+				"person":        req.Person,
+				"role":          req.Role,
+				"playlistTitle": req.PlaylistTitle,
+				"total":         len(items),
+				"missing":       missing,
+				"items":         items,
+				"cache":         cacheStats,
+			})
+		}
+	}()
+
+	respondJSON(w, http.StatusAccepted, apiResponse{
+		Success: true,
+		Data:    map[string]any{"jobId": job.ID},
+	})
+}
+
+// handleDiscoveryPoll returns the current state of a background discovery job.
+func (s *Server) handleDiscoveryPoll(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+		return
+	}
+	jobID := r.URL.Query().Get("jobId")
+	if jobID == "" {
+		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "jobId required"})
+		return
+	}
+	job, ok := s.discJobs.get(jobID)
+	if !ok {
+		respondJSON(w, http.StatusNotFound, apiResponse{Success: false, Error: "job not found"})
+		return
+	}
+
+	s.discJobs.mu.Lock()
+	state := job.State
+	message := job.Message
+	result := job.Result
+	errMsg := job.ErrMsg
+	s.discJobs.mu.Unlock()
+
+	respondJSON(w, http.StatusOK, apiResponse{
+		Success: true,
+		Data: map[string]any{
+			"state":   state,
+			"message": message,
+			"result":  result,
+			"error":   errMsg,
 		},
 	})
 }
