@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/rand"
 	"net/http"
 	"path/filepath"
@@ -55,6 +56,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/discovery/person-suggest", s.handleDiscoveryPersonSuggest)
 	mux.HandleFunc("/api/discovery/collaborators", s.handleDiscoveryCollaborators)
 	mux.HandleFunc("/api/discovery/filmography", s.handleDiscoveryFilmography)
+	mux.HandleFunc("/api/discovery/studio", s.handleDiscoveryStudio)
 	mux.HandleFunc("/api/discovery/poster", s.handleDiscoveryPoster)
 	mux.HandleFunc("/api/discovery/radarr/add", s.handleDiscoveryAddToRadarr)
 	mux.HandleFunc("/api/snapshots/latest-diff", s.handleSnapshotLatestDiff)
@@ -67,6 +69,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/playlists/preview", s.handlePreviewPlaylist)
 	mux.HandleFunc("/api/playlists", s.handleListPlaylists)
 	mux.HandleFunc("/api/playlists/items", s.handlePlaylistItems)
+	mux.HandleFunc("/api/plex/thumb", s.handlePlexThumb)
+	mux.HandleFunc("/api/movies/play", s.handleMoviesPlay)
 	mux.HandleFunc("/api/playlists/play", s.handlePlayPlaylist)
 	mux.HandleFunc("/api/playlists/random", s.handleCreateRandomPlaylist)
 	mux.HandleFunc("/api/playlists/by-people", s.handleCreatePlaylistByPeople)
@@ -160,7 +164,7 @@ func (s *Server) handleMovies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit := 100
+	limit := len(movies) // default: return all
 	actor := r.URL.Query().Get("actor")
 	director := r.URL.Query().Get("director")
 	genre := r.URL.Query().Get("genre")
@@ -185,6 +189,109 @@ func (s *Server) handleMovies(w http.ResponseWriter, r *http.Request) {
 		Data: map[string]any{
 			"count":  len(movies),
 			"movies": movies[:limit],
+		},
+	})
+}
+
+// handlePlexThumb proxies a Plex poster thumbnail by ratingKey, keeping the
+// Plex token server-side. Responses are cached by the browser for one week.
+func (s *Server) handlePlexThumb(w http.ResponseWriter, r *http.Request) {
+	ratingKey := r.URL.Query().Get("ratingKey")
+	if ratingKey == "" {
+		http.NotFound(w, r)
+		return
+	}
+	cfg := s.snapshot()
+	thumbURL := cfg.PlexBaseURL + "/library/metadata/" + ratingKey + "/thumb?X-Plex-Token=" + cfg.PlexToken
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, thumbURL, nil)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	hc := &http.Client{Timeout: 10 * time.Second}
+	resp, err := hc.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		if resp != nil {
+			resp.Body.Close()
+		}
+		http.NotFound(w, r)
+		return
+	}
+	defer resp.Body.Close()
+	if ct := resp.Header.Get("Content-Type"); ct != "" {
+		w.Header().Set("Content-Type", ct)
+	}
+	w.Header().Set("Cache-Control", "public, max-age=604800")
+	io.Copy(w, resp.Body) //nolint:errcheck
+}
+
+// handleMoviesPlay streams a caller-supplied list of Plex movies to the TV via
+// the webOS native media player. The caller provides ratingKey + partKey so we
+// never need a second round-trip to Plex just to locate the file URL.
+func (s *Server) handleMoviesPlay(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+		return
+	}
+	var req struct {
+		Items []struct {
+			RatingKey string `json:"ratingKey"`
+			PartKey   string `json:"partKey"`
+			Container string `json:"container"`
+			Title     string `json:"title"`
+			PartSize  int64  `json:"partSize"`
+		} `json:"items"`
+		ClientName string `json:"clientName"`
+		Shuffle    bool   `json:"shuffle"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "invalid JSON: " + err.Error()})
+		return
+	}
+	if len(req.Items) == 0 {
+		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "items array is empty"})
+		return
+	}
+
+	cfg := s.snapshot()
+	streamItems := make([]WebOSStreamItem, 0, len(req.Items))
+	for _, item := range req.Items {
+		mimeContainer := item.Container
+		if mimeContainer == "" {
+			mimeContainer = "mp4"
+		}
+		streamItems = append(streamItems, WebOSStreamItem{
+			StreamURL: cfg.PlexBaseURL + item.PartKey + "?X-Plex-Token=" + cfg.PlexToken,
+			Title:     item.Title,
+			Container: mimeContainer,
+			Size:      item.PartSize,
+		})
+	}
+
+	if req.Shuffle {
+		rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+		rng.Shuffle(len(streamItems), func(i, j int) { streamItems[i], streamItems[j] = streamItems[j], streamItems[i] })
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	client := NewPlexClient(cfg)
+	clientName := strings.TrimSpace(req.ClientName)
+	if clientName == "" {
+		clientName = cfg.TargetClientName
+	}
+	targetName, err := client.PlayStreamItemsOnTV(ctx, streamItems, clientName)
+	if err != nil {
+		respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: err.Error()})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, apiResponse{
+		Success: true,
+		Data: map[string]any{
+			"count":  len(streamItems),
+			"target": targetName,
 		},
 	})
 }
@@ -288,6 +395,41 @@ func (s *Server) handleDiscoveryFilmography(w http.ResponseWriter, r *http.Reque
 			"missing":       missing,
 			"items":         items,
 			"cache":         cacheStats,
+		},
+	})
+}
+
+// handleDiscoveryStudio: GET /api/discovery/studio?company=A24&minYear=&maxYear=&minRating=0
+func (s *Server) handleDiscoveryStudio(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+		return
+	}
+	company := strings.TrimSpace(r.URL.Query().Get("company"))
+	if company == "" {
+		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "company query is required"})
+		return
+	}
+	minYear, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("minYear")))
+	maxYear, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("maxYear")))
+	minRating, _ := strconv.ParseFloat(strings.TrimSpace(r.URL.Query().Get("minRating")), 64)
+
+	cfg := s.snapshot()
+	client := NewPlexClient(cfg)
+	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+	defer cancel()
+
+	items, resolvedName, err := AnalyzeStudio(ctx, cfg, client, company, minYear, maxYear, minRating)
+	if err != nil {
+		respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: err.Error()})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, apiResponse{
+		Success: true,
+		Data: map[string]any{
+			"company": resolvedName,
+			"items":   items,
 		},
 	})
 }

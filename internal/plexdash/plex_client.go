@@ -30,9 +30,14 @@ type Movie struct {
 	LastViewedAtEpoch int64
 	ViewCount         int
 	Rating            float64
+	Summary           string
+	Studio            string
 	Actors            []string
 	Directors         []string
 	Genres            []string
+	PartKey           string // e.g. /library/parts/12345/file.mp4
+	FileContainer     string // e.g. mp4, mkv
+	PartSize          int64
 }
 
 type CreatePlaylistResult struct {
@@ -96,6 +101,14 @@ func (p *PlexClient) ListMovies(ctx context.Context, libraryKey string) ([]Movie
 		rating, _ := strconv.ParseFloat(video.Rating, 64)
 		viewCount, _ := strconv.Atoi(video.ViewCount)
 
+		var partKey, fileContainer string
+		var partSize int64
+		if len(video.Medias) > 0 && len(video.Medias[0].Parts) > 0 {
+			partKey = video.Medias[0].Parts[0].Key
+			fileContainer = video.Medias[0].Container
+			partSize, _ = strconv.ParseInt(video.Medias[0].Parts[0].Size, 10, 64)
+		}
+
 		movies = append(movies, Movie{
 			RatingKey:         video.RatingKey,
 			Title:             video.Title,
@@ -104,9 +117,14 @@ func (p *PlexClient) ListMovies(ctx context.Context, libraryKey string) ([]Movie
 			LastViewedAtEpoch: lastViewedAt,
 			ViewCount:         viewCount,
 			Rating:            rating,
+			Summary:           video.Summary,
+			Studio:            video.Studio,
 			Actors:            tagsToStrings(video.Roles),
 			Directors:         tagsToStrings(video.Directors),
 			Genres:            tagsToStrings(video.Genres),
+			PartKey:           partKey,
+			FileContainer:     fileContainer,
+			PartSize:          partSize,
 		})
 	}
 
@@ -549,6 +567,32 @@ func (p *PlexClient) fetchPlaylistStreamItems(ctx context.Context, playlistID st
 	return items, nil
 }
 
+// PlayStreamItemsOnTV routes a pre-built list of WebOSStreamItems to the
+// appropriate player. For the LG TV it uses the webOS native media player;
+// the companion protocol path is not supported for raw stream URLs.
+func (p *PlexClient) PlayStreamItemsOnTV(ctx context.Context, items []WebOSStreamItem, targetClientName string) (string, error) {
+	if len(items) == 0 {
+		return "", fmt.Errorf("no items to play")
+	}
+	players, err := p.ListPlayers(ctx)
+	if err != nil {
+		return "", err
+	}
+	clientName := strings.TrimSpace(targetClientName)
+	if clientName == "" {
+		clientName = "Living Room"
+	}
+	target, err := selectPlayer(players, clientName)
+	if err != nil {
+		return "", err
+	}
+	if strings.EqualFold(target.Product, "Plex for LG") && p.lgtvAddr != "" && p.lgtvClientKey != "" {
+		fmt.Printf("[player] LG TV: streaming %d direct items via webOS native player\n", len(items))
+		return target.Name, PlayPlaylistViaWebOS(ctx, p.lgtvAddr, p.lgtvClientKey, items)
+	}
+	return target.Name, fmt.Errorf("direct stream playback only supported on LG webOS target")
+}
+
 func (p *PlexClient) CreateRandomPlaylistAndPlay(ctx context.Context, libraryKey, playlistTitle string, count int, targetClientName string) (CreateAndPlayResult, error) {
 	created, err := p.CreateRandomPlaylist(ctx, libraryKey, playlistTitle, count)
 	if err != nil {
@@ -947,6 +991,8 @@ type video struct {
 	LastViewedAt string       `xml:"lastViewedAt,attr"`
 	ViewCount    string       `xml:"viewCount,attr"`
 	Rating       string       `xml:"rating,attr"`
+	Summary      string       `xml:"summary,attr"`
+	Studio       string       `xml:"studio,attr"`
 	Roles        []mediaTag   `xml:"Role"`
 	Directors    []mediaTag   `xml:"Director"`
 	Genres       []mediaTag   `xml:"Genre"`
