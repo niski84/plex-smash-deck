@@ -7,27 +7,27 @@ set -euo pipefail
 FRAMES_DIR="docs/demo-frames"
 OUT="docs/demo.gif"
 THUMB_W=1400   # resize width; height scales proportionally
-DEFAULT_DELAY=350  # 3.5 s
+DEFAULT_DELAY=175  # 1.75 s
 
 declare -A DELAYS=(
-  ["dashboard-home"]=300
-  ["dashboard-grid"]=700    # let the viewer take in the full grid
-  ["search-sneak"]=300
-  ["search-sneakers"]=500
-  ["search-sneakers-hover"]=700
-  ["sneakers-lightbox"]=900
-  ["search-cleared"]=500
-  ["movies-selected"]=600
-  ["snapshots-tab"]=400
-  ["snapshots-diff"]=700
-  ["snapshots-patterns"]=700
-  ["discovery-tab"]=400
-  ["discovery-studio-mode"]=400
-  ["discovery-a24-ready"]=500
-  ["discovery-searching"]=350
-  ["discovery-results"]=700
-  ["discovery-results-scrolled"]=700
-  ["discovery-row-hover"]=900
+  ["dashboard-home"]=150
+  ["dashboard-grid"]=350
+  ["search-sneak"]=150
+  ["search-sneakers"]=250
+  ["search-sneakers-hover"]=350
+  ["sneakers-lightbox"]=450
+  ["search-cleared"]=250
+  ["movies-selected"]=300
+  ["snapshots-tab"]=200
+  ["snapshots-diff"]=350
+  ["snapshots-patterns"]=350
+  ["discovery-tab"]=200
+  ["discovery-studio-mode"]=200
+  ["discovery-a24-ready"]=250
+  ["discovery-searching"]=175
+  ["discovery-results"]=350
+  ["discovery-results-scrolled"]=350
+  ["discovery-row-hover"]=450
 )
 
 echo "=== Building $OUT from $FRAMES_DIR ==="
