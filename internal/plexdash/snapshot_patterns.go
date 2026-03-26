@@ -175,12 +175,10 @@ func (s *Server) handleSnapshotPatterns(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	// Fetch live library to backfill actors for older snapshots.
-	cfg := s.snapshot()
-	client := NewPlexClient(cfg)
-	liveMovies, err := client.ListMovies(ctx, cfg.LibraryKey)
+	// Fetch live library (from cache) to backfill studio/actors for older snapshots.
+	liveMovies, err := s.cachedListMovies(ctx)
 	if err != nil {
-		// Non-fatal — patterns will be computed without actor data.
+		// Non-fatal — patterns will be computed without actor/studio data.
 		fmt.Printf("[patterns] could not fetch live library: %v\n", err)
 		liveMovies = nil
 	}

@@ -289,6 +289,14 @@
       font-size: 10px;
       color: #555;
       margin-top: 1px;
+      display: flex;
+      justify-content: space-between;
+      gap: 4px;
+    }
+    .movie-card-size {
+      font-size: 10px;
+      color: #444;
+      flex-shrink: 0;
     }
     /* ── Movie Info Popup ───────────────────────────────── */
     #movieInfoPopup {
@@ -820,7 +828,7 @@
     let discoverySort = { key: 'num', dir: 'asc' };
     const DISCOVERY_CART_KEY = 'plexdash.discovery.cart.v1';
     let suggestTimer = null;
-    const moviesCacheKey = 'plexdash.movies.cache.v3';
+    const moviesCacheKey = 'plexdash.movies.cache.v4';
     let moviesAll = [];
     let allCardData = []; // [{movie, el, searchText}] — built once, filtered in-place
     let searchDebounceTimer = null;
@@ -868,6 +876,12 @@
       const btn = document.getElementById('moviePlaySelectedBtn');
       btn.textContent = `▶ Play Selected (${n})`;
       btn.disabled = n === 0;
+    }
+
+    function formatGB(bytes) {
+      if (!bytes || bytes <= 0) return '';
+      const gb = bytes / (1024 ** 3);
+      return gb >= 10 ? gb.toFixed(1) + ' GB' : gb.toFixed(2) + ' GB';
     }
 
     function movieToStreamItem(movie) {
@@ -945,7 +959,17 @@
       titleEl.textContent = movie.Title;
       const yearEl = document.createElement('div');
       yearEl.className = 'movie-card-year';
-      yearEl.textContent = movie.Year || '';
+      const yearSpan = document.createElement('span');
+      yearSpan.textContent = movie.Year || '';
+      yearEl.appendChild(yearSpan);
+      const sizeStr = formatGB(movie.PartSize);
+      if (sizeStr) {
+        const sizeSpan = document.createElement('span');
+        sizeSpan.className = 'movie-card-size';
+        sizeSpan.textContent = sizeStr;
+        sizeSpan.title = `File size: ${sizeStr}`;
+        yearEl.appendChild(sizeSpan);
+      }
       info.appendChild(titleEl);
       info.appendChild(yearEl);
       card.appendChild(info);
@@ -1024,6 +1048,8 @@
       buildAllCards(movies || []);
     }
 
+    const MOVIES_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
     function hydrateMoviesFromCache() {
       const cached = readMoviesCache();
       if (!cached) {
@@ -1032,7 +1058,15 @@
       }
       renderMovies(cached.movies || []);
       setMoviesButtonLabel(true);
-      setStatus('movieStatus', 'Loaded from cache', true);
+      const ageMs = cached.savedAt ? Date.now() - cached.savedAt : Infinity;
+      const ageMin = Math.round(ageMs / 60000);
+      if (ageMs > MOVIES_CACHE_TTL_MS) {
+        setStatus('movieStatus', `Cache is ${ageMin}m old — refreshing in background…`, true);
+        // Serve stale immediately, repopulate quietly in the background.
+        setTimeout(() => loadMovies(false), 0);
+      } else {
+        setStatus('movieStatus', `Loaded from cache (${ageMin}m ago)`, true);
+      }
     }
 
     function renderPersonSuggestions(names) {
@@ -1134,18 +1168,20 @@
       });
     }
 
-    async function loadMovies() {
+    // forceRefresh=true bypasses the server-side cache (for explicit user action).
+    async function loadMovies(forceRefresh = true) {
       const hasCache = !!readMoviesCache();
-      setStatus('movieStatus', hasCache ? 'Refreshing…' : 'Loading…');
+      if (forceRefresh) setStatus('movieStatus', hasCache ? 'Refreshing…' : 'Loading…');
       try {
-        const data = await apiJson('/api/movies');
+        const url = forceRefresh ? '/api/movies?nocache=1' : '/api/movies';
+        const data = await apiJson(url);
         const movies = data.movies || [];
         renderMovies(movies);
         writeMoviesCache({ count: data.count || movies.length, movies, savedAt: Date.now() });
         setMoviesButtonLabel(true);
-        setStatus('movieStatus', 'Loaded', true);
+        if (forceRefresh) setStatus('movieStatus', 'Loaded', true);
       } catch (err) {
-        setStatus('movieStatus', `Failed: ${err.message}`, false);
+        if (forceRefresh) setStatus('movieStatus', `Failed: ${err.message}`, false);
       }
     }
 

@@ -83,7 +83,10 @@ func excludedFromDiscovery(title, overview string, genres []string) bool {
 	return false
 }
 
-func AnalyzeFilmography(ctx context.Context, cfg Config, plex *PlexClient, personName, role, playlistTitle, directorFilter, coActorFilter string, minYear, maxYear int, minVoteAverage float64, stats *DiscoveryCacheStats) ([]DiscoveryItem, error) {
+// AnalyzeFilmography cross-references TMDB credits for a person against the
+// caller-supplied Plex library slice (plexMovies). The caller is responsible for
+// providing an up-to-date (or cached) snapshot — this function never hits Plex.
+func AnalyzeFilmography(ctx context.Context, cfg Config, plex *PlexClient, plexMovies []Movie, personName, role, playlistTitle, directorFilter, coActorFilter string, minYear, maxYear int, minVoteAverage float64, stats *DiscoveryCacheStats) ([]DiscoveryItem, error) {
 	if strings.TrimSpace(cfg.TMDBAPIKey) == "" {
 		return nil, fmt.Errorf("TMDB API key not configured")
 	}
@@ -98,15 +101,11 @@ func AnalyzeFilmography(ctx context.Context, cfg Config, plex *PlexClient, perso
 		return nil, err
 	}
 
-	movies, err := plex.ListMovies(ctx, cfg.LibraryKey)
-	if err != nil {
-		return nil, err
-	}
 	// plexTitleYears maps normalized title → all years that title exists in Plex.
 	// This lets us do a fuzzy ±2-year match so that slight release-year discrepancies
 	// between TMDB and Plex metadata don't cause a film to appear missing.
-	plexTitleYears := make(map[string][]int, len(movies))
-	for _, movie := range movies {
+	plexTitleYears := make(map[string][]int, len(plexMovies))
+	for _, movie := range plexMovies {
 		key := normalizeTitle(movie.Title)
 		plexTitleYears[key] = append(plexTitleYears[key], movie.Year)
 	}
@@ -937,8 +936,8 @@ func setToSortedSlice(set map[string]struct{}) []string {
 }
 
 // AnalyzeStudio finds TMDB movies from a production company and cross-references
-// them against the Plex library. It mirrors the filtering logic of AnalyzeFilmography.
-func AnalyzeStudio(ctx context.Context, cfg Config, plex *PlexClient, companyName string, minYear, maxYear int, minVoteAverage float64) ([]DiscoveryItem, string, error) {
+// them against the caller-supplied Plex library slice. This function never hits Plex.
+func AnalyzeStudio(ctx context.Context, cfg Config, _ *PlexClient, plexMovies []Movie, companyName string, minYear, maxYear int, minVoteAverage float64) ([]DiscoveryItem, string, error) {
 	if strings.TrimSpace(cfg.TMDBAPIKey) == "" {
 		return nil, "", fmt.Errorf("TMDB API key not configured")
 	}
@@ -959,13 +958,9 @@ func AnalyzeStudio(ctx context.Context, cfg Config, plex *PlexClient, companyNam
 		return nil, resolvedName, err
 	}
 
-	// 3. Build Plex library index.
-	movies, err := plex.ListMovies(ctx, cfg.LibraryKey)
-	if err != nil {
-		return nil, resolvedName, err
-	}
-	plexTitleYears := make(map[string][]int, len(movies))
-	for _, m := range movies {
+	// 3. Build Plex library index from pre-fetched list.
+	plexTitleYears := make(map[string][]int, len(plexMovies))
+	for _, m := range plexMovies {
 		key := normalizeTitle(m.Title)
 		plexTitleYears[key] = append(plexTitleYears[key], m.Year)
 	}
