@@ -2004,53 +2004,92 @@
       return bits.length ? 'Cache: ' + bits.join('; ') : '';
     }
 
+    // Active poll timer so it can be cancelled if the user starts a new search.
+    let _discoveryPollTimer = null;
+
+    function _cancelDiscoveryPoll() {
+      if (_discoveryPollTimer) { clearTimeout(_discoveryPollTimer); _discoveryPollTimer = null; }
+    }
+
     async function runDiscovery() {
-      setStatus('discoveryStatus', 'Analyzing...');
+      _cancelDiscoveryPoll();
+
       const mode = document.getElementById('discoverMode').value;
       const minYear = document.getElementById('discoverMinYear').value.trim();
       const maxYear = document.getElementById('discoverMaxYear').value.trim();
       const minRating = document.getElementById('discoverMinRating').value || '0';
 
-      try {
-        let data;
-        if (mode === 'studio') {
-          const company = document.getElementById('discoverStudio').value.trim();
-          if (!company) { setStatus('discoveryStatus', 'Enter a studio / production company name.', false); return; }
-          const params = new URLSearchParams({ company, minYear, maxYear, minRating });
-          data = await apiJson(`/api/discovery/studio?${params.toString()}`);
-          data.total = (data.items || []).length;
-          data.missing = (data.items || []).filter(i => !i.inLibrary).length;
-        } else {
-          const person = document.getElementById('discoverPerson').value.trim();
-          const role = document.getElementById('discoverRole').value;
-          const director = document.getElementById('discoverDirectorFilter').value.trim();
-          const coActor = document.getElementById('discoverCoActorFilter').value.trim();
-          const playlistTitle = document.getElementById('discoverPlaylistTitle').value.trim();
-          const params = new URLSearchParams({ person, role, playlistTitle, director, coActor, minYear, maxYear, minRating });
-          data = await apiJson(`/api/discovery/filmography?${params.toString()}`);
-        }
-
-        discoveryData = data.items || [];
-        discoverySort = { key: 'num', dir: 'asc' };
-        discoveryData.sort((a, b) => (a.recommendationNo ?? 0) - (b.recommendationNo ?? 0));
-        renderDiscoveryRows(discoveryData);
-        updateDiscoverySortHeaders();
-
-        if (mode === 'studio') {
-          setStatus('discoveryStatus', `${data.company || 'Studio'}: ${data.total} titles, ${data.missing} missing from library`, true);
-        } else {
-          const cacheHint = formatDiscoveryCacheLine(data.cache);
-          setStatus('discoveryStatus', `Found ${data.total} titles, missing ${data.missing}${cacheHint ? '. ' + cacheHint : ''}`, true);
-          setTimeout(() => {
-            const d = reportPosterDiagnostics(discoveryData);
-            const diagLine = `. Posters loaded ${d.loaded}/${d.withMeta} (rows with metadata)`;
-            setStatus('discoveryStatus', `Found ${data.total} titles, missing ${data.missing}${cacheHint ? '. ' + cacheHint : ''}${diagLine}`, true);
-          }, 1200);
-        }
-        console.log('[Plex Dashboard] discovery result', { mode, total: data.total, missing: data.missing });
-      } catch (err) {
-        setStatus('discoveryStatus', `Failed: ${err.message}`, false);
+      let body;
+      if (mode === 'studio') {
+        const company = document.getElementById('discoverStudio').value.trim();
+        if (!company) { setStatus('discoveryStatus', 'Enter a studio / production company name.', false); return; }
+        body = { mode: 'studio', company, minYear: Number(minYear) || 0, maxYear: Number(maxYear) || 0, minRating: Number(minRating) };
+      } else {
+        const person = document.getElementById('discoverPerson').value.trim();
+        const role = document.getElementById('discoverRole').value;
+        const director = document.getElementById('discoverDirectorFilter').value.trim();
+        const coActor = document.getElementById('discoverCoActorFilter').value.trim();
+        const playlistTitle = document.getElementById('discoverPlaylistTitle').value.trim();
+        body = { mode: 'filmography', person, role, playlistTitle, director, coActor,
+                 minYear: Number(minYear) || 0, maxYear: Number(maxYear) || 0, minRating: Number(minRating) };
       }
+
+      let jobId;
+      try {
+        setStatus('discoveryStatus', 'Starting analysis…');
+        const started = await apiJson('/api/discovery/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        jobId = started.jobId;
+      } catch (err) {
+        setStatus('discoveryStatus', `Failed to start: ${err.message}`, false);
+        return;
+      }
+
+      // Poll every 2 s until done or failed.
+      let dots = 0;
+      function poll() {
+        _discoveryPollTimer = setTimeout(async () => {
+          try {
+            const p = await apiJson(`/api/discovery/poll?jobId=${jobId}`);
+            if (p.state === 'done') {
+              _cancelDiscoveryPoll();
+              const data = p.result || {};
+              discoveryData = data.items || [];
+              discoverySort = { key: 'num', dir: 'asc' };
+              discoveryData.sort((a, b) => (a.recommendationNo ?? 0) - (b.recommendationNo ?? 0));
+              renderDiscoveryRows(discoveryData);
+              updateDiscoverySortHeaders();
+              if (mode === 'studio') {
+                setStatus('discoveryStatus', `${data.company || 'Studio'}: ${data.total} titles, ${data.missing} missing from library`, true);
+              } else {
+                const cacheHint = formatDiscoveryCacheLine(data.cache);
+                setStatus('discoveryStatus', `Found ${data.total} titles, missing ${data.missing}${cacheHint ? '. ' + cacheHint : ''}`, true);
+                setTimeout(() => {
+                  const d = reportPosterDiagnostics(discoveryData);
+                  setStatus('discoveryStatus',
+                    `Found ${data.total} titles, missing ${data.missing}${cacheHint ? '. ' + cacheHint : ''}. Posters loaded ${d.loaded}/${d.withMeta}`, true);
+                }, 1200);
+              }
+              console.log('[discovery] done', { mode, total: data.total, missing: data.missing });
+            } else if (p.state === 'error') {
+              _cancelDiscoveryPoll();
+              setStatus('discoveryStatus', `Failed: ${p.error}`, false);
+            } else {
+              // Still running — show live progress message from server.
+              dots = (dots + 1) % 4;
+              const ellipsis = '.'.repeat(dots + 1);
+              setStatus('discoveryStatus', `${p.message || 'Analyzing'}${ellipsis}`);
+              poll();
+            }
+          } catch (err) {
+            setStatus('discoveryStatus', `Poll error: ${err.message}`, false);
+          }
+        }, 2000);
+      }
+      poll();
     }
 
     function selectAllMissing() {
