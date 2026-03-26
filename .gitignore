@@ -18,6 +18,12 @@ data/tmdb-discovery-cache/
 data/plexdash-settings.json
 data/plexdash-discovery.log
 
+# Node / Playwright
+node_modules/
+test-results/
+playwright-report/
+docs/demo-frames/
+
 # Editor / OS
 .vscode/
 .idea/

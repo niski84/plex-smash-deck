@@ -14,10 +14,20 @@ import (
 	"time"
 )
 
+// movieListCacheTTL controls how long the in-memory movie list is reused before
+// the next request triggers a fresh Plex fetch. All handlers (discovery, snapshots,
+// playlist builders, etc.) share this one copy, so Plex is only hit once per window.
+const movieListCacheTTL = 15 * time.Minute
+
 type Server struct {
 	mu           sync.RWMutex
 	cfg          Config
 	settingsPath string
+
+	mlMu       sync.RWMutex
+	mlMovies   []Movie
+	mlCachedAt time.Time
+	mlKey      string // library key the cache was built for
 }
 
 const (
@@ -31,6 +41,40 @@ func NewServer(cfg Config, client *PlexClient) *Server {
 		cfg:          cfg,
 		settingsPath: defaultSettingsPath(),
 	}
+}
+
+// cachedListMovies returns the in-memory movie list if it is still fresh,
+// otherwise fetches from Plex and updates the cache.
+func (s *Server) cachedListMovies(ctx context.Context) ([]Movie, error) {
+	cfg := s.snapshot()
+	s.mlMu.RLock()
+	if s.mlKey == cfg.LibraryKey && len(s.mlMovies) > 0 && time.Since(s.mlCachedAt) < movieListCacheTTL {
+		movies := s.mlMovies
+		s.mlMu.RUnlock()
+		return movies, nil
+	}
+	s.mlMu.RUnlock()
+
+	client := NewPlexClient(cfg)
+	movies, err := client.ListMovies(ctx, cfg.LibraryKey)
+	if err != nil {
+		return nil, err
+	}
+
+	s.mlMu.Lock()
+	s.mlMovies = movies
+	s.mlCachedAt = time.Now()
+	s.mlKey = cfg.LibraryKey
+	s.mlMu.Unlock()
+
+	return movies, nil
+}
+
+// invalidateMovieListCache forces the next cachedListMovies call to fetch fresh data.
+func (s *Server) invalidateMovieListCache() {
+	s.mlMu.Lock()
+	s.mlMovies = nil
+	s.mlMu.Unlock()
 }
 
 func (s *Server) snapshot() Config {
@@ -152,10 +196,14 @@ func (s *Server) handleMovies(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 40*time.Second)
 	defer cancel()
 
+	// ?nocache=1 lets the "Refresh Movies" button bypass and repopulate the cache.
+	if r.URL.Query().Get("nocache") == "1" {
+		s.invalidateMovieListCache()
+	}
+
 	cfg := s.snapshot()
-	client := NewPlexClient(cfg)
-	fmt.Printf("[API] /api/movies libraryKey=%s\n", cfg.LibraryKey)
-	movies, err := client.ListMovies(ctx, cfg.LibraryKey)
+	fmt.Printf("[API] /api/movies libraryKey=%s cached=%v\n", cfg.LibraryKey, r.URL.Query().Get("nocache") != "1")
+	movies, err := s.cachedListMovies(ctx)
 	if err != nil {
 		respondJSON(w, http.StatusBadGateway, apiResponse{
 			Success: false,
@@ -351,8 +399,14 @@ func (s *Server) handleDiscoveryFilmography(w http.ResponseWriter, r *http.Reque
 	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
 	defer cancel()
 
+	plexMovies, err := s.cachedListMovies(ctx)
+	if err != nil {
+		respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: "plex library unavailable: " + err.Error()})
+		return
+	}
+
 	var cacheStats DiscoveryCacheStats
-	items, err := AnalyzeFilmography(ctx, cfg, client, person, role, playlistTitle, director, coActor, minYear, maxYear, minRating, &cacheStats)
+	items, err := AnalyzeFilmography(ctx, cfg, client, plexMovies, person, role, playlistTitle, director, coActor, minYear, maxYear, minRating, &cacheStats)
 	if err != nil {
 		respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: err.Error()})
 		return
@@ -419,7 +473,13 @@ func (s *Server) handleDiscoveryStudio(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
 	defer cancel()
 
-	items, resolvedName, err := AnalyzeStudio(ctx, cfg, client, company, minYear, maxYear, minRating)
+	plexMovies, err := s.cachedListMovies(ctx)
+	if err != nil {
+		respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: "plex library unavailable: " + err.Error()})
+		return
+	}
+
+	items, resolvedName, err := AnalyzeStudio(ctx, cfg, client, plexMovies, company, minYear, maxYear, minRating)
 	if err != nil {
 		respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: err.Error()})
 		return
@@ -441,7 +501,6 @@ func (s *Server) handleDiscoveryPersonSuggest(w http.ResponseWriter, r *http.Req
 	}
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	cfg := s.snapshot()
-	client := NewPlexClient(cfg)
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
 
@@ -450,7 +509,7 @@ func (s *Server) handleDiscoveryPersonSuggest(w http.ResponseWriter, r *http.Req
 		respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: err.Error()})
 		return
 	}
-	movies, _ := client.ListMovies(ctx, cfg.LibraryKey)
+	movies, _ := s.cachedListMovies(ctx)
 	role := DiscoverCollaborators(movies, query).SuggestedRole
 	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"suggestions": suggestions, "suggestedRole": role}})
 }
@@ -465,11 +524,9 @@ func (s *Server) handleDiscoveryCollaborators(w http.ResponseWriter, r *http.Req
 		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "person query is required"})
 		return
 	}
-	cfg := s.snapshot()
-	client := NewPlexClient(cfg)
 	ctx, cancel := context.WithTimeout(r.Context(), 35*time.Second)
 	defer cancel()
-	movies, err := client.ListMovies(ctx, cfg.LibraryKey)
+	movies, err := s.cachedListMovies(ctx)
 	if err != nil {
 		respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: err.Error()})
 		return
@@ -670,12 +727,10 @@ func (s *Server) handlePreviewPlaylist(w http.ResponseWriter, r *http.Request) {
 		req.Limit = 100
 	}
 
-	cfg := s.snapshot()
-	client := NewPlexClient(cfg)
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 
-	movies, err := client.ListMovies(ctx, cfg.LibraryKey)
+	movies, err := s.cachedListMovies(ctx)
 	if err != nil {
 		respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: err.Error()})
 		return
