@@ -32,15 +32,15 @@ declare -A DELAYS=(
 
 echo "=== Building $OUT from $FRAMES_DIR ==="
 
-tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
-
-# Resize each frame and tag with its delay.
-inputs=()
+# Build one convert command with -delay before each PNG.
+# This is the only reliable way to embed per-frame delays in ImageMagick —
+# setting delay on intermediate single-frame GIFs and then re-combining them
+# causes the delays to be overwritten during assembly.
+args=()
+count=0
 for png in "$FRAMES_DIR"/*.png; do
   name=$(basename "$png" .png)
-  # Strip leading frame number (e.g. "001-dashboard-grid" → "dashboard-grid")
-  key="${name#*-}"
+  key="${name#*-}"   # strip leading frame number
 
   delay=${DEFAULT_DELAY}
   for k in "${!DELAYS[@]}"; do
@@ -50,14 +50,17 @@ for png in "$FRAMES_DIR"/*.png; do
     fi
   done
 
-  out_frame="$tmp/${name}.gif"
-  convert "$png" -resize "${THUMB_W}x" -delay "$delay" "$out_frame"
-  inputs+=("$out_frame")
+  args+=(-delay "$delay" -resize "${THUMB_W}x" "$png")
   echo "  frame: $name  delay=${delay}cs"
+  (( count++ )) || true
 done
 
-echo "Assembling ${#inputs[@]} frames..."
-convert -loop 0 "${inputs[@]}" "$OUT"
+echo "Assembling $count frames..."
+convert -loop 0 "${args[@]}" "$OUT"
+
+# Verify delays were actually embedded.
+echo "Embedded delays:"
+identify -verbose "$OUT" 2>/dev/null | grep "Delay:" | head -5
 
 size=$(du -sh "$OUT" | cut -f1)
 echo "✓ $OUT  ($size)"
