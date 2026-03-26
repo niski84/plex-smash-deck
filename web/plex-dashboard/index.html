@@ -177,6 +177,183 @@
       object-fit: contain;
     }
 
+    /* ── Movie Grid (Dashboard Tab) ────────────────────── */
+    .movies-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+    .movies-search {
+      flex: 1;
+      min-width: 160px;
+      padding: 6px 10px;
+      background: #0d0f18;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #eee;
+      font-size: 13px;
+    }
+    .movies-search:focus { outline: none; border-color: #4f7cff; }
+    .movies-count-badge {
+      font-size: 12px;
+      color: #888;
+      white-space: nowrap;
+    }
+    .movies-play-selected-btn { white-space: nowrap; }
+    .movies-play-selected-btn:disabled { opacity: 0.38; cursor: not-allowed; }
+    .movies-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
+      gap: 8px;
+      max-height: calc(100vh - 320px);
+      min-height: 200px;
+      overflow-y: auto;
+      padding: 2px;
+    }
+    .movie-card {
+      position: relative;
+      background: #12151f;
+      border-radius: 6px;
+      overflow: hidden;
+      border: 2px solid transparent;
+      transition: border-color 0.12s, box-shadow 0.12s;
+      cursor: default;
+      content-visibility: auto;
+      contain-intrinsic-size: auto 200px;
+    }
+    .movie-card:hover { border-color: #2d3d6a; }
+    .movie-card.mc-selected {
+      border-color: #4f7cff;
+      box-shadow: 0 0 12px rgba(79,124,255,0.3);
+    }
+    .movie-card-poster {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 2 / 3;
+      background: #0a0c14;
+      overflow: hidden;
+    }
+    .movie-card-poster img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      transition: opacity 0.2s;
+    }
+    .movie-card-poster img.mc-loading { opacity: 0.4; }
+    .movie-card-play-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.52);
+      opacity: 0;
+      transition: opacity 0.14s;
+      border: none;
+      color: #fff;
+      font-size: 22px;
+      cursor: pointer;
+      width: 100%;
+      padding: 0;
+    }
+    .movie-card:hover .movie-card-play-overlay { opacity: 1; }
+    .movie-card-check {
+      position: absolute;
+      top: 4px;
+      left: 4px;
+      z-index: 3;
+      line-height: 1;
+    }
+    .movie-card-check input[type="checkbox"] {
+      width: 15px;
+      height: 15px;
+      cursor: pointer;
+      accent-color: #4f7cff;
+    }
+    .movie-card-info {
+      padding: 5px 5px 4px;
+    }
+    .movie-card-title {
+      font-size: 11px;
+      font-weight: 500;
+      color: #d8dcef;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.3;
+    }
+    .movie-card-year {
+      font-size: 10px;
+      color: #555;
+      margin-top: 1px;
+    }
+    /* ── Movie Info Popup ───────────────────────────────── */
+    #movieInfoPopup {
+      position: fixed;
+      z-index: 9998;
+      pointer-events: none;
+      display: none;
+      background: #0b0e1a;
+      border: 1px solid #2a3660;
+      border-radius: 10px;
+      box-shadow: 0 18px 52px rgba(0,0,0,0.9);
+      padding: 12px;
+      width: 340px;
+      opacity: 0;
+      transition: opacity 0.14s ease;
+    }
+    #movieInfoPopup.mip-visible { opacity: 1; }
+    .mip-layout { display: flex; gap: 11px; align-items: flex-start; }
+    .mip-poster {
+      width: 86px;
+      min-width: 86px;
+      border-radius: 5px;
+      border: 1px solid #1e2840;
+      background: #111;
+    }
+    .mip-body { flex: 1; min-width: 0; }
+    .mip-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #e0e6ff;
+      line-height: 1.3;
+      margin-bottom: 5px;
+    }
+    .mip-attrs {
+      font-size: 11px;
+      color: #6a82c0;
+      margin-bottom: 4px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .mip-attr-pill {
+      background: #141b30;
+      border: 1px solid #202c4e;
+      border-radius: 4px;
+      padding: 1px 6px;
+      white-space: nowrap;
+    }
+    .mip-genres {
+      font-size: 11px;
+      color: #424f72;
+      margin-bottom: 7px;
+    }
+    .mip-plot {
+      font-size: 11.5px;
+      color: #8898cc;
+      line-height: 1.55;
+      display: -webkit-box;
+      -webkit-line-clamp: 5;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      margin-top: 6px;
+      border-top: 1px solid #1a2240;
+      padding-top: 6px;
+    }
     /* ── Snapshots Tab ─────────────────────────────────── */
     #snapshots-history { width: 100%; border-collapse: collapse; margin-top: 12px; }
     #snapshots-history th {
@@ -287,6 +464,17 @@
 </head>
 <body>
   <div id="discPosterPopup"><img src="" alt="Full poster preview" /></div>
+  <div id="movieInfoPopup">
+    <div class="mip-layout">
+      <img class="mip-poster" src="" alt="" />
+      <div class="mip-body">
+        <div class="mip-title"></div>
+        <div class="mip-attrs"></div>
+        <div class="mip-genres"></div>
+      </div>
+    </div>
+    <div class="mip-plot"></div>
+  </div>
   <div class="device-name">Plex Library</div>
   <div class="theme-hero">Smash mode ready: drop your gorilla-bash graphic here for full arcade flavor.</div>
   <div class="tabs">
@@ -297,13 +485,31 @@
   </div>
 
   <section id="tab-dashboard" class="tab-panel active">
+
     <div class="card">
+      <h3>Target Player</h3>
       <div class="row">
-        <button id="loadMoviesBtn" data-testid="load-movies-btn">Load Movies</button>
-        <span id="movieStatus" class="muted" data-testid="movie-status">Idle</span>
+        <label for="clientName">TV / Client</label>
+        <select id="clientName" data-testid="client-name"></select>
+        <button id="refreshPlayersBtn" type="button">Refresh Players</button>
+        <span id="playersStatus" class="muted">Uses discovered Plex players; falls back to configured default.</span>
       </div>
-      <p class="muted">Movies loaded: <span id="movieCount" data-testid="movie-count">0</span></p>
-      <ul id="movieList" data-testid="movie-list"></ul>
+    </div>
+
+    <div class="card">
+      <div class="row" style="align-items:center; margin-bottom:10px;">
+        <h3 style="margin:0; flex:0 0 auto;">Library</h3>
+        <button id="loadMoviesBtn" data-testid="load-movies-btn" style="margin-left:8px;">Load Movies</button>
+        <span id="movieStatus" class="muted" data-testid="movie-status" style="margin-left:8px;">Idle</span>
+      </div>
+      <div class="movies-toolbar">
+        <input type="search" id="movieSearch" class="movies-search" placeholder="Search by title, actor, or director…" data-testid="movie-search" />
+        <span id="movieCount" class="movies-count-badge" data-testid="movie-count">0 movies</span>
+        <button id="movieSelectAllBtn" style="font-size:12px;">Select All</button>
+        <button id="moviePlaySelectedBtn" class="movies-play-selected-btn" disabled data-testid="movie-play-selected">▶ Play Selected (0)</button>
+      </div>
+      <div id="movieGrid" class="movies-grid" data-testid="movie-list"></div>
+      <p id="moviePlayStatus" class="muted" style="margin-top:8px;"></p>
     </div>
 
     <div class="card">
@@ -313,12 +519,6 @@
         <select id="playlistSelect" data-testid="playlist-title"></select>
         <button id="refreshPlaylistsBtn" type="button">Refresh Playlists</button>
         <button id="playSelectedPlaylistBtn" data-testid="create-and-play-btn">Play Selected</button>
-      </div>
-      <div class="row" style="margin-top: 8px;">
-        <label for="clientName">Target Player</label>
-        <select id="clientName" data-testid="client-name"></select>
-        <button id="refreshPlayersBtn" type="button">Refresh Players</button>
-        <span id="playersStatus" class="muted">Uses discovered Plex players; falls back to configured default.</span>
       </div>
       <div class="row" style="margin-top: 8px;">
         <span class="muted">Playlist items preview:</span>
@@ -370,12 +570,21 @@
       <h3>Discovery — filmography gaps</h3>
       <p class="muted">Find TMDB credits missing from your Plex library. Hover a title for plot (from TMDB). Min rating uses TMDB vote average (0–10). <strong>Filtered out:</strong> documentaries (TMDB genre or “documentary” in text), TV movies / news, and typical “making of” / behind-the-scenes extras. <strong>Speed:</strong> TMDB responses are cached on disk under <code>data/tmdb-discovery-cache/</code> — repeat lookups get faster as the cache grows. <strong>Poster/debug:</strong> server appends diagnostics to <code>data/plexdash-discovery.log</code> (poster proxy + filmography poster field counts).</p>
       <div class="row">
-        <input id="discoverPerson" placeholder="Actor or Director name" list="personSuggestions" data-testid="discover-person" />
-        <select id="discoverRole">
-          <option value="">Actor + Director</option>
-          <option value="actor">Actor only</option>
-          <option value="director">Director only</option>
+        <select id="discoverMode" data-testid="discover-mode" style="min-width:170px;">
+          <option value="person">By Actor / Director</option>
+          <option value="studio">By Studio</option>
         </select>
+        <span id="discoverPersonWrap" style="display:contents;">
+          <input id="discoverPerson" placeholder="Actor or Director name" list="personSuggestions" data-testid="discover-person" />
+          <select id="discoverRole">
+            <option value="">Actor + Director</option>
+            <option value="actor">Actor only</option>
+            <option value="director">Director only</option>
+          </select>
+        </span>
+        <span id="discoverStudioWrap" style="display:none;">
+          <input id="discoverStudio" placeholder="Studio / Production Company (e.g. A24, Pixar)" style="min-width:280px;" data-testid="discover-studio" />
+        </span>
         <input id="discoverMinYear" placeholder="Min Year (optional)" style="width: 170px;" />
         <input id="discoverMaxYear" placeholder="Max Year (optional)" style="width: 170px;" />
       </div>
@@ -392,13 +601,15 @@
           <option value="8.0">8.0+</option>
           <option value="8.5">8.5+</option>
         </select>
-        <select id="discoverDirectorFilter">
-          <option value="">Director collaborator (optional)</option>
-        </select>
-        <select id="discoverCoActorFilter">
-          <option value="">Second actor collaborator (optional)</option>
-        </select>
-        <input id="discoverPlaylistTitle" placeholder="Compare against playlist title (optional)" />
+        <span id="discoverPersonFilters" style="display:contents;">
+          <select id="discoverDirectorFilter">
+            <option value="">Director collaborator (optional)</option>
+          </select>
+          <select id="discoverCoActorFilter">
+            <option value="">Second actor collaborator (optional)</option>
+          </select>
+          <input id="discoverPlaylistTitle" placeholder="Compare against playlist title (optional)" />
+        </span>
         <button id="runDiscoveryBtn" type="button" data-testid="run-discovery-btn">Analyze filmography</button>
       </div>
       <div class="row" style="margin-top: 10px;">
@@ -609,7 +820,11 @@
     let discoverySort = { key: 'num', dir: 'asc' };
     const DISCOVERY_CART_KEY = 'plexdash.discovery.cart.v1';
     let suggestTimer = null;
-    const moviesCacheKey = 'plexdash.movies.cache.v1';
+    const moviesCacheKey = 'plexdash.movies.cache.v3';
+    let moviesAll = [];
+    let allCardData = []; // [{movie, el, searchText}] — built once, filtered in-place
+    let searchDebounceTimer = null;
+    const selectedMovieKeys = new Set();
 
     function setStatus(id, message, ok) {
       const el = document.getElementById(id);
@@ -640,24 +855,173 @@
       try {
         localStorage.setItem(moviesCacheKey, JSON.stringify(data));
       } catch (err) {
-        // Ignore cache write issues (quota/private mode).
+        // Ignore quota/private-mode errors.
       }
     }
 
     function setMoviesButtonLabel(hasCache) {
-      const btn = document.getElementById('loadMoviesBtn');
-      btn.textContent = hasCache ? 'Refresh Movies' : 'Load Movies';
+      document.getElementById('loadMoviesBtn').textContent = hasCache ? 'Refresh Movies' : 'Load Movies';
     }
 
-    function renderMovies(movies, totalCount) {
-      const list = document.getElementById('movieList');
-      list.innerHTML = '';
-      for (const movie of movies) {
-        const li = document.createElement('li');
-        li.textContent = `${movie.Title} (${movie.Year || 'n/a'})`;
-        list.appendChild(li);
+    function updatePlaySelectedBtn() {
+      const n = selectedMovieKeys.size;
+      const btn = document.getElementById('moviePlaySelectedBtn');
+      btn.textContent = `▶ Play Selected (${n})`;
+      btn.disabled = n === 0;
+    }
+
+    function movieToStreamItem(movie) {
+      return {
+        ratingKey: movie.RatingKey,
+        partKey:   movie.PartKey   || '',
+        container: movie.FileContainer || 'mp4',
+        title:     movie.Year ? `${movie.Title} (${movie.Year})` : movie.Title,
+        partSize:  movie.PartSize  || 0,
+      };
+    }
+
+    async function playMovieItems(items, shuffle) {
+      const clientName = document.getElementById('clientName').value || '';
+      setStatus('moviePlayStatus', `Sending ${items.length} movie(s) to TV…`);
+      console.log('[Plex Dashboard] playMovieItems', { count: items.length, shuffle, clientName });
+      try {
+        const data = await apiJson('/api/movies/play', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items, clientName, shuffle: !!shuffle }),
+        });
+        setStatus('moviePlayStatus', `Playing ${data.count} movie(s) on ${data.target}`, true);
+      } catch (err) {
+        setStatus('moviePlayStatus', `Failed: ${err.message}`, false);
       }
-      document.getElementById('movieCount').textContent = String(totalCount || movies.length);
+    }
+
+    function buildMovieCard(movie) {
+      const rk = movie.RatingKey;
+      const thumbUrl = `/api/plex/thumb?ratingKey=${encodeURIComponent(rk)}`;
+      const isSelected = selectedMovieKeys.has(rk);
+
+      const card = document.createElement('div');
+      card.className = 'movie-card' + (isSelected ? ' mc-selected' : '');
+      card.dataset.ratingKey = rk;
+
+      const checkLabel = document.createElement('label');
+      checkLabel.className = 'movie-card-check';
+      checkLabel.title = 'Select for playlist';
+      const chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.checked = isSelected;
+      checkLabel.appendChild(chk);
+      card.appendChild(checkLabel);
+
+      const poster = document.createElement('div');
+      poster.className = 'movie-card-poster';
+
+      const img = document.createElement('img');
+      img.loading = 'lazy';
+      img.alt = movie.Title;
+      img.className = 'mc-loading';
+      img.src = thumbUrl;
+      img.onload = () => img.classList.remove('mc-loading');
+      img.onerror = () => { img.style.display = 'none'; };
+      poster.appendChild(img);
+
+      const playBtn = document.createElement('button');
+      playBtn.className = 'movie-card-play-overlay';
+      playBtn.title = 'Play this movie now';
+      playBtn.textContent = '▶';
+      playBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        playMovieItems([movieToStreamItem(movie)], false);
+      });
+      poster.appendChild(playBtn);
+      card.appendChild(poster);
+
+      const info = document.createElement('div');
+      info.className = 'movie-card-info';
+      const titleEl = document.createElement('div');
+      titleEl.className = 'movie-card-title';
+      titleEl.title = movie.Title;
+      titleEl.textContent = movie.Title;
+      const yearEl = document.createElement('div');
+      yearEl.className = 'movie-card-year';
+      yearEl.textContent = movie.Year || '';
+      info.appendChild(titleEl);
+      info.appendChild(yearEl);
+      card.appendChild(info);
+
+      chk.addEventListener('change', () => {
+        if (chk.checked) {
+          selectedMovieKeys.add(rk);
+          card.classList.add('mc-selected');
+        } else {
+          selectedMovieKeys.delete(rk);
+          card.classList.remove('mc-selected');
+        }
+        updatePlaySelectedBtn();
+      });
+
+      // Info popup on card hover (shows plot, rating, runtime, etc.)
+      card.addEventListener('mouseenter', () => window._showMovieInfo(card, movie));
+      card.addEventListener('mouseleave', () => window._hideMovieInfo());
+
+      return card;
+    }
+
+    // Build all cards once using batched DOM insertions, yielding between batches
+    // so the browser stays responsive during the initial render of thousands of movies.
+    async function buildAllCards(movies) {
+      moviesAll = movies;
+      allCardData = [];
+      const grid = document.getElementById('movieGrid');
+      grid.innerHTML = '';
+      const BATCH = 150;
+      for (let i = 0; i < movies.length; i += BATCH) {
+        const frag = document.createDocumentFragment();
+        for (let j = i, end = Math.min(i + BATCH, movies.length); j < end; j++) {
+          const movie = movies[j];
+          const el = buildMovieCard(movie);
+          // Pre-compute lowercase search corpus once per card to avoid per-filter string work
+          const searchText = [
+            movie.Title, String(movie.Year || ''),
+            ...(movie.Actors   || []),
+            ...(movie.Directors || []),
+          ].join(' ').toLowerCase();
+          allCardData.push({ movie, el, searchText });
+          frag.appendChild(el);
+        }
+        grid.appendChild(frag);
+        // Yield to the event loop so the browser can paint between batches
+        await new Promise(r => setTimeout(r, 0));
+      }
+      updateMovieCountDisplay();
+    }
+
+    // Show/hide existing cards rather than rebuilding DOM on every keystroke.
+    // Uses requestAnimationFrame so the browser can paint the current input state
+    // (e.g. the cleared text after clicking X) before the grid reflow begins.
+    function filterMovieCards() {
+      const q = (document.getElementById('movieSearch')?.value || '').trim().toLowerCase();
+      requestAnimationFrame(() => {
+        let shown = 0;
+        for (const entry of allCardData) {
+          const matches = !q || entry.searchText.includes(q);
+          entry.el.hidden = !matches;
+          if (matches) shown++;
+        }
+        updateMovieCountDisplay(q, shown);
+      });
+    }
+
+    function updateMovieCountDisplay(q, shown) {
+      const total = allCardData.length;
+      const s = shown !== undefined ? shown : total;
+      document.getElementById('movieCount').textContent =
+        (q && s < total) ? `${s} of ${total} movies` : `${total} movies`;
+    }
+
+    function renderMovies(movies) {
+      buildAllCards(movies || []);
     }
 
     function hydrateMoviesFromCache() {
@@ -666,7 +1030,7 @@
         setMoviesButtonLabel(false);
         return;
       }
-      renderMovies(cached.movies || [], cached.count || (cached.movies || []).length);
+      renderMovies(cached.movies || []);
       setMoviesButtonLabel(true);
       setStatus('movieStatus', 'Loaded from cache', true);
     }
@@ -772,11 +1136,11 @@
 
     async function loadMovies() {
       const hasCache = !!readMoviesCache();
-      setStatus('movieStatus', hasCache ? 'Refreshing...' : 'Loading...');
+      setStatus('movieStatus', hasCache ? 'Refreshing…' : 'Loading…');
       try {
-        const data = await apiJson('/api/movies?limit=100');
+        const data = await apiJson('/api/movies');
         const movies = data.movies || [];
-        renderMovies(movies, data.count || movies.length);
+        renderMovies(movies);
         writeMoviesCache({ count: data.count || movies.length, movies, savedAt: Date.now() });
         setMoviesButtonLabel(true);
         setStatus('movieStatus', 'Loaded', true);
@@ -1129,12 +1493,14 @@
       return { total, withMeta, loaded, pending, imgCount: imgs.length };
     }
 
-    /** Return the w500 proxy URL for a thumbnail src.
-     *  img.src is always absolute in browsers, so we use the URL API to manipulate it. */
+    /** Return the full-size URL for a poster thumbnail src.
+     *  Handles Plex thumb proxies, TMDB discovery proxies, and direct TMDB URLs. */
     function discPosterBigSrc(src) {
       if (!src) return '';
       try {
         const u = new URL(src);
+        // Plex thumb proxy — already full-size, return as-is
+        if (u.pathname.startsWith('/api/plex/thumb')) return u.toString();
         if (u.pathname.startsWith('/api/discovery/poster')) {
           u.searchParams.set('size', 'w500');
           return u.toString();
@@ -1143,7 +1509,6 @@
         u.pathname = u.pathname.replace(/\/t\/p\/w\d+\//, '/t/p/w500/');
         return u.toString();
       } catch (e) {
-        // Relative URL fallback (shouldn't happen in modern browsers)
         if (src.includes('/api/discovery/poster')) {
           const noSize = src.replace(/[?&]size=[^&]*/g, '');
           return noSize + (noSize.includes('?') ? '&' : '?') + 'size=w500';
@@ -1206,6 +1571,98 @@
           popup.style.display = 'none';
           popupImg.src = '';
         }, 150);
+      };
+    }());
+
+    // ── Movie Info Popup ──────────────────────────────────────────────────────
+    (function () {
+      const popup     = document.getElementById('movieInfoPopup');
+      const mipPoster = popup.querySelector('.mip-poster');
+      const mipTitle  = popup.querySelector('.mip-title');
+      const mipAttrs  = popup.querySelector('.mip-attrs');
+      const mipGenres = popup.querySelector('.mip-genres');
+      const mipPlot   = popup.querySelector('.mip-plot');
+      let showTimer = null;
+      let hideTimer = null;
+
+      function fmtRuntime(ms) {
+        if (!ms || ms <= 0) return '';
+        const mins = Math.round(ms / 60000);
+        const h = Math.floor(mins / 60);
+        const m = mins % 60;
+        return h > 0 ? `${h}h ${m}m` : `${m}m`;
+      }
+
+      function pill(text) {
+        const s = document.createElement('span');
+        s.className = 'mip-attr-pill';
+        s.textContent = text;
+        return s;
+      }
+
+      function positionPopup(cardRect) {
+        const margin = 12;
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        popup.style.display = 'block';
+        popup.style.visibility = 'hidden';
+        const pw = popup.offsetWidth;
+        const ph = popup.offsetHeight;
+        popup.style.visibility = '';
+        let left;
+        if (cardRect.right + margin + pw <= vw) {
+          left = cardRect.right + margin;
+        } else if (cardRect.left - margin - pw >= 0) {
+          left = cardRect.left - margin - pw;
+        } else {
+          left = Math.max(margin, Math.round((vw - pw) / 2));
+        }
+        let top = Math.round(cardRect.top + (cardRect.height - ph) / 2);
+        top = Math.max(margin, Math.min(top, vh - ph - margin));
+        popup.style.left = left + 'px';
+        popup.style.top  = top + 'px';
+      }
+
+      window._showMovieInfo = function (cardEl, movie) {
+        if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+        if (showTimer) { clearTimeout(showTimer); showTimer = null; }
+        showTimer = setTimeout(() => {
+          const rk = movie.RatingKey;
+          mipPoster.src = `/api/plex/thumb?ratingKey=${encodeURIComponent(rk)}`;
+          mipPoster.alt = movie.Title;
+
+          mipTitle.textContent = movie.Year
+            ? `${movie.Title} (${movie.Year})`
+            : movie.Title;
+
+          mipAttrs.innerHTML = '';
+          if (movie.Rating && movie.Rating > 0) {
+            mipAttrs.appendChild(pill(`★ ${Number(movie.Rating).toFixed(1)}`));
+          }
+          const rt = fmtRuntime(movie.DurationMillis);
+          if (rt) mipAttrs.appendChild(pill(rt));
+          if (movie.ViewCount > 0) {
+            mipAttrs.appendChild(pill(`${movie.ViewCount} play${movie.ViewCount !== 1 ? 's' : ''}`));
+          }
+          const dirs = (movie.Directors || []).slice(0, 2);
+          if (dirs.length) mipAttrs.appendChild(pill('Dir: ' + dirs.join(', ')));
+
+          mipGenres.textContent = (movie.Genres || []).slice(0, 4).join(' · ');
+          mipPlot.textContent   = movie.Summary || '';
+          mipPlot.style.display = movie.Summary ? '' : 'none';
+
+          const rect = cardEl.getBoundingClientRect();
+          positionPopup(rect);
+          popup.classList.add('mip-visible');
+        }, 280);
+      };
+
+      window._hideMovieInfo = function () {
+        if (showTimer) { clearTimeout(showTimer); showTimer = null; }
+        popup.classList.remove('mip-visible');
+        hideTimer = setTimeout(() => {
+          popup.style.display = 'none';
+        }, 140);
       };
     }());
 
@@ -1408,35 +1865,48 @@
 
     async function runDiscovery() {
       setStatus('discoveryStatus', 'Analyzing...');
+      const mode = document.getElementById('discoverMode').value;
+      const minYear = document.getElementById('discoverMinYear').value.trim();
+      const maxYear = document.getElementById('discoverMaxYear').value.trim();
+      const minRating = document.getElementById('discoverMinRating').value || '0';
+
       try {
-        const person = document.getElementById('discoverPerson').value.trim();
-        const role = document.getElementById('discoverRole').value;
-        const minYear = document.getElementById('discoverMinYear').value.trim();
-        const maxYear = document.getElementById('discoverMaxYear').value.trim();
-        const director = document.getElementById('discoverDirectorFilter').value.trim();
-        const coActor = document.getElementById('discoverCoActorFilter').value.trim();
-        const playlistTitle = document.getElementById('discoverPlaylistTitle').value.trim();
-        const minRating = document.getElementById('discoverMinRating').value || '0';
-        const params = new URLSearchParams({ person, role, playlistTitle, director, coActor, minYear, maxYear, minRating });
-        const data = await apiJson(`/api/discovery/filmography?${params.toString()}`);
+        let data;
+        if (mode === 'studio') {
+          const company = document.getElementById('discoverStudio').value.trim();
+          if (!company) { setStatus('discoveryStatus', 'Enter a studio / production company name.', false); return; }
+          const params = new URLSearchParams({ company, minYear, maxYear, minRating });
+          data = await apiJson(`/api/discovery/studio?${params.toString()}`);
+          data.total = (data.items || []).length;
+          data.missing = (data.items || []).filter(i => !i.inLibrary).length;
+        } else {
+          const person = document.getElementById('discoverPerson').value.trim();
+          const role = document.getElementById('discoverRole').value;
+          const director = document.getElementById('discoverDirectorFilter').value.trim();
+          const coActor = document.getElementById('discoverCoActorFilter').value.trim();
+          const playlistTitle = document.getElementById('discoverPlaylistTitle').value.trim();
+          const params = new URLSearchParams({ person, role, playlistTitle, director, coActor, minYear, maxYear, minRating });
+          data = await apiJson(`/api/discovery/filmography?${params.toString()}`);
+        }
+
         discoveryData = data.items || [];
         discoverySort = { key: 'num', dir: 'asc' };
         discoveryData.sort((a, b) => (a.recommendationNo ?? 0) - (b.recommendationNo ?? 0));
         renderDiscoveryRows(discoveryData);
         updateDiscoverySortHeaders();
-        const cacheHint = formatDiscoveryCacheLine(data.cache);
-        setStatus('discoveryStatus', `Found ${data.total} titles, missing ${data.missing}${cacheHint ? '. ' + cacheHint : ''}`, true);
-        setTimeout(() => {
-          const d = reportPosterDiagnostics(discoveryData);
-          const diagLine = `. Posters loaded ${d.loaded}/${d.withMeta} (rows with metadata)`;
-          setStatus('discoveryStatus', `Found ${data.total} titles, missing ${data.missing}${cacheHint ? '. ' + cacheHint : ''}${diagLine}`, true);
-        }, 1200);
-        console.log('[Plex Dashboard] discovery filmography result', {
-          total: data.total,
-          missing: data.missing,
-          filter: 'feature_films_excludes_docs_tv_making_of',
-          cache: data.cache || null
-        });
+
+        if (mode === 'studio') {
+          setStatus('discoveryStatus', `${data.company || 'Studio'}: ${data.total} titles, ${data.missing} missing from library`, true);
+        } else {
+          const cacheHint = formatDiscoveryCacheLine(data.cache);
+          setStatus('discoveryStatus', `Found ${data.total} titles, missing ${data.missing}${cacheHint ? '. ' + cacheHint : ''}`, true);
+          setTimeout(() => {
+            const d = reportPosterDiagnostics(discoveryData);
+            const diagLine = `. Posters loaded ${d.loaded}/${d.withMeta} (rows with metadata)`;
+            setStatus('discoveryStatus', `Found ${data.total} titles, missing ${data.missing}${cacheHint ? '. ' + cacheHint : ''}${diagLine}`, true);
+          }, 1200);
+        }
+        console.log('[Plex Dashboard] discovery result', { mode, total: data.total, missing: data.missing });
       } catch (err) {
         setStatus('discoveryStatus', `Failed: ${err.message}`, false);
       }
@@ -1616,6 +2086,46 @@
     refreshDiscoveryCartCount();
 
     document.getElementById('loadMoviesBtn').addEventListener('click', loadMovies);
+
+    document.getElementById('movieSearch').addEventListener('input', () => {
+      clearTimeout(searchDebounceTimer);
+      // Debounce for mid-word typing; RAF inside filterMovieCards handles paint ordering.
+      searchDebounceTimer = setTimeout(filterMovieCards, 160);
+    });
+    // The native "search" event fires when the user clicks the X clear button.
+    // Cancel any pending debounce and filter immediately (RAF inside still yields one frame).
+    document.getElementById('movieSearch').addEventListener('search', () => {
+      clearTimeout(searchDebounceTimer);
+      filterMovieCards();
+    });
+
+    document.getElementById('movieSelectAllBtn').addEventListener('click', () => {
+      // Only operates on currently-visible cards so it respects the active search filter.
+      const visible = allCardData.filter(e => !e.el.hidden);
+      const allSelected = visible.every(e => selectedMovieKeys.has(e.movie.RatingKey));
+      visible.forEach(({ movie, el }) => {
+        const rk = movie.RatingKey;
+        if (allSelected) {
+          selectedMovieKeys.delete(rk);
+          el.classList.remove('mc-selected');
+        } else {
+          selectedMovieKeys.add(rk);
+          el.classList.add('mc-selected');
+        }
+        const chk = el.querySelector('input[type="checkbox"]');
+        if (chk) chk.checked = !allSelected;
+      });
+      updatePlaySelectedBtn();
+    });
+
+    document.getElementById('moviePlaySelectedBtn').addEventListener('click', () => {
+      if (selectedMovieKeys.size === 0) return;
+      const items = allCardData
+        .filter(e => selectedMovieKeys.has(e.movie.RatingKey))
+        .map(e => movieToStreamItem(e.movie));
+      playMovieItems(items, true);
+    });
+
     document.getElementById('playSelectedPlaylistBtn').addEventListener('click', playSelectedPlaylist);
     document.getElementById('refreshPlayersBtn').addEventListener('click', loadPlayers);
     document.getElementById('refreshPlaylistsBtn').addEventListener('click', loadPlaylists);
@@ -1624,6 +2134,13 @@
     document.getElementById('createGenrePlaylistBtn').addEventListener('click', createByGenreRating);
     document.getElementById('previewGenrePlaylistBtn').addEventListener('click', previewByGenreRating);
     document.getElementById('runDiscoveryBtn').addEventListener('click', runDiscovery);
+    document.getElementById('discoverMode').addEventListener('change', function () {
+      const isStudio = this.value === 'studio';
+      document.getElementById('discoverPersonWrap').style.display = isStudio ? 'none' : 'contents';
+      document.getElementById('discoverStudioWrap').style.display = isStudio ? 'contents' : 'none';
+      document.getElementById('discoverPersonFilters').style.display = isStudio ? 'none' : 'contents';
+      document.getElementById('runDiscoveryBtn').textContent = isStudio ? 'Browse studio catalog' : 'Analyze filmography';
+    });
     document.getElementById('selectAllDiscoveryBtn').addEventListener('click', selectAllMissing);
     document.getElementById('addSelectedToRadarrBtn').addEventListener('click', addSelectedToRadarr);
     document.getElementById('addSelectedToCartBtn').addEventListener('click', addSelectedToCart);
@@ -1679,9 +2196,9 @@
             return;
           }
 
-          const kindIcon  = { director: '🎬', actor: '🎭', genre: '🎞️', decade: '📅' };
-          const kindColor = { director: '#93c5fd', actor: '#c4b5fd', genre: '#fde68a', decade: '#6ee7b7' };
-          const kindLabel = { director: 'Director', actor: 'Actor', genre: 'Genre', decade: 'Era' };
+          const kindIcon  = { director: '🎬', studio: '🏛️', actor: '🎭', genre: '🎞️', decade: '📅' };
+          const kindColor = { director: '#93c5fd', studio: '#fb923c', actor: '#c4b5fd', genre: '#fde68a', decade: '#6ee7b7' };
+          const kindLabel = { director: 'Director', studio: 'Studio', actor: 'Actor', genre: 'Genre', decade: 'Era' };
 
           const card = document.createElement('div');
           card.className = 'snap-patterns-card';

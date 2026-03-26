@@ -935,3 +935,254 @@ func setToSortedSlice(set map[string]struct{}) []string {
 	}
 	return out
 }
+
+// AnalyzeStudio finds TMDB movies from a production company and cross-references
+// them against the Plex library. It mirrors the filtering logic of AnalyzeFilmography.
+func AnalyzeStudio(ctx context.Context, cfg Config, plex *PlexClient, companyName string, minYear, maxYear int, minVoteAverage float64) ([]DiscoveryItem, string, error) {
+	if strings.TrimSpace(cfg.TMDBAPIKey) == "" {
+		return nil, "", fmt.Errorf("TMDB API key not configured")
+	}
+	companyName = strings.TrimSpace(companyName)
+	if companyName == "" {
+		return nil, "", fmt.Errorf("company name is required")
+	}
+
+	// 1. Resolve company name → TMDB company ID.
+	companyID, resolvedName, err := tmdbFindCompanyID(ctx, cfg.TMDBAPIKey, companyName)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// 2. Fetch movies via /discover/movie?with_companies=ID (sorted by vote_count desc, paginated).
+	credits, err := tmdbDiscoverByCompany(ctx, cfg.TMDBAPIKey, companyID, minYear, maxYear)
+	if err != nil {
+		return nil, resolvedName, err
+	}
+
+	// 3. Build Plex library index.
+	movies, err := plex.ListMovies(ctx, cfg.LibraryKey)
+	if err != nil {
+		return nil, resolvedName, err
+	}
+	plexTitleYears := make(map[string][]int, len(movies))
+	for _, m := range movies {
+		key := normalizeTitle(m.Title)
+		plexTitleYears[key] = append(plexTitleYears[key], m.Year)
+	}
+
+	today := time.Now().Truncate(24 * time.Hour)
+	items := make([]DiscoveryItem, 0, len(credits))
+	recNo := 1
+
+	for _, c := range credits {
+		// Drop future releases.
+		if c.ReleaseDate != "" {
+			if rd, err2 := time.Parse("2006-01-02", c.ReleaseDate); err2 == nil && rd.After(today) {
+				continue
+			}
+		}
+		if minVoteAverage > 0 && c.VoteAverage+1e-9 < minVoteAverage {
+			continue
+		}
+		// Drop short films / featurettes.
+		if c.Runtime > 0 && c.Runtime <= 50 {
+			continue
+		}
+		// English only.
+		if c.OriginalLanguage != "" && c.OriginalLanguage != "en" {
+			continue
+		}
+
+		genres := c.Genres
+		if excludedFromDiscovery(c.Title, c.Overview, genres) {
+			continue
+		}
+
+		posterURL := tmdbPosterURLFromPath(c.PosterPath)
+		hasLibrary := titleYearInLibrary(plexTitleYears, c.Title, c.Year)
+
+		items = append(items, DiscoveryItem{
+			TMDBID:           c.TMDBID,
+			Title:            c.Title,
+			Year:             c.Year,
+			KnownFor:         resolvedName,
+			Overview:         c.Overview,
+			Genres:           genres,
+			VoteAverage:      c.VoteAverage,
+			PosterURL:        posterURL,
+			PosterPath:       c.PosterPath,
+			InLibrary:        hasLibrary,
+			RecommendationNo: recNo,
+		})
+		recNo++
+	}
+
+	return items, resolvedName, nil
+}
+
+// tmdbDiscoverMovie is the raw result from /discover/movie.
+type tmdbDiscoverMovie struct {
+	TMDBID           int      `json:"id"`
+	Title            string   `json:"title"`
+	Year             int      // parsed from release_date
+	ReleaseDate      string   `json:"release_date"`
+	Overview         string   `json:"overview"`
+	VoteAverage      float64  `json:"vote_average"`
+	PosterPath       string   `json:"poster_path"`
+	OriginalLanguage string   `json:"original_language"`
+	Runtime          int      // populated from /movie/{id} details if needed
+	Genres           []string // genre names resolved from genre_ids
+}
+
+// tmdbFindCompanyID searches for a production company by name and returns its TMDB ID and canonical name.
+func tmdbFindCompanyID(ctx context.Context, apiKey, companyName string) (int, string, error) {
+	u := "https://api.themoviedb.org/3/search/company?api_key=" + url.QueryEscape(apiKey) +
+		"&query=" + url.QueryEscape(companyName)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return 0, "", err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, "", err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return 0, "", fmt.Errorf("TMDB company search %d: %s", resp.StatusCode, truncateErrBody(body))
+	}
+	var result struct {
+		Results []struct {
+			ID   int    `json:"id"`
+			Name string `json:"name"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return 0, "", fmt.Errorf("decode company search: %w", err)
+	}
+	if len(result.Results) == 0 {
+		return 0, "", fmt.Errorf("no company found matching %q", companyName)
+	}
+	top := result.Results[0]
+	return top.ID, top.Name, nil
+}
+
+// tmdbGenreMap fetches the TMDB genre id→name map for movies.
+func tmdbGenreMap(ctx context.Context, apiKey string) (map[int]string, error) {
+	u := "https://api.themoviedb.org/3/genre/movie/list?api_key=" + url.QueryEscape(apiKey)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("TMDB genre list %d", resp.StatusCode)
+	}
+	var result struct {
+		Genres []struct {
+			ID   int    `json:"id"`
+			Name string `json:"name"`
+		} `json:"genres"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+	m := make(map[int]string, len(result.Genres))
+	for _, g := range result.Genres {
+		m[g.ID] = g.Name
+	}
+	return m, nil
+}
+
+// tmdbDiscoverByCompany pages through /discover/movie for a given company ID.
+// It fetches up to 10 pages (200 movies) sorted by vote_count descending.
+func tmdbDiscoverByCompany(ctx context.Context, apiKey string, companyID, minYear, maxYear int) ([]tmdbDiscoverMovie, error) {
+	genreMap, err := tmdbGenreMap(ctx, apiKey)
+	if err != nil {
+		// Non-fatal — genres will be empty strings but won't crash.
+		genreMap = map[int]string{}
+	}
+
+	var all []tmdbDiscoverMovie
+	const maxPages = 10
+	type discoverPage struct {
+		Results []struct {
+			ID               int     `json:"id"`
+			Title            string  `json:"title"`
+			ReleaseDate      string  `json:"release_date"`
+			Overview         string  `json:"overview"`
+			VoteAverage      float64 `json:"vote_average"`
+			PosterPath       string  `json:"poster_path"`
+			OriginalLanguage string  `json:"original_language"`
+			GenreIDs         []int   `json:"genre_ids"`
+		} `json:"results"`
+		TotalPages int `json:"total_pages"`
+	}
+
+	for pageNum := 1; pageNum <= maxPages; pageNum++ {
+		u := fmt.Sprintf(
+			"https://api.themoviedb.org/3/discover/movie?api_key=%s&with_companies=%d&sort_by=vote_count.desc&page=%d",
+			url.QueryEscape(apiKey), companyID, pageNum,
+		)
+		if minYear > 0 {
+			u += fmt.Sprintf("&primary_release_date.gte=%d-01-01", minYear)
+		}
+		if maxYear > 0 {
+			u += fmt.Sprintf("&primary_release_date.lte=%d-12-31", maxYear)
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("TMDB discover %d: %s", resp.StatusCode, truncateErrBody(body))
+		}
+
+		var pg discoverPage
+		if err := json.Unmarshal(body, &pg); err != nil {
+			return nil, fmt.Errorf("decode discover page: %w", err)
+		}
+
+		for _, r := range pg.Results {
+			year := 0
+			if len(r.ReleaseDate) >= 4 {
+				year, _ = strconv.Atoi(r.ReleaseDate[:4])
+			}
+			genres := make([]string, 0, len(r.GenreIDs))
+			for _, gid := range r.GenreIDs {
+				if name, ok := genreMap[gid]; ok {
+					genres = append(genres, name)
+				}
+			}
+			all = append(all, tmdbDiscoverMovie{
+				TMDBID:           r.ID,
+				Title:            r.Title,
+				Year:             year,
+				ReleaseDate:      r.ReleaseDate,
+				Overview:         r.Overview,
+				VoteAverage:      r.VoteAverage,
+				PosterPath:       r.PosterPath,
+				OriginalLanguage: r.OriginalLanguage,
+				Genres:           genres,
+			})
+		}
+
+		if pg.TotalPages <= pageNum || len(pg.Results) == 0 {
+			break
+		}
+	}
+
+	return all, nil
+}
