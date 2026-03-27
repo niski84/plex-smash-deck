@@ -946,14 +946,16 @@ func AnalyzeStudio(ctx context.Context, cfg Config, _ *PlexClient, plexMovies []
 		return nil, "", fmt.Errorf("company name is required")
 	}
 
-	// 1. Resolve company name → TMDB company ID.
-	companyID, resolvedName, err := tmdbFindCompanyID(ctx, cfg.TMDBAPIKey, companyName)
+	cache := newDiskDiscoveryCache(defaultDiscoveryCacheDir())
+
+	// 1. Resolve company name → TMDB company ID (disk cache, same idea as person search).
+	companyID, resolvedName, err := resolveCompanyID(ctx, cfg.TMDBAPIKey, companyName, cache)
 	if err != nil {
 		return nil, "", err
 	}
 
-	// 2. Fetch movies via /discover/movie?with_companies=ID (sorted by vote_count desc, paginated).
-	credits, err := tmdbDiscoverByCompany(ctx, cfg.TMDBAPIKey, companyID, minYear, maxYear)
+	// 2. Discover list for company + year range (disk cache; avoids paging TMDB every run).
+	credits, err := loadStudioDiscover(ctx, cfg.TMDBAPIKey, companyID, minYear, maxYear, cache)
 	if err != nil {
 		return nil, resolvedName, err
 	}
@@ -1019,14 +1021,14 @@ func AnalyzeStudio(ctx context.Context, cfg Config, _ *PlexClient, plexMovies []
 type tmdbDiscoverMovie struct {
 	TMDBID           int      `json:"id"`
 	Title            string   `json:"title"`
-	Year             int      // parsed from release_date
+	Year             int      `json:"year"` // parsed from release_date; stored in studio disk cache
 	ReleaseDate      string   `json:"release_date"`
 	Overview         string   `json:"overview"`
 	VoteAverage      float64  `json:"vote_average"`
 	PosterPath       string   `json:"poster_path"`
 	OriginalLanguage string   `json:"original_language"`
-	Runtime          int      // populated from /movie/{id} details if needed
-	Genres           []string // genre names resolved from genre_ids
+	Runtime          int      `json:"runtime,omitempty"`
+	Genres           []string `json:"genres"` // genre names resolved from genre_ids
 }
 
 // tmdbFindCompanyID searches for a production company by name and returns its TMDB ID and canonical name.
@@ -1062,6 +1064,18 @@ func tmdbFindCompanyID(ctx context.Context, apiKey, companyName string) (int, st
 	return top.ID, top.Name, nil
 }
 
+func resolveCompanyID(ctx context.Context, apiKey, companyName string, cache *diskDiscoveryCache) (int, string, error) {
+	if id, name, ok := cache.getCompanyID(companyName); ok {
+		return id, name, nil
+	}
+	id, name, err := tmdbFindCompanyID(ctx, apiKey, companyName)
+	if err != nil {
+		return 0, "", err
+	}
+	cache.putCompanyID(companyName, id, name)
+	return id, name, nil
+}
+
 // tmdbGenreMap fetches the TMDB genre id→name map for movies.
 func tmdbGenreMap(ctx context.Context, apiKey string) (map[int]string, error) {
 	u := "https://api.themoviedb.org/3/genre/movie/list?api_key=" + url.QueryEscape(apiKey)
@@ -1094,12 +1108,38 @@ func tmdbGenreMap(ctx context.Context, apiKey string) (map[int]string, error) {
 	return m, nil
 }
 
-// tmdbDiscoverByCompany pages through /discover/movie for a given company ID.
-// It fetches up to 10 pages (200 movies) sorted by vote_count descending.
-func tmdbDiscoverByCompany(ctx context.Context, apiKey string, companyID, minYear, maxYear int) ([]tmdbDiscoverMovie, error) {
-	genreMap, err := tmdbGenreMap(ctx, apiKey)
+func tmdbGenreMapWithCache(ctx context.Context, apiKey string, cache *diskDiscoveryCache) (map[int]string, error) {
+	if m, ok := cache.getGenreMapMovie(); ok {
+		return m, nil
+	}
+	m, err := tmdbGenreMap(ctx, apiKey)
 	if err != nil {
-		// Non-fatal — genres will be empty strings but won't crash.
+		return nil, err
+	}
+	cache.putGenreMapMovie(m)
+	return m, nil
+}
+
+func loadStudioDiscover(ctx context.Context, apiKey string, companyID, minYear, maxYear int, cache *diskDiscoveryCache) ([]tmdbDiscoverMovie, error) {
+	if credits, ok := cache.getStudioDiscover(companyID, minYear, maxYear); ok {
+		return credits, nil
+	}
+	genreMap, err := tmdbGenreMapWithCache(ctx, apiKey, cache)
+	if err != nil {
+		genreMap = map[int]string{}
+	}
+	credits, err := tmdbDiscoverByCompanyWithGenreMap(ctx, apiKey, companyID, minYear, maxYear, genreMap)
+	if err != nil {
+		return nil, err
+	}
+	cache.putStudioDiscover(companyID, minYear, maxYear, credits)
+	return credits, nil
+}
+
+// tmdbDiscoverByCompanyWithGenreMap pages through /discover/movie for a given company ID.
+// It fetches up to 10 pages (200 movies) sorted by vote_count descending.
+func tmdbDiscoverByCompanyWithGenreMap(ctx context.Context, apiKey string, companyID, minYear, maxYear int, genreMap map[int]string) ([]tmdbDiscoverMovie, error) {
+	if genreMap == nil {
 		genreMap = map[int]string{}
 	}
 

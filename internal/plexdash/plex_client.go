@@ -3,6 +3,7 @@ package plexdash
 import (
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -60,6 +61,21 @@ type Player struct {
 	URI              string
 }
 
+// PlayerDiscoveryDebug explains how the merged player list was built (for UI / troubleshooting).
+type PlayerDiscoveryDebug struct {
+	LGStaticConfigured bool `json:"lgStaticConfigured"`
+
+	CloudResourcesOK  bool   `json:"cloudResourcesOk"`
+	CloudResourcesErr string `json:"cloudResourcesErr,omitempty"`
+	CloudPlayersAdded int    `json:"cloudPlayersAdded"` // devices with Provides=player merged from plex.tv
+
+	SessionDiscoveryOK  bool   `json:"sessionDiscoveryOk"`
+	SessionDiscoveryErr string `json:"sessionDiscoveryErr,omitempty"`
+	ActiveSessionCount  int    `json:"activeSessionCount"` // rows from /status/sessions
+
+	MergedTotal int `json:"mergedTotal"`
+}
+
 type Playlist struct {
 	RatingKey string
 	Title     string
@@ -81,6 +97,48 @@ func (p *PlexClient) IsConfigured() bool {
 	return strings.TrimSpace(p.baseURL) != "" && strings.TrimSpace(p.token) != ""
 }
 
+func movieFromVideo(video video) Movie {
+	year, _ := strconv.Atoi(video.Year)
+	duration, _ := strconv.ParseInt(video.Duration, 10, 64)
+	lastViewedAt, _ := strconv.ParseInt(video.LastViewedAt, 10, 64)
+	rating, _ := strconv.ParseFloat(video.Rating, 64)
+	viewCount, _ := strconv.Atoi(video.ViewCount)
+
+	// Pick the media version with the largest file — Plex can store
+	// multiple quality versions (e.g. 4K + 1080p) under one entry.
+	var partKey, fileContainer string
+	var partSize int64
+	for _, media := range video.Medias {
+		if len(media.Parts) == 0 {
+			continue
+		}
+		sz, _ := strconv.ParseInt(media.Parts[0].Size, 10, 64)
+		if sz > partSize {
+			partSize = sz
+			partKey = media.Parts[0].Key
+			fileContainer = media.Container
+		}
+	}
+
+	return Movie{
+		RatingKey:         video.RatingKey,
+		Title:             video.Title,
+		Year:              year,
+		DurationMillis:    duration,
+		LastViewedAtEpoch: lastViewedAt,
+		ViewCount:         viewCount,
+		Rating:            rating,
+		Summary:           video.Summary,
+		Studio:            video.Studio,
+		Actors:            tagsToStrings(video.Roles),
+		Directors:         tagsToStrings(video.Directors),
+		Genres:            tagsToStrings(video.Genres),
+		PartKey:           partKey,
+		FileContainer:     fileContainer,
+		PartSize:          partSize,
+	}
+}
+
 func (p *PlexClient) ListMovies(ctx context.Context, libraryKey string) ([]Movie, error) {
 	endpoint := fmt.Sprintf("%s/library/sections/%s/all", p.baseURL, libraryKey)
 	body, err := p.get(ctx, endpoint)
@@ -94,53 +152,159 @@ func (p *PlexClient) ListMovies(ctx context.Context, libraryKey string) ([]Movie
 	}
 
 	movies := make([]Movie, 0, len(root.Videos))
-	for _, video := range root.Videos {
-		year, _ := strconv.Atoi(video.Year)
-		duration, _ := strconv.ParseInt(video.Duration, 10, 64)
-		lastViewedAt, _ := strconv.ParseInt(video.LastViewedAt, 10, 64)
-		rating, _ := strconv.ParseFloat(video.Rating, 64)
-		viewCount, _ := strconv.Atoi(video.ViewCount)
-
-		// Pick the media version with the largest file — Plex can store
-		// multiple quality versions (e.g. 4K + 1080p) under one entry.
-		var partKey, fileContainer string
-		var partSize int64
-		for _, media := range video.Medias {
-			if len(media.Parts) == 0 {
-				continue
-			}
-			sz, _ := strconv.ParseInt(media.Parts[0].Size, 10, 64)
-			if sz > partSize {
-				partSize = sz
-				partKey = media.Parts[0].Key
-				fileContainer = media.Container
-			}
-		}
-
-		movies = append(movies, Movie{
-			RatingKey:         video.RatingKey,
-			Title:             video.Title,
-			Year:              year,
-			DurationMillis:    duration,
-			LastViewedAtEpoch: lastViewedAt,
-			ViewCount:         viewCount,
-			Rating:            rating,
-			Summary:           video.Summary,
-			Studio:            video.Studio,
-			Actors:            tagsToStrings(video.Roles),
-			Directors:         tagsToStrings(video.Directors),
-			Genres:            tagsToStrings(video.Genres),
-			PartKey:           partKey,
-			FileContainer:     fileContainer,
-			PartSize:          partSize,
-		})
+	for _, v := range root.Videos {
+		movies = append(movies, movieFromVideo(v))
 	}
 
-	sort.SliceStable(movies, func(i, j int) bool {
-		return strings.ToLower(movies[i].Title) < strings.ToLower(movies[j].Title)
-	})
+	SortMoviesDefaultView(movies)
 
 	return movies, nil
+}
+
+// minHighRatingForDashboardTop is the Plex aggregate rating (0–10) used to pin
+// "highly rated" titles ahead of the rest on the dashboard grid.
+const minHighRatingForDashboardTop = 8.0
+
+// SortMoviesDefaultView orders movies for the main dashboard: rating ≥
+// minHighRatingForDashboardTop first, then newer release years, then higher
+// rating; ties are shuffled so the grid is not strictly alphabetical.
+func SortMoviesDefaultView(movies []Movie) {
+	SortMoviesDefaultViewWithRand(movies, rand.New(rand.NewSource(time.Now().UnixNano())))
+}
+
+// SortMoviesDefaultViewWithRand is the testable variant (fixed seed ⇒ deterministic ties).
+func SortMoviesDefaultViewWithRand(movies []Movie, rng *rand.Rand) {
+	if len(movies) < 2 || rng == nil {
+		return
+	}
+	tie := make([]float64, len(movies))
+	for i := range movies {
+		tie[i] = rng.Float64()
+	}
+	sort.SliceStable(movies, func(i, j int) bool {
+		ai, bi := movies[i], movies[j]
+		hi := dashboardRatingTier(ai)
+		hj := dashboardRatingTier(bi)
+		if hi != hj {
+			return hi < hj
+		}
+		if ai.Year != bi.Year {
+			return ai.Year > bi.Year
+		}
+		if ai.Rating != bi.Rating {
+			return ai.Rating > bi.Rating
+		}
+		return tie[i] < tie[j]
+	})
+}
+
+// dashboardRatingTier returns 0 for “priority” rows (high aggregate rating), 1 otherwise.
+func dashboardRatingTier(m Movie) int {
+	if m.Rating >= minHighRatingForDashboardTop {
+		return 0
+	}
+	return 1
+}
+
+// FetchNewMoviesFromRecentlyAdded walks /library/sections/{key}/recentlyAdded in
+// pages (newest first) and returns Movie rows whose ratingKey is not in existing.
+// Stops once it has collected at least wantNew items, or there are no more pages.
+// This is cheaper than ListMovies when only a few titles were added.
+func (p *PlexClient) FetchNewMoviesFromRecentlyAdded(ctx context.Context, libraryKey string, existing map[string]struct{}, wantNew int) ([]Movie, error) {
+	if wantNew <= 0 {
+		return nil, nil
+	}
+	const pageSize = 200
+	var collected []Movie
+	start := 0
+	for page := 0; page < 50; page++ {
+		endpoint := fmt.Sprintf("%s/library/sections/%s/recentlyAdded?X-Plex-Container-Start=%d&X-Plex-Container-Size=%d", p.baseURL, libraryKey, start, pageSize)
+		body, err := p.get(ctx, endpoint)
+		if err != nil {
+			return collected, err
+		}
+		var root mediaContainer
+		if err := xml.Unmarshal(body, &root); err != nil {
+			return collected, fmt.Errorf("decode recently added: %w", err)
+		}
+		if len(root.Videos) == 0 {
+			break
+		}
+		for _, v := range root.Videos {
+			rk := v.RatingKey
+			if rk == "" {
+				continue
+			}
+			if _, ok := existing[rk]; ok {
+				continue
+			}
+			existing[rk] = struct{}{}
+			collected = append(collected, movieFromVideo(v))
+			if len(collected) >= wantNew {
+				return collected, nil
+			}
+		}
+		if len(root.Videos) < pageSize {
+			break
+		}
+		start += pageSize
+	}
+	return collected, nil
+}
+
+// errPlexTotalSizeMissing is returned when Plex omits totalSize on a paginated
+// /all response (older servers); a full ListMovies is then required for count.
+var errPlexTotalSizeMissing = errors.New("plex MediaContainer missing totalSize on paginated response")
+
+// LibraryMovieTotalCount asks Plex for the movie count in a library section
+// using one paginated request (one Video in the body plus MediaContainer attrs).
+// This avoids downloading the full library metadata.
+func (p *PlexClient) LibraryMovieTotalCount(ctx context.Context, libraryKey string) (int, error) {
+	endpoint := fmt.Sprintf("%s/library/sections/%s/all?X-Plex-Container-Start=0&X-Plex-Container-Size=1", p.baseURL, libraryKey)
+	body, err := p.get(ctx, endpoint)
+	if err != nil {
+		return 0, err
+	}
+	return movieCountFromPlexLibraryAllXML(body)
+}
+
+func movieCountFromPlexLibraryAllXML(body []byte) (int, error) {
+	var mc struct {
+		XMLName   xml.Name `xml:"MediaContainer"`
+		Size      string   `xml:"size,attr"`
+		TotalSize string   `xml:"totalSize,attr"`
+		Videos    []struct {
+			XMLName xml.Name `xml:"Video"`
+		} `xml:"Video"`
+	}
+	if err := xml.Unmarshal(body, &mc); err != nil {
+		return 0, fmt.Errorf("decode media container: %w", err)
+	}
+	if ts := strings.TrimSpace(mc.TotalSize); ts != "" {
+		n, err := strconv.Atoi(ts)
+		if err != nil {
+			return 0, fmt.Errorf("parse totalSize: %w", err)
+		}
+		if n < 0 {
+			return 0, fmt.Errorf("negative totalSize")
+		}
+		return n, nil
+	}
+	if sz := strings.TrimSpace(mc.Size); sz != "" {
+		n, err := strconv.Atoi(sz)
+		if err != nil {
+			return 0, fmt.Errorf("parse size: %w", err)
+		}
+		if n < 0 {
+			return 0, fmt.Errorf("negative size")
+		}
+		// Paginated: size is the page length (often 1), not the library total.
+		if len(mc.Videos) == 1 && n == 1 {
+			return 0, errPlexTotalSizeMissing
+		}
+		return n, nil
+	}
+	return 0, fmt.Errorf("no size attributes in Plex MediaContainer")
 }
 
 func (p *PlexClient) CreateRandomPlaylist(ctx context.Context, libraryKey, title string, count int) (CreatePlaylistResult, error) {
@@ -260,16 +424,24 @@ func (p *PlexClient) ListGenres(ctx context.Context, libraryKey string) ([]strin
 	return genres, nil
 }
 
+// ListPlayersResult is the merged player list plus diagnostics for troubleshooting empty lists.
+type ListPlayersResult struct {
+	Players []Player
+	Debug   PlayerDiscoveryDebug
+}
+
 // ListPlayers finds Plex players in up to three places:
 //  1. Static config — if LGTV_ADDR is set, the LG TV is always present.
 //  2. plex.tv/api/resources — desktop/registered players (direct URI).
 //  3. /status/sessions on the local server — actively-streaming players
 //     that didn't register with plex.tv (LG, Samsung, etc. embedded apps).
-func (p *PlexClient) ListPlayers(ctx context.Context) ([]Player, error) {
+func (p *PlexClient) ListPlayers(ctx context.Context) ListPlayersResult {
+	var dbg PlayerDiscoveryDebug
 	seen := map[string]Player{} // keyed by ClientIdentifier
 
 	// Source 1: static LG TV from config (always available, no session needed).
 	if p.lgtvAddr != "" && p.lgtvClientKey != "" {
+		dbg.LGStaticConfigured = true
 		const lgtvStaticID = "lgtv-ssap-static"
 		seen[lgtvStaticID] = Player{
 			Name:             "LG TV (SSAP)",
@@ -281,10 +453,12 @@ func (p *PlexClient) ListPlayers(ctx context.Context) ([]Player, error) {
 
 	// Source 2: cloud-registered resources.
 	if resources, err := p.listResources(ctx); err == nil {
+		dbg.CloudResourcesOK = true
 		for _, device := range resources.Devices {
 			if !strings.Contains(device.Provides, "player") || len(device.Connections) == 0 {
 				continue
 			}
+			dbg.CloudPlayersAdded++
 			seen[device.ClientIdentifier] = Player{
 				Name:             device.Name,
 				ClientIdentifier: device.ClientIdentifier,
@@ -293,11 +467,14 @@ func (p *PlexClient) ListPlayers(ctx context.Context) ([]Player, error) {
 			}
 		}
 	} else {
+		dbg.CloudResourcesErr = err.Error()
 		fmt.Printf("[players] cloud resources unavailable: %v\n", err)
 	}
 
 	// Source 3: active streaming sessions (enriches with live machine ID).
 	if sessionPlayers, err := p.listSessionPlayers(ctx); err == nil {
+		dbg.SessionDiscoveryOK = true
+		dbg.ActiveSessionCount = len(sessionPlayers)
 		for _, sp := range sessionPlayers {
 			if _, exists := seen[sp.ClientIdentifier]; !exists {
 				seen[sp.ClientIdentifier] = sp
@@ -313,6 +490,7 @@ func (p *PlexClient) ListPlayers(ctx context.Context) ([]Player, error) {
 			}
 		}
 	} else {
+		dbg.SessionDiscoveryErr = err.Error()
 		fmt.Printf("[players] session discovery unavailable: %v\n", err)
 	}
 
@@ -323,7 +501,8 @@ func (p *PlexClient) ListPlayers(ctx context.Context) ([]Player, error) {
 	sort.SliceStable(players, func(i, j int) bool {
 		return strings.ToLower(players[i].Name) < strings.ToLower(players[j].Name)
 	})
-	return players, nil
+	dbg.MergedTotal = len(players)
+	return ListPlayersResult{Players: players, Debug: dbg}
 }
 
 // listSessionPlayers reads /status/sessions on the Plex server and returns a
@@ -489,11 +668,8 @@ func (p *PlexClient) PlayPlaylistOnClient(ctx context.Context, playlistTitle, ta
 		return CreateAndPlayResult{}, fmt.Errorf("playlist %q not found", playlistTitle)
 	}
 
-	players, err := p.ListPlayers(ctx)
-	if err != nil {
-		return CreateAndPlayResult{}, err
-	}
-	target, err := selectPlayer(players, targetClientName)
+	lp := p.ListPlayers(ctx)
+	target, err := selectPlayer(lp.Players, targetClientName)
 	if err != nil {
 		return CreateAndPlayResult{}, err
 	}
@@ -582,15 +758,12 @@ func (p *PlexClient) PlayStreamItemsOnTV(ctx context.Context, items []WebOSStrea
 	if len(items) == 0 {
 		return "", fmt.Errorf("no items to play")
 	}
-	players, err := p.ListPlayers(ctx)
-	if err != nil {
-		return "", err
-	}
+	lp := p.ListPlayers(ctx)
 	clientName := strings.TrimSpace(targetClientName)
 	if clientName == "" {
 		clientName = "Living Room"
 	}
-	target, err := selectPlayer(players, clientName)
+	target, err := selectPlayer(lp.Players, clientName)
 	if err != nil {
 		return "", err
 	}
@@ -607,12 +780,8 @@ func (p *PlexClient) CreateRandomPlaylistAndPlay(ctx context.Context, libraryKey
 		return CreateAndPlayResult{}, err
 	}
 
-	players, err := p.ListPlayers(ctx)
-	if err != nil {
-		return CreateAndPlayResult{}, err
-	}
-
-	target, err := selectPlayer(players, targetClientName)
+	lp := p.ListPlayers(ctx)
+	target, err := selectPlayer(lp.Players, targetClientName)
 	if err != nil {
 		return CreateAndPlayResult{}, err
 	}

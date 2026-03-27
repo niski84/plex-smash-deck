@@ -3,9 +3,11 @@ package plexdash
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -13,10 +15,9 @@ import (
 	"time"
 )
 
-// movieListCacheTTL controls how long the in-memory movie list is reused before
-// the next request triggers a fresh Plex fetch. All handlers (discovery, snapshots,
-// playlist builders, etc.) share this one copy, so Plex is only hit once per window.
-const movieListCacheTTL = 15 * time.Minute
+// The in-memory movie list is reused until explicitly invalidated (?nocache=1 on
+// /api/movies, snapshot flows, etc.). Discovery, the dashboard, and other handlers
+// all share this same slice so Plex is not refetched on a timer.
 
 type Server struct {
 	mu           sync.RWMutex
@@ -45,12 +46,12 @@ func NewServer(cfg Config, client *PlexClient) *Server {
 	}
 }
 
-// cachedListMovies returns the in-memory movie list if it is still fresh,
+// cachedListMovies returns the in-memory movie list when the library key matches,
 // otherwise fetches from Plex and updates the cache.
 func (s *Server) cachedListMovies(ctx context.Context) ([]Movie, error) {
 	cfg := s.snapshot()
 	s.mlMu.RLock()
-	if s.mlKey == cfg.LibraryKey && len(s.mlMovies) > 0 && time.Since(s.mlCachedAt) < movieListCacheTTL {
+	if s.mlKey == cfg.LibraryKey && len(s.mlMovies) > 0 {
 		movies := s.mlMovies
 		s.mlMu.RUnlock()
 		return movies, nil
@@ -79,6 +80,37 @@ func (s *Server) invalidateMovieListCache() {
 	s.mlMu.Unlock()
 }
 
+// WarmLibraryCacheOnStartup loads the Plex movie library into process memory once
+// after the server process starts. Discovery, /api/movies, and other features
+// then see a populated list without requiring a browser "Load Movies". The
+// daily snapshot worker still invalidates and refetches Plex at run time; warmup
+// mainly avoids an empty cache between restarts and the first scheduled job.
+// Runs in a goroutine from main; logs errors and does not exit the process.
+func (s *Server) WarmLibraryCacheOnStartup(ctx context.Context) {
+	cfg := s.snapshot()
+	client := NewPlexClient(cfg)
+	if !client.IsConfigured() {
+		fmt.Println("[warmup] skipped — Plex base URL or token not configured")
+		return
+	}
+	if strings.TrimSpace(cfg.LibraryKey) == "" {
+		fmt.Println("[warmup] skipped — library key empty")
+		return
+	}
+	tctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancel()
+	fmt.Printf("[warmup] loading Plex library section %s into memory...\n", cfg.LibraryKey)
+	_, err := s.cachedListMovies(tctx)
+	if err != nil {
+		fmt.Printf("[warmup] failed — %v\n", err)
+		return
+	}
+	s.mlMu.RLock()
+	n := len(s.mlMovies)
+	s.mlMu.RUnlock()
+	fmt.Printf("[warmup] ready — %d titles in memory (shared with Discovery & snapshots metadata)\n", n)
+}
+
 func (s *Server) snapshot() Config {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -97,6 +129,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/settings", s.handleSettings)
 	mux.HandleFunc("/api/movies", s.handleMovies)
+	mux.HandleFunc("/api/movies/cache-status", s.handleMovieCacheStatus)
+	mux.HandleFunc("/api/movies/sync-recent", s.handleMoviesSyncRecent)
 	mux.HandleFunc("/api/genres", s.handleGenres)
 	mux.HandleFunc("/api/players", s.handlePlayers)
 	mux.HandleFunc("/api/discovery/person-suggest", s.handleDiscoveryPersonSuggest)
@@ -105,6 +139,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/discovery/studio", s.handleDiscoveryStudio)
 	mux.HandleFunc("/api/discovery/start", s.handleDiscoveryStart)
 	mux.HandleFunc("/api/discovery/poll", s.handleDiscoveryPoll)
+	mux.HandleFunc("/api/discovery/cache/invalidate", s.handleDiscoveryCacheInvalidate)
 	mux.HandleFunc("/api/discovery/poster", s.handleDiscoveryPoster)
 	mux.HandleFunc("/api/discovery/radarr/add", s.handleDiscoveryAddToRadarr)
 	mux.HandleFunc("/api/snapshots/latest-diff", s.handleSnapshotLatestDiff)
@@ -170,6 +205,19 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.TargetClientName == "" {
 			req.TargetClientName = "Living Room"
+		}
+		if strings.TrimSpace(req.AppDisplayName) == "" {
+			req.AppDisplayName = "plex-smash-deck"
+		}
+		req.HeroBannerURL = strings.TrimSpace(req.HeroBannerURL)
+		if req.HeroBannerHeight <= 0 {
+			req.HeroBannerHeight = 140
+		}
+		if req.HeroBannerHeight < 80 {
+			req.HeroBannerHeight = 80
+		}
+		if req.HeroBannerHeight > 420 {
+			req.HeroBannerHeight = 420
 		}
 		if req.RadarrProfileID <= 0 {
 			req.RadarrProfileID = 1
@@ -248,9 +296,136 @@ func (s *Server) handleMovies(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handlePlexThumb proxies a Plex poster thumbnail by ratingKey, keeping the
-// Plex token server-side. Images are cached permanently on disk so Plex is
-// only hit once per movie poster; the browser also caches for 1 year.
+// handleMovieCacheStatus returns how old the in-memory movie list is and (when
+// Plex is configured) a lightweight remote title count from Plex for comparison.
+func (s *Server) handleMovieCacheStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	cfg := s.snapshot()
+	client := NewPlexClient(cfg)
+
+	s.mlMu.RLock()
+	cachedCount := len(s.mlMovies)
+	cachedAt := s.mlCachedAt
+	cacheKey := s.mlKey
+	s.mlMu.RUnlock()
+
+	out := map[string]any{
+		"cachedCount":     cachedCount,
+		"libraryKey":      cfg.LibraryKey,
+		"cacheKeyMatches": cacheKey == cfg.LibraryKey,
+	}
+	if cachedCount > 0 && !cachedAt.IsZero() {
+		out["cachedAtISO"] = cachedAt.UTC().Format(time.RFC3339)
+	}
+	if !client.IsConfigured() {
+		out["plexConfigured"] = false
+		respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: out})
+		return
+	}
+	out["plexConfigured"] = true
+	n, err := client.LibraryMovieTotalCount(ctx, cfg.LibraryKey)
+	if err != nil {
+		if errors.Is(err, errPlexTotalSizeMissing) {
+			out["remoteCountErrorCode"] = "totalSizeMissing"
+		} else {
+			out["remoteCountError"] = err.Error()
+		}
+		respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: out})
+		return
+	}
+	out["plexRemoteCount"] = n
+	if cacheKey == cfg.LibraryKey && cachedCount > 0 {
+		out["deltaVsCache"] = n - cachedCount
+	}
+	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: out})
+}
+
+// handleMoviesSyncRecent merges titles from Plex’s recentlyAdded feed into the
+// in-memory list. Cheaper than a full library fetch when only new movies were
+// added. Does not remove titles (use full Refresh for that). Discovery/TMDB
+// disk caches are untouched.
+func (s *Server) handleMoviesSyncRecent(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+	defer cancel()
+	cfg := s.snapshot()
+	client := NewPlexClient(cfg)
+	if !client.IsConfigured() {
+		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "Plex not configured"})
+		return
+	}
+
+	s.mlMu.RLock()
+	base := s.mlMovies
+	cacheKey := s.mlKey
+	s.mlMu.RUnlock()
+
+	if len(base) == 0 || cacheKey != cfg.LibraryKey {
+		respondJSON(w, http.StatusBadRequest, apiResponse{
+			Success: false,
+			Error:   "server has no movie list yet — use Load / Refresh Movies once for a full Plex sync",
+		})
+		return
+	}
+
+	remote, err := client.LibraryMovieTotalCount(ctx, cfg.LibraryKey)
+	if err != nil {
+		respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: err.Error()})
+		return
+	}
+	local := len(base)
+	if remote <= local {
+		respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{
+			"added":           0,
+			"total":           local,
+			"plexRemoteCount": remote,
+			"message":         "No new titles to merge (or Plex count is not higher than this list — use full Refresh if you removed titles).",
+		}})
+		return
+	}
+
+	delta := remote - local
+	existing := make(map[string]struct{}, len(base))
+	for _, m := range base {
+		existing[m.RatingKey] = struct{}{}
+	}
+
+	want := delta + 32
+	newMovies, err := client.FetchNewMoviesFromRecentlyAdded(ctx, cfg.LibraryKey, existing, want)
+	if err != nil {
+		respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: err.Error()})
+		return
+	}
+
+	merged := append(append([]Movie(nil), base...), newMovies...)
+	SortMoviesDefaultView(merged)
+
+	s.mlMu.Lock()
+	s.mlMovies = merged
+	s.mlCachedAt = time.Now()
+	s.mlKey = cfg.LibraryKey
+	s.mlMu.Unlock()
+
+	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{
+		"added":           len(newMovies),
+		"total":           len(merged),
+		"plexRemoteCount": remote,
+		"message":         "merged from Plex recently added",
+	}})
+}
+
+// handlePlexThumb proxies a Plex poster by ratingKey, keeping the Plex token
+// server-side. Hi-res bytes are stored under data/plex-thumb-cache/full/;
+// older flat data/plex-thumb-cache/{ratingKey}.jpg files still serve until
+// replaced. The browser may cache responses for 1 year.
 func (s *Server) handlePlexThumb(w http.ResponseWriter, r *http.Request) {
 	ratingKey := r.URL.Query().Get("ratingKey")
 	if ratingKey == "" {
@@ -265,10 +440,21 @@ func (s *Server) handlePlexThumb(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	cfg := s.snapshot()
-	thumbURL := cfg.PlexBaseURL + "/library/metadata/" + ratingKey + "/thumb?X-Plex-Token=" + cfg.PlexToken
-	cachePath := plexThumbCacheDir + "/" + ratingKey + ".jpg"
+	// Request a large poster from Plex so the disk cache holds the best
+	// resolution Plex will provide (capped by source). Legacy flat cache files
+	// still serve until a hi-res fetch lands under full/.
+	thumbURL := cfg.PlexBaseURL + "/library/metadata/" + ratingKey + "/thumb?X-Plex-Token=" + cfg.PlexToken +
+		"&width=3840&height=5760"
+	fullPath := filepath.Join(plexThumbCacheDir, "full", ratingKey+".jpg")
+	legacyPath := filepath.Join(plexThumbCacheDir, ratingKey+".jpg")
 
-	if !serveOrCachePoster(w, thumbURL, cachePath, "image/jpeg") {
+	if serveCachedPosterFile(w, fullPath, "image/jpeg") {
+		return
+	}
+	if serveCachedPosterFile(w, legacyPath, "image/jpeg") {
+		return
+	}
+	if !serveOrCachePoster(w, thumbURL, fullPath, "image/jpeg") {
 		http.NotFound(w, r)
 	}
 }
@@ -624,6 +810,34 @@ func (s *Server) handleDiscoveryPoll(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleDiscoveryCacheInvalidate removes on-disk TMDB discovery cache files so the
+// next analysis refetches from TMDB. Does not clear the in-memory Plex movie list.
+func (s *Server) handleDiscoveryCacheInvalidate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+		return
+	}
+	dir := defaultDiscoveryCacheDir()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"removed": 0}})
+			return
+		}
+		respondJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: err.Error()})
+		return
+	}
+	removed := 0
+	for _, e := range entries {
+		if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
+			respondJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: err.Error()})
+			return
+		}
+		removed++
+	}
+	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"removed": removed}})
+}
+
 func (s *Server) handleDiscoveryPersonSuggest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
@@ -923,20 +1137,14 @@ func (s *Server) handlePlayers(w http.ResponseWriter, r *http.Request) {
 	cfg := s.snapshot()
 	client := NewPlexClient(cfg)
 	fmt.Printf("[API] /api/players targetClient=%q\n", cfg.TargetClientName)
-	players, err := client.ListPlayers(ctx)
-	if err != nil {
-		respondJSON(w, http.StatusBadGateway, apiResponse{
-			Success: false,
-			Error:   err.Error(),
-		})
-		return
-	}
+	lp := client.ListPlayers(ctx)
 
 	respondJSON(w, http.StatusOK, apiResponse{
 		Success: true,
 		Data: map[string]any{
-			"targetClient": cfg.TargetClientName,
-			"players":      players,
+			"targetClient":  cfg.TargetClientName,
+			"players":       lp.Players,
+			"playersDebug":  lp.Debug,
 		},
 	})
 }

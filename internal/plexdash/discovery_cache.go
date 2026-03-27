@@ -12,12 +12,16 @@ import (
 	"time"
 )
 
-// TTLs: movie metadata changes rarely; filmography should refresh for new roles.
+// TTL fields are stored in JSON for debugging; reads ignore expiry until the user
+// clears the cache (POST /api/discovery/cache/invalidate) or deletes files on disk.
 const (
-	discoveryCacheMovieDetailsTTL = 60 * 24 * time.Hour  // 60 days
-	discoveryCacheMovieCreditsTTL = 60 * 24 * time.Hour
-	discoveryCacheFilmographyTTL  = 7 * 24 * time.Hour // new credits appear over time
-	discoveryCachePersonIDTTL     = 180 * 24 * time.Hour
+	discoveryCacheMovieDetailsTTL   = 60 * 24 * time.Hour
+	discoveryCacheMovieCreditsTTL   = 60 * 24 * time.Hour
+	discoveryCacheFilmographyTTL    = 60 * 24 * time.Hour
+	discoveryCachePersonIDTTL       = 180 * 24 * time.Hour
+	discoveryCacheStudioDiscoverTTL = 60 * 24 * time.Hour
+	discoveryCacheCompanyIDTTL      = 180 * 24 * time.Hour
+	discoveryCacheGenreMapTTL       = 365 * 24 * time.Hour
 )
 
 const discoveryCacheJSONVersion = 4
@@ -79,15 +83,8 @@ type cachedEnvelope struct {
 	TTLSeconds int64    `json:"ttlSeconds"`
 }
 
-func (e cachedEnvelope) expired() bool {
-	if e.CachedAt.IsZero() {
-		return true
-	}
-	ttl := time.Duration(e.TTLSeconds) * time.Second
-	if ttl <= 0 {
-		return true
-	}
-	return time.Since(e.CachedAt) > ttl
+func (cachedEnvelope) expired() bool {
+	return false // kept until POST /api/discovery/cache/invalidate or manual file delete
 }
 
 // --- Person ID (search/person first result) ---
@@ -349,6 +346,170 @@ func (d *diskDiscoveryCache) putMovieDetails(movieID int, det fetchedMovieDetail
 		PosterURL:        det.PosterURL,
 		PosterPath:       det.PosterPath,
 		OriginalLanguage: det.OriginalLanguage,
+	}
+	_ = writeJSONAtomic(path, c)
+}
+
+// --- TMDB movie genre id → name (/genre/movie/list) ---
+
+const genreMapMovieCacheFile = "genre-map-movie.json"
+
+type cachedGenreMapMovie struct {
+	cachedEnvelope
+	Entries []genreMapEntry `json:"entries"`
+}
+
+type genreMapEntry struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+func (d *diskDiscoveryCache) getGenreMapMovie() (map[int]string, bool) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	path := d.abs(genreMapMovieCacheFile)
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false
+	}
+	var c cachedGenreMapMovie
+	if err := json.Unmarshal(b, &c); err != nil || c.Version != discoveryCacheJSONVersion {
+		return nil, false
+	}
+	if c.expired() {
+		return nil, false
+	}
+	m := make(map[int]string, len(c.Entries))
+	for _, e := range c.Entries {
+		m[e.ID] = e.Name
+	}
+	return m, true
+}
+
+func (d *diskDiscoveryCache) putGenreMapMovie(genres map[int]string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_ = d.ensureDir()
+	entries := make([]genreMapEntry, 0, len(genres))
+	for id, name := range genres {
+		entries = append(entries, genreMapEntry{ID: id, Name: name})
+	}
+	for i := 0; i < len(entries)-1; i++ {
+		for j := i + 1; j < len(entries); j++ {
+			if entries[j].ID < entries[i].ID {
+				entries[i], entries[j] = entries[j], entries[i]
+			}
+		}
+	}
+	path := d.abs(genreMapMovieCacheFile)
+	c := cachedGenreMapMovie{
+		cachedEnvelope: cachedEnvelope{
+			Version:    discoveryCacheJSONVersion,
+			CachedAt:   time.Now().UTC(),
+			TTLSeconds: int64(discoveryCacheGenreMapTTL / time.Second),
+		},
+		Entries: entries,
+	}
+	_ = writeJSONAtomic(path, c)
+}
+
+// --- Company name → TMDB company id (search/company) ---
+
+type cachedCompanyID struct {
+	cachedEnvelope
+	CompanyID    int    `json:"companyId"`
+	ResolvedName string `json:"resolvedName"`
+}
+
+func companyNameCacheKey(name string) string {
+	n := strings.ToLower(strings.TrimSpace(name))
+	h := sha256.Sum256([]byte(n))
+	return "company-id-" + hex.EncodeToString(h[:12]) + ".json"
+}
+
+func (d *diskDiscoveryCache) getCompanyID(companyName string) (id int, resolvedName string, ok bool) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	path := d.abs(companyNameCacheKey(companyName))
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return 0, "", false
+	}
+	var c cachedCompanyID
+	if err := json.Unmarshal(b, &c); err != nil || c.Version != discoveryCacheJSONVersion {
+		return 0, "", false
+	}
+	if c.expired() {
+		return 0, "", false
+	}
+	return c.CompanyID, c.ResolvedName, true
+}
+
+func (d *diskDiscoveryCache) putCompanyID(companyName string, companyID int, resolvedName string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_ = d.ensureDir()
+	path := d.abs(companyNameCacheKey(companyName))
+	c := cachedCompanyID{
+		cachedEnvelope: cachedEnvelope{
+			Version:    discoveryCacheJSONVersion,
+			CachedAt:   time.Now().UTC(),
+			TTLSeconds: int64(discoveryCacheCompanyIDTTL / time.Second),
+		},
+		CompanyID:    companyID,
+		ResolvedName: resolvedName,
+	}
+	_ = writeJSONAtomic(path, c)
+}
+
+// --- Studio discover (/discover/movie?with_companies=) ---
+
+type cachedStudioDiscover struct {
+	cachedEnvelope
+	Movies []tmdbDiscoverMovie `json:"movies"`
+}
+
+func studioDiscoverCacheFile(companyID, minYear, maxYear int) string {
+	return fmt.Sprintf("studio-discover-%d-y%d-Y%d.json", companyID, minYear, maxYear)
+}
+
+func (d *diskDiscoveryCache) getStudioDiscover(companyID, minYear, maxYear int) ([]tmdbDiscoverMovie, bool) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	path := d.abs(studioDiscoverCacheFile(companyID, minYear, maxYear))
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false
+	}
+	var c cachedStudioDiscover
+	if err := json.Unmarshal(b, &c); err != nil || c.Version != discoveryCacheJSONVersion {
+		return nil, false
+	}
+	if c.expired() {
+		return nil, false
+	}
+	out := make([]tmdbDiscoverMovie, len(c.Movies))
+	copy(out, c.Movies)
+	return out, true
+}
+
+func (d *diskDiscoveryCache) putStudioDiscover(companyID, minYear, maxYear int, movies []tmdbDiscoverMovie) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_ = d.ensureDir()
+	path := d.abs(studioDiscoverCacheFile(companyID, minYear, maxYear))
+	cp := make([]tmdbDiscoverMovie, len(movies))
+	copy(cp, movies)
+	for i := range cp {
+		cp[i].Genres = append([]string(nil), cp[i].Genres...)
+	}
+	c := cachedStudioDiscover{
+		cachedEnvelope: cachedEnvelope{
+			Version:    discoveryCacheJSONVersion,
+			CachedAt:   time.Now().UTC(),
+			TTLSeconds: int64(discoveryCacheStudioDiscoverTTL / time.Second),
+		},
+		Movies: cp,
 	}
 	_ = writeJSONAtomic(path, c)
 }

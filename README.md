@@ -40,8 +40,18 @@ All settings can also be saved through the Settings tab in the UI — no restart
 
 ## Configuration
 
+The Go app loads **one** `.env` in this order: `PLEX_DASHBOARD_ENV_FILE` (if set and exists), then walking **upward from the process current working directory**, then **`.env` beside the `plex-dashboard` binary**. That fixes “started the binary from `$HOME`” and “deployed binary + `.env` in the same folder.” **Git worktrees** often have **no** `.env` in the worktree and no useful parent on that walk; use a **symlink** `ln -s /path/to/main/.env .env` in the worktree, or set `PLEX_DASHBOARD_ENV_FILE`:
+
+```bash
+export PLEX_DASHBOARD_ENV_FILE=/path/to/your/main/plex-dashboard/.env
+./scripts/reload.sh
+```
+
+`scripts/reload.sh` prefers `$PROJECT_DIR/.env`, then `PLEX_DASHBOARD_ENV_FILE`, then the same upward walk from the project directory.
+
 | Variable | Description |
 |---|---|
+| `PLEX_DASHBOARD_ENV_FILE` | Absolute path to `.env` when it is not beside this checkout |
 | `PLEX_BASE_URL` | e.g. `http://192.168.1.10:32400` |
 | `PLEX_TOKEN` | Your Plex auth token |
 | `PLEX_LIBRARY_KEY` | Section key for your movie library (usually `1`) |
@@ -61,6 +71,18 @@ GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o plex-dashboard ./
 
 Pre-built binaries for Linux, macOS, and Windows are attached to every [GitHub Release](https://github.com/niski84/plex-smash-deck/releases) via CI.
 
+### Windows installer (NSIS)
+
+Tagged releases now also publish a Windows NSIS installer (`*-windows-x64-setup.exe`) that:
+
+- Installs under `%LOCALAPPDATA%\Plex Smash Deck` (no admin required)
+- Adds Start Menu entries:
+  - `Plex Smash Deck (start server)`
+  - `Open UI` (opens `http://127.0.0.1:8081/`)
+  - `Uninstall Plex Smash Deck`
+- Supports an optional **Run at login (background)** shortcut
+- Registers Add/Remove Programs uninstall metadata
+
 ## How it's built
 
 Go standard library backend, vanilla JS frontend, single binary. No web framework, no JavaScript framework, no database. Movie metadata is cached in memory and on disk so Plex takes as few hits as possible.
@@ -68,7 +90,7 @@ Go standard library backend, vanilla JS frontend, single binary. No web framewor
 ```
 cmd/plex-dashboard/     — entry point
 internal/plexdash/
-  server.go             — HTTP routes, shared movie list cache (15-min TTL)
+  server.go             — HTTP routes, shared in-memory movie list (invalidated on refresh / snapshot)
   plex_client.go        — Plex XML API
   discovery.go          — TMDB filmography and studio gap analysis
   lgssap.go             — LG webOS SSAP WebSocket client

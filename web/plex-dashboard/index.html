@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Plex Library Dashboard</title>
+  <title>plex-smash-deck</title>
   <style>
     body {
       font-family: "Trebuchet MS", Arial, sans-serif;
@@ -21,14 +21,19 @@
       font-weight: 700;
       letter-spacing: 0.6px;
     }
-    .theme-hero {
+    .hero-banner {
       margin: 0 0 14px 0;
-      padding: 10px 12px;
-      border-radius: 10px;
-      border: 1px dashed #3b4a78;
-      background: rgba(23, 30, 50, 0.55);
-      color: #c9d2f2;
-      font-size: 13px;
+      border-radius: 12px;
+      border: 1px solid #2d3b64;
+      background: #0e1322;
+      overflow: hidden;
+      display: none;
+    }
+    .hero-banner img {
+      display: block;
+      width: 100%;
+      object-fit: cover;
+      background: #0b0f1b;
     }
     .tabs { display: flex; gap: 10px; margin-bottom: 12px; }
     .tab-btn {
@@ -113,7 +118,12 @@
     th { color: #ccc; }
     .small { font-size: 12px; color: #bbb; }
     .disc-title { cursor: help; border-bottom: 1px dotted rgba(200,200,255,0.35); }
-    #discoveryTableWrap { overflow-x: auto; }
+    #discoveryTableWrap {
+      overflow-x: auto;
+      overflow-y: auto;
+      max-height: calc(100vh - 380px);
+      scroll-behavior: smooth;
+    }
     th.th-sort {
       cursor: pointer;
       user-select: none;
@@ -162,19 +172,41 @@
       border: 2px solid #3b4a78;
       border-radius: 8px;
       box-shadow: 0 12px 40px rgba(0,0,0,0.85);
-      padding: 5px;
+      padding: 8px 10px 10px;
       opacity: 0;
-      transition: opacity 0.12s ease;
+      transition: opacity 0.15s ease;
+      max-width: min(520px, 92vw);
     }
     #discPosterPopup.pp-visible {
       opacity: 1;
+      pointer-events: auto;
     }
-    #discPosterPopup img {
+    #discPosterPopup .disc-popup-img {
       display: block;
       max-width: min(500px, 88vw);
-      max-height: 85vh;
+      max-height: min(360px, 50vh);
       border-radius: 4px;
       object-fit: contain;
+      cursor: zoom-in;
+      background: #080a12;
+    }
+    #discPosterPopup .disc-popup-text {
+      margin-top: 8px;
+      max-height: 38vh;
+      overflow-y: auto;
+      font-size: 12px;
+      line-height: 1.45;
+      color: #b8bdd4;
+    }
+    #discPosterPopup .disc-popup-title {
+      font-weight: 600;
+      font-size: 13px;
+      color: #eceef8;
+      margin-bottom: 6px;
+    }
+    #discPosterPopup .disc-popup-plot {
+      margin: 0;
+      white-space: pre-wrap;
     }
 
     /* ── Movie Grid (Dashboard Tab) ────────────────────── */
@@ -210,7 +242,9 @@
       max-height: calc(100vh - 320px);
       min-height: 200px;
       overflow-y: auto;
+      overflow-x: hidden;
       padding: 2px;
+      scroll-behavior: smooth;
     }
     .movie-card {
       position: relative;
@@ -314,7 +348,10 @@
       opacity: 0;
       transition: opacity 0.14s ease;
     }
-    #movieInfoPopup.mip-visible { opacity: 1; }
+    #movieInfoPopup.mip-visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
     .mip-layout { display: flex; gap: 11px; align-items: flex-start; }
     .mip-poster {
       width: 86px;
@@ -322,6 +359,7 @@
       border-radius: 5px;
       border: 1px solid #1e2840;
       background: #111;
+      cursor: zoom-in;
     }
     .mip-body { flex: 1; min-width: 0; }
     .mip-title {
@@ -349,7 +387,19 @@
     .mip-genres {
       font-size: 11px;
       color: #424f72;
-      margin-bottom: 7px;
+      margin-bottom: 5px;
+    }
+    .mip-actors {
+      font-size: 11px;
+      color: #6a7aac;
+      line-height: 1.45;
+      margin-bottom: 6px;
+    }
+    .mip-actors-label { color: #4d5c8a; margin-right: 4px; }
+    .mip-plot-wrap {
+      margin-top: 6px;
+      border-top: 1px solid #1a2240;
+      padding-top: 6px;
     }
     .mip-plot {
       font-size: 11.5px;
@@ -359,10 +409,25 @@
       -webkit-line-clamp: 5;
       -webkit-box-orient: vertical;
       overflow: hidden;
-      margin-top: 6px;
-      border-top: 1px solid #1a2240;
-      padding-top: 6px;
     }
+    .mip-plot.mip-plot-expanded {
+      display: block;
+      -webkit-line-clamp: unset;
+      overflow: visible;
+    }
+    .mip-plot-more {
+      display: inline-block;
+      margin-top: 5px;
+      padding: 0;
+      border: none;
+      background: none;
+      color: #6b8cff;
+      font-size: 11px;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    .mip-plot-more:hover { color: #9bb4ff; }
+    .mip-plot-more[hidden] { display: none !important; }
     /* ── Snapshots Tab ─────────────────────────────────── */
     #snapshots-history { width: 100%; border-collapse: collapse; margin-top: 12px; }
     #snapshots-history th {
@@ -480,11 +545,30 @@
       align-items: center;
       justify-content: center;
       cursor: zoom-out;
+      overflow: hidden;
     }
     #posterLightbox.lb-open { display: flex; }
+    /* Plex thumb proxy: one image pixel per CSS pixel (scroll if larger than viewport). */
+    #posterLightbox.lb-native.lb-open {
+      overflow: auto;
+      align-items: center;
+      justify-content: center;
+      padding: 36px 20px;
+    }
+    #posterLightbox.lb-native img {
+      max-width: none;
+      max-height: none;
+      width: auto;
+      height: auto;
+      object-fit: unset;
+      image-rendering: auto;
+      box-shadow: 0 8px 48px rgba(0,0,0,0.8);
+      border-radius: 8px;
+      animation: lb-in 0.18s ease;
+    }
     #posterLightbox img {
-      max-width: min(520px, 90vw);
-      max-height: 90vh;
+      max-width: min(1100px, 96vw);
+      max-height: min(96vh, 1600px);
       border-radius: 8px;
       box-shadow: 0 8px 48px rgba(0,0,0,0.8);
       object-fit: contain;
@@ -503,6 +587,36 @@
       border-radius: 4px;
     }
     #posterLightboxClose:hover { color: #fff; background: rgba(255,255,255,0.1); }
+    #posterLightboxActions {
+      position: absolute;
+      top: 18px;
+      right: 72px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      z-index: 2;
+    }
+    #posterLightboxActions button {
+      font-size: 11px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      text-transform: none;
+      letter-spacing: 0.2px;
+    }
+    #posterLightboxHint {
+      position: absolute;
+      left: 18px;
+      bottom: 14px;
+      font-size: 12px;
+      color: rgba(235, 240, 255, 0.76);
+      background: rgba(14, 20, 34, 0.62);
+      border: 1px solid rgba(88, 109, 175, 0.45);
+      border-radius: 8px;
+      padding: 6px 9px;
+      max-width: min(92vw, 520px);
+      line-height: 1.35;
+    }
+    #posterLightboxHint[hidden] { display: none; }
     .movie-card-poster img { cursor: zoom-in; }
     @keyframes lb-in {
       from { opacity: 0; transform: scale(0.92); }
@@ -512,10 +626,18 @@
 </head>
 <body>
 <div id="posterLightbox" role="dialog" aria-modal="true" aria-label="Poster preview">
+  <div id="posterLightboxActions">
+    <button id="posterLightboxDownload" type="button" title="Download this image">Download</button>
+    <button id="posterLightboxCopy" type="button" data-testid="poster-lightbox-copy" title="Copy image to clipboard">Copy</button>
+  </div>
   <button id="posterLightboxClose" aria-label="Close">✕</button>
   <img id="posterLightboxImg" src="" alt="" />
+  <div id="posterLightboxHint">Right-click image for Save image as...</div>
 </div>
-  <div id="discPosterPopup"><img src="" alt="Full poster preview" /></div>
+  <div id="discPosterPopup" aria-live="polite">
+    <img class="disc-popup-img" src="" alt="" />
+    <div class="disc-popup-text"></div>
+  </div>
   <div id="movieInfoPopup">
     <div class="mip-layout">
       <img class="mip-poster" src="" alt="" />
@@ -523,12 +645,18 @@
         <div class="mip-title"></div>
         <div class="mip-attrs"></div>
         <div class="mip-genres"></div>
+        <div class="mip-actors"></div>
       </div>
     </div>
-    <div class="mip-plot"></div>
+    <div class="mip-plot-wrap">
+      <div class="mip-plot"></div>
+      <button type="button" class="mip-plot-more" hidden>Show more</button>
+    </div>
   </div>
-  <div class="device-name">Plex Library</div>
-  <div class="theme-hero">Smash mode ready: drop your gorilla-bash graphic here for full arcade flavor.</div>
+  <div class="device-name" id="appDisplayName">plex-smash-deck</div>
+  <div class="hero-banner" id="heroBanner">
+    <img id="heroBannerImg" alt="Dashboard banner" />
+  </div>
   <div class="tabs">
     <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
     <button class="tab-btn" data-tab="discovery">Discovery</button>
@@ -540,20 +668,24 @@
 
     <div class="card">
       <h3>Target Player</h3>
-      <div class="row">
+      <div class="row" style="flex-wrap:wrap;">
         <label for="clientName">TV / Client</label>
         <select id="clientName" data-testid="client-name"></select>
-        <button id="refreshPlayersBtn" type="button">Refresh Players</button>
-        <span id="playersStatus" class="muted">Uses discovered Plex players; falls back to configured default.</span>
+        <button id="refreshPlayersBtn" type="button" data-testid="refresh-players-btn" title="Re-scan available playback targets (LG static config, plex.tv devices, active sessions).">Refresh Players</button>
+        <span id="playersStatus" class="muted" data-testid="players-status">Uses discovered Plex players; falls back to configured default.</span>
+        <div id="playersDebug" class="small muted" data-testid="players-debug" style="flex-basis:100%;margin-top:6px;line-height:1.4;"></div>
       </div>
     </div>
 
     <div class="card">
       <div class="row" style="align-items:center; margin-bottom:10px;">
         <h3 style="margin:0; flex:0 0 auto;">Library</h3>
-        <button id="loadMoviesBtn" data-testid="load-movies-btn" style="margin-left:8px;">Load Movies</button>
+        <button id="loadMoviesBtn" data-testid="load-movies-btn" style="margin-left:8px;" title="Load/refresh the full Plex movie library into server memory. Does not clear TMDB or poster caches.">Load Movies</button>
+        <button type="button" id="syncRecentMoviesBtn" style="margin-left:6px;font-size:12px;" disabled title="Faster than full refresh: merge only recently added Plex titles. Use full refresh to remove deleted titles.">Sync new titles</button>
         <span id="movieStatus" class="muted" data-testid="movie-status" style="margin-left:8px;">Idle</span>
       </div>
+      <p id="libraryCacheLine" class="muted small" style="margin:0 0 8px 0;line-height:1.45;min-height:1.2em;" aria-live="polite"></p>
+      <p class="muted small" style="margin:0 0 10px 0;line-height:1.4;"><strong>Tip:</strong> Hover a movie card for about <strong>2s</strong> for details. Scroll or move onto the next card to dismiss. Click the poster in the hover panel for native-size image.</p>
       <div class="movies-toolbar">
         <input type="search" id="movieSearch" class="movies-search" placeholder="Search by title, actor, or director…" data-testid="movie-search" />
         <span id="movieCount" class="movies-count-badge" data-testid="movie-count">0 movies</span>
@@ -620,7 +752,7 @@
   <section id="tab-discovery" class="tab-panel">
     <div class="card">
       <h3>Discovery — filmography gaps</h3>
-      <p class="muted">Find TMDB credits missing from your Plex library. Hover a title for plot (from TMDB). Min rating uses TMDB vote average (0–10). <strong>Filtered out:</strong> documentaries (TMDB genre or “documentary” in text), TV movies / news, and typical “making of” / behind-the-scenes extras. <strong>Speed:</strong> TMDB responses are cached on disk under <code>data/tmdb-discovery-cache/</code> — repeat lookups get faster as the cache grows. <strong>Poster/debug:</strong> server appends diagnostics to <code>data/plexdash-discovery.log</code> (poster proxy + filmography poster field counts).</p>
+      <p class="muted"><strong>Tip:</strong> Plot and poster preview appear only after you hold the pointer on the <strong>title or poster</strong> for <strong>about 2 seconds</strong>. Then you can move onto the floating panel; click the image there for a larger poster. — Find TMDB credits missing from your Plex library. Min rating uses TMDB vote average (0–10). <strong>Filtered out:</strong> documentaries (TMDB genre or “documentary” in text), TV movies / news, and typical “making of” / behind-the-scenes extras. <strong>Cache:</strong> TMDB responses stay on disk under <code>data/tmdb-discovery-cache/</code> until you use <strong>Clear TMDB cache</strong> below. The Plex library list is the same in-memory snapshot as the Dashboard tab (refreshed when you click <strong>Refresh Movies</strong> there, or when a scheduled snapshot runs). <strong>Poster/debug:</strong> server appends diagnostics to <code>data/plexdash-discovery.log</code>.</p>
       <div class="row">
         <select id="discoverMode" data-testid="discover-mode" style="min-width:170px;">
           <option value="person">By Actor / Director</option>
@@ -663,6 +795,7 @@
           <input id="discoverPlaylistTitle" placeholder="Compare against playlist title (optional)" />
         </span>
         <button id="runDiscoveryBtn" type="button" data-testid="run-discovery-btn">Analyze filmography</button>
+        <button id="clearTmdbDiscoveryCacheBtn" type="button" title="Delete data/tmdb-discovery-cache so the next analysis refetches TMDB">Clear TMDB cache</button>
       </div>
       <div class="row" style="margin-top: 10px;">
         <button id="selectAllDiscoveryBtn" type="button">Select all missing</button>
@@ -822,6 +955,37 @@
           <div class="small">Fallback player name for Create &amp; Play.</div>
         </div>
       </div>
+      <div class="row" style="margin-top:2px;">
+        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;">
+          <input type="checkbox" id="cfgAutoTargetDetected" style="width:16px;height:16px;" />
+          Prefer detected player as default target
+        </label>
+        <span class="small">If enabled, playback defaults to the best currently detected TV/client and falls back if unavailable.</span>
+      </div>
+
+      <div class="row" style="margin-top:10px;">
+        <div>
+          <label for="cfgAppDisplayName">App Header Name</label><br />
+          <input id="cfgAppDisplayName" placeholder="plex-smash-deck" style="min-width: 280px;" />
+          <div class="small">Shown at the top-left of the dashboard.</div>
+        </div>
+        <div>
+          <label for="cfgHeroBannerURL">Banner Image URL (optional)</label><br />
+          <input id="cfgHeroBannerURL" placeholder="https://.../banner.jpg" style="min-width: 360px;" />
+          <div class="small">Leave blank to auto-use your most watched movie poster.</div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:2px;">
+        <div>
+          <label for="cfgHeroBannerHeight">Banner Height (px)</label><br />
+          <input id="cfgHeroBannerHeight" type="number" min="80" max="420" value="140" style="width:120px;" />
+          <div class="small">Recommended range: 100–220.</div>
+        </div>
+        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;margin-top:22px;">
+          <input type="checkbox" id="cfgHeroBannerHidden" style="width:16px;height:16px;" />
+          Hide banner image
+        </label>
+      </div>
 
       <div class="row">
         <div>
@@ -905,13 +1069,75 @@
     let discoveryData = [];
     /** @type {{ key: string, dir: 'asc'|'desc' }} */
     let discoverySort = { key: 'num', dir: 'asc' };
+    let discoveryRenderedEnd = 0;
+    const DISCOVERY_SCROLL_CHUNK = 48;
+    let discoveryScrollBusy = false;
     const DISCOVERY_CART_KEY = 'plexdash.discovery.cart.v1';
     let suggestTimer = null;
+    let libraryCachePollTimer = null;
+    const LIBRARY_CACHE_POLL_MS = 10 * 60 * 1000;
     const moviesCacheKey = 'plexdash.movies.cache.v4';
     let moviesAll = [];
-    let allCardData = []; // [{movie, el, searchText}] — built once, filtered in-place
+    let allCardData = []; // [{movie, el, searchText}] — grows as the grid scrolls
+    let moviesMaterializedCount = 0;
+    let moviesMaterializePromise = null;
+    let movieGridScrollBusy = false;
+    /** True when #movieGrid DOM order was reordered for an active search (restore library order when cleared). */
+    let movieGridOrderIsSearchSorted = false;
+    const MOVIE_GRID_INITIAL = 100;
+    const MOVIE_GRID_CHUNK = 120;
     let searchDebounceTimer = null;
     const selectedMovieKeys = new Set();
+    let currentSettings = {
+      AppDisplayName: 'plex-smash-deck',
+      HeroBannerURL: '',
+      HeroBannerHeight: 140,
+      HeroBannerHidden: false,
+      AutoTargetDetected: false,
+    };
+
+    function pickMostWatchedMovie(movies) {
+      if (!Array.isArray(movies) || movies.length === 0) return null;
+      let best = null;
+      for (const m of movies) {
+        if (!m || !m.RatingKey) continue;
+        if (!best) { best = m; continue; }
+        const a = Number(m.ViewCount || 0);
+        const b = Number(best.ViewCount || 0);
+        if (a > b) best = m;
+      }
+      return best;
+    }
+
+    function applyHeaderBranding() {
+      const titleEl = document.getElementById('appDisplayName');
+      const bannerEl = document.getElementById('heroBanner');
+      const bannerImg = document.getElementById('heroBannerImg');
+      const appTitle = (currentSettings.AppDisplayName || '').trim() || 'plex-smash-deck';
+      titleEl.textContent = appTitle;
+      document.title = appTitle;
+      if (currentSettings.HeroBannerHidden) {
+        bannerEl.style.display = 'none';
+        bannerImg.removeAttribute('src');
+        return;
+      }
+      let src = (currentSettings.HeroBannerURL || '').trim();
+      if (!src) {
+        const fallbackMovie = pickMostWatchedMovie(moviesAll);
+        if (fallbackMovie && fallbackMovie.RatingKey) {
+          src = `/api/plex/thumb?ratingKey=${encodeURIComponent(fallbackMovie.RatingKey)}`;
+        }
+      }
+      if (!src) {
+        bannerEl.style.display = 'none';
+        bannerImg.removeAttribute('src');
+        return;
+      }
+      const h = Math.max(80, Math.min(420, Number(currentSettings.HeroBannerHeight || 140)));
+      bannerImg.style.height = `${h}px`;
+      bannerEl.style.display = '';
+      if (bannerImg.src !== src) bannerImg.src = src;
+    }
 
     function setStatus(id, message, ok) {
       const el = document.getElementById(id);
@@ -947,7 +1173,11 @@
     }
 
     function setMoviesButtonLabel(hasCache) {
-      document.getElementById('loadMoviesBtn').textContent = hasCache ? 'Refresh Movies' : 'Load Movies';
+      const btn = document.getElementById('loadMoviesBtn');
+      btn.textContent = hasCache ? 'Refresh Movies' : 'Load Movies';
+      btn.title = hasCache
+        ? 'Rebuild server memory from full Plex library metadata. Does not clear TMDB or poster caches.'
+        : 'Load full Plex library metadata into server memory. Does not clear TMDB or poster caches.';
     }
 
     function updatePlaySelectedBtn() {
@@ -1075,63 +1305,144 @@
       return card;
     }
 
-    // Build all cards once using batched DOM insertions, yielding between batches
-    // so the browser stays responsive during the initial render of thousands of movies.
-    async function buildAllCards(movies) {
-      moviesAll = movies;
+    function resetMovieGridState(movies) {
+      moviesAll = movies || [];
       allCardData = [];
-      const grid = document.getElementById('movieGrid');
-      grid.innerHTML = '';
-      const BATCH = 150;
-      for (let i = 0; i < movies.length; i += BATCH) {
-        const frag = document.createDocumentFragment();
-        for (let j = i, end = Math.min(i + BATCH, movies.length); j < end; j++) {
-          const movie = movies[j];
-          const el = buildMovieCard(movie);
-          // Pre-compute lowercase search corpus once per card to avoid per-filter string work
-          const searchText = [
-            movie.Title, String(movie.Year || ''),
-            ...(movie.Actors   || []),
-            ...(movie.Directors || []),
-          ].join(' ').toLowerCase();
-          allCardData.push({ movie, el, searchText });
-          frag.appendChild(el);
-        }
-        grid.appendChild(frag);
-        // Yield to the event loop so the browser can paint between batches
-        await new Promise(r => setTimeout(r, 0));
-      }
-      updateMovieCountDisplay();
+      moviesMaterializedCount = 0;
+      moviesMaterializePromise = null;
+      movieGridOrderIsSearchSorted = false;
+      document.getElementById('movieGrid').innerHTML = '';
     }
 
-    // Show/hide existing cards rather than rebuilding DOM on every keystroke.
-    // Uses requestAnimationFrame so the browser can paint the current input state
-    // (e.g. the cleared text after clicking X) before the grid reflow begins.
+    function materializeMovieRange(start, end) {
+      const grid = document.getElementById('movieGrid');
+      const frag = document.createDocumentFragment();
+      for (let j = start; j < end; j++) {
+        const movie = moviesAll[j];
+        const el = buildMovieCard(movie);
+        const searchText = [
+          movie.Title, String(movie.Year || ''),
+          ...(movie.Actors || []),
+          ...(movie.Directors || []),
+        ].join(' ').toLowerCase();
+        allCardData.push({ movie, el, searchText, orderIndex: j });
+        frag.appendChild(el);
+      }
+      grid.appendChild(frag);
+      moviesMaterializedCount = end;
+    }
+
+    async function materializeMoreMovies(chunk) {
+      if (moviesMaterializedCount >= moviesAll.length) return;
+      const start = moviesMaterializedCount;
+      const end = Math.min(start + chunk, moviesAll.length);
+      materializeMovieRange(start, end);
+      await new Promise(r => setTimeout(r, 0));
+    }
+
+    async function ensureAllMoviesMaterialized() {
+      if (moviesMaterializedCount >= moviesAll.length) return;
+      if (moviesMaterializePromise) return moviesMaterializePromise;
+      moviesMaterializePromise = (async () => {
+        while (moviesMaterializedCount < moviesAll.length) {
+          await materializeMoreMovies(MOVIE_GRID_CHUNK);
+        }
+      })();
+      try {
+        await moviesMaterializePromise;
+      } finally {
+        moviesMaterializePromise = null;
+      }
+    }
+
+    async function onMovieGridScrollLoad() {
+      if (movieGridScrollBusy || moviesMaterializedCount >= moviesAll.length) return;
+      const grid = document.getElementById('movieGrid');
+      if (grid.scrollTop + grid.clientHeight <= grid.scrollHeight - 400) return;
+      movieGridScrollBusy = true;
+      try {
+        await materializeMoreMovies(MOVIE_GRID_CHUNK);
+        filterMovieCardsSync();
+      } finally {
+        movieGridScrollBusy = false;
+      }
+    }
+
+    /** Lower = earlier in grid when searching: title starts with q, then title contains q, then cast/crew only. */
+    function searchMatchRank(movie, q) {
+      const t = (movie.Title || '').toLowerCase();
+      if (!q) return 0;
+      if (!t.includes(q)) return 2;
+      if (t.startsWith(q)) return 0;
+      return 1;
+    }
+
+    function filterMovieCardsSync() {
+      const grid = document.getElementById('movieGrid');
+      const q = (document.getElementById('movieSearch')?.value || '').trim().toLowerCase();
+      let shown = 0;
+      for (const entry of allCardData) {
+        const matches = !q || entry.searchText.includes(q);
+        entry.el.hidden = !matches;
+        if (matches) shown++;
+      }
+      if (q) {
+        const visible = allCardData.filter(function (e) { return !e.el.hidden; });
+        visible.sort(function (a, b) {
+          const ra = searchMatchRank(a.movie, q);
+          const rb = searchMatchRank(b.movie, q);
+          if (ra !== rb) return ra - rb;
+          return (a.movie.Title || '').localeCompare(b.movie.Title || '', undefined, { sensitivity: 'base' });
+        });
+        visible.forEach(function (e) { grid.appendChild(e.el); });
+        movieGridOrderIsSearchSorted = true;
+        grid.scrollTop = 0;
+      } else if (movieGridOrderIsSearchSorted) {
+        var sorted = allCardData.slice().sort(function (a, b) {
+          return (a.orderIndex ?? 0) - (b.orderIndex ?? 0);
+        });
+        sorted.forEach(function (e) { grid.appendChild(e.el); });
+        movieGridOrderIsSearchSorted = false;
+        grid.scrollTop = 0;
+      }
+      updateMovieCountDisplay(q, shown);
+    }
+
+    // Show/hide materialized cards. When there is a search query, the full library
+    // is materialized first so matches are not limited to the first scroll chunk.
     function filterMovieCards() {
       const q = (document.getElementById('movieSearch')?.value || '').trim().toLowerCase();
-      requestAnimationFrame(() => {
-        let shown = 0;
-        for (const entry of allCardData) {
-          const matches = !q || entry.searchText.includes(q);
-          entry.el.hidden = !matches;
-          if (matches) shown++;
-        }
-        updateMovieCountDisplay(q, shown);
-      });
+      const run = async () => {
+        if (q) await ensureAllMoviesMaterialized();
+        requestAnimationFrame(() => filterMovieCardsSync());
+      };
+      if (q) run().catch(err => console.error('[Plex Dashboard] filterMovieCards', err));
+      else requestAnimationFrame(() => filterMovieCardsSync());
     }
 
     function updateMovieCountDisplay(q, shown) {
-      const total = allCardData.length;
+      const total = moviesAll.length;
+      if (!q) {
+        const mat = moviesMaterializedCount;
+        if (mat < total && mat > 0) {
+          document.getElementById('movieCount').textContent =
+            `${total} movies · showing ${mat} (scroll grid for more)`;
+        } else {
+          document.getElementById('movieCount').textContent = `${total} movies`;
+        }
+        return;
+      }
       const s = shown !== undefined ? shown : total;
       document.getElementById('movieCount').textContent =
-        (q && s < total) ? `${s} of ${total} movies` : `${total} movies`;
+        (s < total) ? `${s} of ${total} movies` : `${s} movies`;
     }
 
-    function renderMovies(movies) {
-      buildAllCards(movies || []);
+    async function renderMovies(movies) {
+      resetMovieGridState(movies || []);
+      await materializeMoreMovies(MOVIE_GRID_INITIAL);
+      filterMovieCardsSync();
+      applyHeaderBranding();
     }
-
-    const MOVIES_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
     function hydrateMoviesFromCache() {
       const cached = readMoviesCache();
@@ -1139,17 +1450,13 @@
         setMoviesButtonLabel(false);
         return;
       }
-      renderMovies(cached.movies || []);
-      setMoviesButtonLabel(true);
-      const ageMs = cached.savedAt ? Date.now() - cached.savedAt : Infinity;
-      const ageMin = Math.round(ageMs / 60000);
-      if (ageMs > MOVIES_CACHE_TTL_MS) {
-        setStatus('movieStatus', `Cache is ${ageMin}m old — refreshing in background…`, true);
-        // Serve stale immediately, repopulate quietly in the background.
-        setTimeout(() => loadMovies(false), 0);
-      } else {
-        setStatus('movieStatus', `Loaded from cache (${ageMin}m ago)`, true);
-      }
+      renderMovies(cached.movies || []).then(() => {
+        setMoviesButtonLabel(true);
+        const ageMs = cached.savedAt ? Date.now() - cached.savedAt : Infinity;
+        const ageMin = Math.round(ageMs / 60000);
+        setStatus('movieStatus', `Loaded from browser cache (${ageMin}m ago). Use Refresh Movies on the Dashboard to pull Plex again.`, true);
+        updateLibraryCacheHint();
+      }).catch(err => console.error('[Plex Dashboard] hydrateMoviesFromCache', err));
     }
 
     function renderPersonSuggestions(names) {
@@ -1251,20 +1558,137 @@
       });
     }
 
-    // forceRefresh=true bypasses the server-side cache (for explicit user action).
-    async function loadMovies(forceRefresh = true) {
+    // forceRefresh=true sends ?nocache=1 so Plex is refetched and the shared server cache is replaced.
+    function formatSnapshotAge(iso) {
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return '';
+      const sec = Math.floor((Date.now() - d.getTime()) / 1000);
+      if (sec < 8) return 'just now';
+      if (sec < 60) return `${sec}s ago`;
+      const min = Math.floor(sec / 60);
+      if (min < 60) return `${min} min ago`;
+      const h = Math.floor(min / 60);
+      if (h < 48) return `${h}h ago`;
+      const days = Math.floor(h / 24);
+      return `${days}d ago`;
+    }
+
+    function formatLibraryCacheLine(d) {
+      const el = document.getElementById('libraryCacheLine');
+      if (!el) return;
+      if (!d.plexConfigured) {
+        el.textContent =
+          'Configure Plex in Settings to compare this list with Plex’s current title count (one small HTTP request, not a full library download).';
+        updateSyncRecentButton(d);
+        return;
+      }
+      const parts = [];
+      const browserSnap = readMoviesCache();
+      const browserN = browserSnap && Array.isArray(browserSnap.movies) ? browserSnap.movies.length : 0;
+
+      if (d.cachedCount > 0 && d.cachedAtISO) {
+        parts.push(`Server list snapshot: ${formatSnapshotAge(d.cachedAtISO)} (${d.cachedCount} titles).`);
+      } else if (d.cachedCount === 0) {
+        if (browserN > 0) {
+          parts.push(
+            `Server has no movie list in memory yet; the grid is from browser cache (${browserN} titles). Use Load / Refresh Movies to sync the server and enable count comparison.`
+          );
+        } else {
+          parts.push('No movie list on the server or in the browser — use Load Movies.');
+        }
+      }
+      if (!d.cacheKeyMatches && d.cachedCount > 0) {
+        parts.push('Library key changed since this list was built — Refresh Movies to sync.');
+      }
+      if (d.remoteCountErrorCode === 'totalSizeMissing') {
+        parts.push('Plex did not expose total size (older server). Compare by using Refresh Movies.');
+      } else if (d.remoteCountError) {
+        parts.push(`Could not read Plex count: ${d.remoteCountError}`);
+      } else if (d.plexRemoteCount != null && d.cacheKeyMatches && d.cachedCount > 0) {
+        const delta = d.deltaVsCache;
+        if (delta > 0) {
+          parts.push(`Plex reports ${delta} more title${delta === 1 ? '' : 's'} than this list — Refresh Movies to update.`);
+        } else if (delta < 0) {
+          parts.push(
+            `This list has ${-delta} more title${-delta === 1 ? '' : 's'} than Plex’s count (or metadata changed). Refresh to sync.`
+          );
+        } else {
+          parts.push('Title count matches Plex.');
+        }
+      } else if (d.plexRemoteCount != null && d.cachedCount === 0) {
+        parts.push(`Plex currently reports ${d.plexRemoteCount} title(s) in this library section.`);
+      }
+      el.textContent = parts.join(' · ');
+      updateSyncRecentButton(d);
+    }
+
+    function updateSyncRecentButton(d) {
+      const btn = document.getElementById('syncRecentMoviesBtn');
+      if (!btn) return;
+      const can =
+        d &&
+        d.plexConfigured &&
+        d.cacheKeyMatches &&
+        d.cachedCount > 0 &&
+        typeof d.deltaVsCache === 'number' &&
+        d.deltaVsCache > 0;
+      btn.disabled = !can;
+      btn.title = can
+        ? `Plex reports ${d.deltaVsCache} more title(s) than this list — merge via recently added only (fast)`
+        : 'Available after the server has a full list and Plex reports more titles than this list';
+    }
+
+    async function syncRecentMovies() {
+      const btn = document.getElementById('syncRecentMoviesBtn');
+      if (btn && btn.disabled) return;
+      setStatus('movieStatus', 'Merging new titles from Plex…', true);
+      try {
+        const data = await apiJson('/api/movies/sync-recent', { method: 'POST' });
+        const added = data.added != null ? data.added : 0;
+        await loadMovies(false);
+        if (added > 0) {
+          setStatus('movieStatus', `Merged ${added} new title(s). Browser cache updated.`, true);
+        } else {
+          setStatus('movieStatus', data.message || 'No new titles merged.', true);
+        }
+        updateLibraryCacheHint();
+      } catch (err) {
+        setStatus('movieStatus', `Sync new titles failed: ${err.message}`, false);
+      }
+    }
+
+    async function updateLibraryCacheHint() {
+      try {
+        const d = await apiJson('/api/movies/cache-status');
+        formatLibraryCacheLine(d);
+      } catch (err) {
+        const el = document.getElementById('libraryCacheLine');
+        if (el) el.textContent = '';
+        updateSyncRecentButton(null);
+      }
+    }
+
+    function startLibraryCachePoll() {
+      if (libraryCachePollTimer) clearInterval(libraryCachePollTimer);
+      updateLibraryCacheHint();
+      libraryCachePollTimer = setInterval(updateLibraryCacheHint, LIBRARY_CACHE_POLL_MS);
+    }
+
+    async function loadMovies(forceRefresh = false) {
       const hasCache = !!readMoviesCache();
-      if (forceRefresh) setStatus('movieStatus', hasCache ? 'Refreshing…' : 'Loading…');
+      setStatus('movieStatus', forceRefresh ? (hasCache ? 'Refreshing from Plex…' : 'Loading from Plex…') : 'Loading (using server cache if available)…', true);
       try {
         const url = forceRefresh ? '/api/movies?nocache=1' : '/api/movies';
         const data = await apiJson(url);
         const movies = data.movies || [];
-        renderMovies(movies);
+        await renderMovies(movies);
         writeMoviesCache({ count: data.count || movies.length, movies, savedAt: Date.now() });
         setMoviesButtonLabel(true);
-        if (forceRefresh) setStatus('movieStatus', 'Loaded', true);
+        setStatus('movieStatus', forceRefresh ? 'Loaded from Plex (shared cache updated for Discovery too)' : 'Loaded (same server cache as Discovery)', true);
+        updateLibraryCacheHint();
       } catch (err) {
-        if (forceRefresh) setStatus('movieStatus', `Failed: ${err.message}`, false);
+        setStatus('movieStatus', `Failed: ${err.message}`, false);
       }
     }
 
@@ -1423,13 +1847,12 @@
       });
     }
 
+    function discoveryRowChecked(item) {
+      return item.discoveryChecked !== undefined ? item.discoveryChecked : !item.inLibrary;
+    }
+
     function addSelectedToCart() {
-      const selected = [];
-      document.querySelectorAll('#discoveryRows input[type="checkbox"]').forEach(cb => {
-        if (!cb.checked) return;
-        const row = discoveryData[Number(cb.dataset.row)];
-        if (row) selected.push(row);
-      });
+      const selected = discoveryData.filter(row => discoveryRowChecked(row));
       if (selected.length === 0) {
         setStatus('discoveryStatus', 'No rows selected.', false);
         return;
@@ -1540,7 +1963,7 @@
       }
       const mult = discoverySort.dir === 'asc' ? 1 : -1;
       discoveryData.sort((a, b) => compareDiscoveryRows(a, b, columnKey, mult));
-      renderDiscoveryRows(discoveryData);
+      renderDiscoveryTableReset();
       updateDiscoverySortHeaders();
       console.log('[Plex Dashboard] discovery sort', { ...discoverySort, rows: discoveryData.length });
     }
@@ -1612,6 +2035,17 @@
       return { total, withMeta, loaded, pending, imgCount: imgs.length };
     }
 
+    /** Hover delay for dashboard movie popup and discovery popup (default 2s). Tests set window.__PLEXDASH_HOVER_POPUP_MS; legacy __PLEXDASH_DISC_POPUP_HOVER_MS still works. */
+    function plexdashHoverPopupDelayMs() {
+      if (typeof window.__PLEXDASH_HOVER_POPUP_MS === 'number' && window.__PLEXDASH_HOVER_POPUP_MS >= 0) {
+        return window.__PLEXDASH_HOVER_POPUP_MS;
+      }
+      if (typeof window.__PLEXDASH_DISC_POPUP_HOVER_MS === 'number' && window.__PLEXDASH_DISC_POPUP_HOVER_MS >= 0) {
+        return window.__PLEXDASH_DISC_POPUP_HOVER_MS;
+      }
+      return 2000;
+    }
+
     /** Return the full-size URL for a poster thumbnail src.
      *  Handles Plex thumb proxies, TMDB discovery proxies, and direct TMDB URLs. */
     function discPosterBigSrc(src) {
@@ -1636,73 +2070,188 @@
       }
     }
 
+    /** Largest practical poster URL for the lightbox (TMDB original / proxy). */
+    function discPosterLightboxSrc(src) {
+      if (!src) return '';
+      try {
+        const u = new URL(src);
+        if (u.pathname.startsWith('/api/plex/thumb')) return u.toString();
+        if (u.pathname.startsWith('/api/discovery/poster')) {
+          u.searchParams.set('size', 'original');
+          return u.toString();
+        }
+        u.pathname = u.pathname.replace(/\/t\/p\/w[^/]+\//, '/t/p/original/');
+        return u.toString();
+      } catch (e) {
+        if (src.includes('/api/discovery/poster')) {
+          const noSize = src.replace(/[?&]size=[^&]*/g, '');
+          return noSize + (noSize.includes('?') ? '&' : '?') + 'size=original';
+        }
+        return src.replace(/\/t\/p\/w\d+\//, '/t/p/original/');
+      }
+    }
+
     (function () {
-      const popup   = document.getElementById('discPosterPopup');
-      const popupImg = popup.querySelector('img');
+      const popup = document.getElementById('discPosterPopup');
+      const popupImg = popup.querySelector('.disc-popup-img');
+      const popupText = popup.querySelector('.disc-popup-text');
+      const HOVER_MS = plexdashHoverPopupDelayMs();
       let hideTimer = null;
       let showTimer = null;
 
-      function positionPopup(thumbRect) {
+      function positionPopup(anchorRect) {
         const margin = 12;
+        const gap = 16;
         const vw = window.innerWidth;
         const vh = window.innerHeight;
         const pw = popup.offsetWidth;
         const ph = popup.offsetHeight;
-        let left, top;
-        // Prefer right of thumbnail; fall back to left; centre if neither fits
-        if (thumbRect.right + margin + pw <= vw) {
-          left = thumbRect.right + margin;
-        } else if (thumbRect.left - margin - pw >= 0) {
-          left = thumbRect.left - margin - pw;
+        let left;
+        // Prefer LEFT of anchor so the cursor can move onto the popup without crossing the table scroll area.
+        if (anchorRect.left - gap - pw >= margin) {
+          left = anchorRect.left - gap - pw;
+        } else if (anchorRect.right + gap + pw <= vw - margin) {
+          left = anchorRect.right + gap;
         } else {
           left = Math.max(margin, Math.round((vw - pw) / 2));
         }
-        // Vertically align with thumbnail centre, then clamp
-        top = Math.round(thumbRect.top + (thumbRect.height - ph) / 2);
+        let top = Math.round(anchorRect.top + (anchorRect.height - ph) / 2);
         top = Math.max(margin, Math.min(top, vh - ph - margin));
         popup.style.left = left + 'px';
-        popup.style.top  = top  + 'px';
+        popup.style.top = top + 'px';
       }
 
-      window._showPosterPopup = function (thumbEl, thumbSrc) {
-        if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
-        if (showTimer) { clearTimeout(showTimer); showTimer = null; }
-        const bigSrc = discPosterBigSrc(thumbSrc);
-        if (!bigSrc) return;
+      function clearHideTimer() {
+        if (hideTimer) {
+          clearTimeout(hideTimer);
+          hideTimer = null;
+        }
+      }
+
+      function scheduleHidePopup() {
+        clearHideTimer();
+        hideTimer = setTimeout(() => {
+          popup.classList.remove('pp-visible');
+          hideTimer = setTimeout(() => {
+            hideTimer = null;
+            popup.style.display = 'none';
+            popupImg.src = '';
+            popupImg.onload = null;
+            popupImg.onerror = null;
+            popupText.innerHTML = '';
+          }, 160);
+        }, 320);
+      }
+
+      popup.addEventListener('mouseenter', () => {
+        clearHideTimer();
+      });
+      popup.addEventListener('mouseleave', () => {
+        scheduleHidePopup();
+      });
+
+      popupImg.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const lb = discPosterLightboxSrc(popupImg.src);
+        if (!lb) return;
+        window._hidePosterPopup();
+        openPosterLightbox(lb, popupImg.alt || '');
+      });
+
+      /**
+       * Discovery hover: poster + title + plot after HOVER_MS. Title/overview optional.
+       * @param {Element} anchorEl
+       * @param {string} thumbSrc
+       * @param {string} [title]
+       * @param {string} [overview]
+       */
+      window._showPosterPopup = function (anchorEl, thumbSrc, title, overview) {
+        clearHideTimer();
+        if (showTimer) {
+          clearTimeout(showTimer);
+          showTimer = null;
+        }
+        const bigSrc = discPosterBigSrc(thumbSrc || '');
+        const plot = (overview != null ? String(overview) : '').trim();
+        const ttl = (title != null ? String(title) : '').trim();
+        if (!bigSrc && !plot && !ttl) return;
+
         showTimer = setTimeout(() => {
+          showTimer = null;
+          popupText.innerHTML = '';
+          if (ttl) {
+            const h = document.createElement('div');
+            h.className = 'disc-popup-title';
+            h.textContent = ttl;
+            popupText.appendChild(h);
+          }
+          if (plot) {
+            const p = document.createElement('p');
+            p.className = 'disc-popup-plot';
+            p.textContent = plot;
+            popupText.appendChild(p);
+          }
+          if (!plot && !ttl && !bigSrc) return;
+
+          const reveal = () => {
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                const r = anchorEl.getBoundingClientRect();
+                positionPopup(r);
+                popup.classList.add('pp-visible');
+              });
+            });
+          };
+
           popup.classList.remove('pp-visible');
           popup.style.display = 'block';
-          popupImg.src = '';
-          popupImg.onload = () => {
-            const r = thumbEl.getBoundingClientRect();
-            positionPopup(r);
-            popup.classList.add('pp-visible');
-          };
-          popupImg.onerror = () => { popup.style.display = 'none'; };
-          popupImg.src = bigSrc;
-        }, 120);
+
+          if (bigSrc) {
+            popupImg.style.display = '';
+            popupImg.alt = ttl || 'Poster';
+            popupImg.onload = () => { reveal(); };
+            popupImg.onerror = () => {
+              popupImg.style.display = 'none';
+              reveal();
+            };
+            popupImg.src = bigSrc;
+          } else {
+            popupImg.style.display = 'none';
+            popupImg.src = '';
+            popupImg.onload = null;
+            popupImg.onerror = null;
+            reveal();
+          }
+        }, HOVER_MS);
       };
 
       window._hidePosterPopup = function () {
-        if (showTimer) { clearTimeout(showTimer); showTimer = null; }
-        popup.classList.remove('pp-visible');
-        hideTimer = setTimeout(() => {
-          popup.style.display = 'none';
-          popupImg.src = '';
-        }, 150);
+        if (showTimer) {
+          clearTimeout(showTimer);
+          showTimer = null;
+        }
+        scheduleHidePopup();
       };
     }());
 
-    // ── Movie Info Popup ──────────────────────────────────────────────────────
+    // ── Movie Info Popup (Dashboard grid) ─────────────────────────────────────
     (function () {
-      const popup     = document.getElementById('movieInfoPopup');
-      const mipPoster = popup.querySelector('.mip-poster');
-      const mipTitle  = popup.querySelector('.mip-title');
-      const mipAttrs  = popup.querySelector('.mip-attrs');
-      const mipGenres = popup.querySelector('.mip-genres');
-      const mipPlot   = popup.querySelector('.mip-plot');
+      const popup       = document.getElementById('movieInfoPopup');
+      const mipPoster   = popup.querySelector('.mip-poster');
+      const mipTitle    = popup.querySelector('.mip-title');
+      const mipAttrs    = popup.querySelector('.mip-attrs');
+      const mipGenres   = popup.querySelector('.mip-genres');
+      const mipActors   = popup.querySelector('.mip-actors');
+      const mipPlotWrap = popup.querySelector('.mip-plot-wrap');
+      const mipPlot     = popup.querySelector('.mip-plot');
+      const mipPlotMore = popup.querySelector('.mip-plot-more');
+      const movieGridEl = document.getElementById('movieGrid');
+      const SHOW_MS = plexdashHoverPopupDelayMs();
       let showTimer = null;
       let hideTimer = null;
+      let anchorCard = null;
+      let moveRaf = null;
+      let suspendedForLightbox = false;
 
       function fmtRuntime(ms) {
         if (!ms || ms <= 0) return '';
@@ -1721,6 +2270,7 @@
 
       function positionPopup(cardRect) {
         const margin = 12;
+        const gap = 16;
         const vw = window.innerWidth;
         const vh = window.innerHeight;
         popup.style.display = 'block';
@@ -1729,10 +2279,10 @@
         const ph = popup.offsetHeight;
         popup.style.visibility = '';
         let left;
-        if (cardRect.right + margin + pw <= vw) {
-          left = cardRect.right + margin;
-        } else if (cardRect.left - margin - pw >= 0) {
-          left = cardRect.left - margin - pw;
+        if (cardRect.left - gap - pw >= margin) {
+          left = cardRect.left - gap - pw;
+        } else if (cardRect.right + gap + pw <= vw - margin) {
+          left = cardRect.right + gap;
         } else {
           left = Math.max(margin, Math.round((vw - pw) / 2));
         }
@@ -1742,10 +2292,133 @@
         popup.style.top  = top + 'px';
       }
 
+      function clearHideTimer() {
+        if (hideTimer) {
+          clearTimeout(hideTimer);
+          hideTimer = null;
+        }
+      }
+
+      function resetMipExtras() {
+        mipPlot.classList.remove('mip-plot-expanded');
+        mipPlotMore.textContent = 'Show more';
+        mipPlotMore.hidden = true;
+      }
+
+      function hideMovieInfoImmediate() {
+        if (showTimer) { clearTimeout(showTimer); showTimer = null; }
+        clearHideTimer();
+        resetMipExtras();
+        popup.classList.remove('mip-visible');
+        popup.style.display = 'none';
+        anchorCard = null;
+        suspendedForLightbox = false;
+      }
+
+      function scheduleHideMovieInfo() {
+        clearHideTimer();
+        hideTimer = setTimeout(() => {
+          resetMipExtras();
+          popup.classList.remove('mip-visible');
+          hideTimer = setTimeout(() => {
+            hideTimer = null;
+            popup.style.display = 'none';
+            anchorCard = null;
+            suspendedForLightbox = false;
+          }, 150);
+        }, 320);
+      }
+
+      function edgeSeparation(r1, r2) {
+        const dx = Math.max(0, Math.max(r1.left - r2.right, r2.left - r1.right));
+        const dy = Math.max(0, Math.max(r1.top - r2.bottom, r2.top - r1.bottom));
+        return Math.hypot(dx, dy);
+      }
+
+      function maybeDismissForOtherCard(clientX, clientY) {
+        if (!popup.classList.contains('mip-visible') || !anchorCard) return;
+        const stack = document.elementsFromPoint(clientX, clientY);
+        const overPopup = stack.some((el) => el === popup || popup.contains(el));
+        if (overPopup) return;
+        const cardUnder = stack.map((el) => (el && el.closest ? el.closest('.movie-card') : null)).find(Boolean);
+        if (!cardUnder || cardUnder === anchorCard) return;
+        const ar = anchorCard.getBoundingClientRect();
+        const br = cardUnder.getBoundingClientRect();
+        const sep = edgeSeparation(ar, br);
+        if (sep > 28) {
+          hideMovieInfoImmediate();
+          return;
+        }
+        const acx = (ar.left + ar.right) / 2;
+        const acy = (ar.top + ar.bottom) / 2;
+        const bcx = (br.left + br.right) / 2;
+        const bcy = (br.top + br.bottom) / 2;
+        const dx = bcx - acx;
+        const dy = bcy - acy;
+        const relX = (clientX - br.left) / br.width;
+        const relY = (clientY - br.top) / br.height;
+        if (relX < 0 || relX > 1 || relY < 0 || relY > 1) return;
+        let pastHalf = false;
+        if (Math.abs(dx) >= Math.abs(dy)) {
+          if (dx > 0) pastHalf = relX >= 0.5;
+          else pastHalf = relX <= 0.5;
+        } else {
+          if (dy > 0) pastHalf = relY >= 0.5;
+          else pastHalf = relY <= 0.5;
+        }
+        if (pastHalf) hideMovieInfoImmediate();
+      }
+
+      document.addEventListener('mousemove', (e) => {
+        if (moveRaf) return;
+        moveRaf = requestAnimationFrame(() => {
+          moveRaf = null;
+          maybeDismissForOtherCard(e.clientX, e.clientY);
+        });
+      }, { passive: true });
+
+      movieGridEl.addEventListener('scroll', () => {
+        hideMovieInfoImmediate();
+      }, { passive: true });
+
+      function refreshPlotMoreButton() {
+        mipPlot.classList.remove('mip-plot-expanded');
+        mipPlotMore.textContent = 'Show more';
+        mipPlotMore.hidden = true;
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            if (!mipPlot.textContent || !popup.classList.contains('mip-visible')) return;
+            const needsMore = mipPlot.scrollHeight > mipPlot.clientHeight + 2;
+            mipPlotMore.hidden = !needsMore;
+          });
+        });
+      }
+
+      mipPlotMore.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const expanded = mipPlot.classList.toggle('mip-plot-expanded');
+        mipPlotMore.textContent = expanded ? 'Show less' : 'Show more';
+        if (!expanded) refreshPlotMoreButton();
+      });
+
+      popup.addEventListener('mouseenter', () => { clearHideTimer(); });
+      popup.addEventListener('mouseleave', () => { scheduleHideMovieInfo(); });
+
+      mipPoster.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const src = (mipPoster.src || '').trim();
+        if (!src) return;
+        openPosterLightbox(src, mipPoster.alt || '', { nativePixels: true, resumeMovieInfo: true });
+      });
+
       window._showMovieInfo = function (cardEl, movie) {
-        if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+        clearHideTimer();
         if (showTimer) { clearTimeout(showTimer); showTimer = null; }
         showTimer = setTimeout(() => {
+          showTimer = null;
+          anchorCard = cardEl;
+          resetMipExtras();
+
           const rk = movie.RatingKey;
           mipPoster.src = `/api/plex/thumb?ratingKey=${encodeURIComponent(rk)}`;
           mipPoster.alt = movie.Title;
@@ -1767,37 +2440,241 @@
           if (dirs.length) mipAttrs.appendChild(pill('Dir: ' + dirs.join(', ')));
 
           mipGenres.textContent = (movie.Genres || []).slice(0, 4).join(' · ');
-          mipPlot.textContent   = movie.Summary || '';
-          mipPlot.style.display = movie.Summary ? '' : 'none';
 
+          mipActors.textContent = '';
+          mipActors.style.display = '';
+          const actors = (movie.Actors || []).slice(0, 8);
+          if (actors.length) {
+            const lab = document.createElement('span');
+            lab.className = 'mip-actors-label';
+            lab.textContent = 'Starring:';
+            mipActors.appendChild(lab);
+            mipActors.appendChild(document.createTextNode(' ' + actors.join(', ')));
+          } else {
+            mipActors.style.display = 'none';
+          }
+
+          const summary = (movie.Summary != null ? String(movie.Summary) : '').trim();
+          mipPlot.textContent = summary;
+          if (mipPlotWrap) {
+            mipPlotWrap.style.display = summary ? '' : 'none';
+          } else {
+            mipPlot.style.display = summary ? '' : 'none';
+          }
+
+          popup.classList.remove('mip-visible');
+          const reveal = () => {
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                positionPopup(cardEl.getBoundingClientRect());
+                popup.classList.add('mip-visible');
+                refreshPlotMoreButton();
+              });
+            });
+          };
           const rect = cardEl.getBoundingClientRect();
           positionPopup(rect);
-          popup.classList.add('mip-visible');
-        }, 280);
+          if (mipPoster.complete && mipPoster.naturalWidth > 0) {
+            reveal();
+          } else {
+            mipPoster.onload = () => { reveal(); };
+            mipPoster.onerror = () => { reveal(); };
+            if (mipPoster.complete) reveal();
+          }
+        }, SHOW_MS);
       };
 
       window._hideMovieInfo = function () {
         if (showTimer) { clearTimeout(showTimer); showTimer = null; }
+        scheduleHideMovieInfo();
+      };
+
+      window._hideMovieInfoImmediate = hideMovieInfoImmediate;
+      window._suspendMovieInfoForLightbox = function () {
+        if (!popup.classList.contains('mip-visible') || !anchorCard) return false;
+        if (showTimer) { clearTimeout(showTimer); showTimer = null; }
+        clearHideTimer();
+        suspendedForLightbox = true;
         popup.classList.remove('mip-visible');
-        hideTimer = setTimeout(() => {
-          popup.style.display = 'none';
-        }, 140);
+        popup.style.display = 'none';
+        return true;
+      };
+      window._resumeMovieInfoAfterLightbox = function () {
+        if (!suspendedForLightbox || !anchorCard) return;
+        const show = () => {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              positionPopup(anchorCard.getBoundingClientRect());
+              popup.classList.add('mip-visible');
+              refreshPlotMoreButton();
+            });
+          });
+        };
+        popup.style.display = 'block';
+        popup.classList.remove('mip-visible');
+        show();
+        suspendedForLightbox = false;
       };
     }());
 
     // ── Poster lightbox ──────────────────────────────────────────────────────
     const lbOverlay = document.getElementById('posterLightbox');
     const lbImg     = document.getElementById('posterLightboxImg');
+    const lbDownloadBtn = document.getElementById('posterLightboxDownload');
+    const lbCopyBtn = document.getElementById('posterLightboxCopy');
+    const lbHint = document.getElementById('posterLightboxHint');
+    let lbReturnToMovieInfo = false;
+    let lbCurrentSrc = '';
 
-    function openPosterLightbox(src, alt) {
-      lbImg.src = src;
+    function lightboxFilenameFromAlt(alt) {
+      const base = (String(alt || 'poster').trim() || 'poster')
+        .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '')
+        .replace(/\s+/g, '-')
+        .toLowerCase();
+      return `${base}.jpg`;
+    }
+
+    async function fetchImageBlob(src) {
+      const res = await fetch(src, { credentials: 'same-origin' });
+      if (!res.ok) throw new Error(`image fetch failed (${res.status})`);
+      return await res.blob();
+    }
+
+    /** Normalize MIME so ClipboardItem accepts the payload (Chromium rejects empty/octet-stream). */
+    function clipboardImageMime(blob) {
+      let m = (blob.type || '').trim().toLowerCase();
+      if (m === 'image/jpg' || m === 'image/pjpeg') return 'image/jpeg';
+      if (m === 'image/png' || m === 'image/jpeg') return m;
+      if (m.startsWith('image/')) return m;
+      return '';
+    }
+
+    async function blobToClipboardPNGBlob(blob) {
+      if (typeof createImageBitmap === 'function') {
+        try {
+          const bmp = await createImageBitmap(blob);
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = bmp.width;
+            canvas.height = bmp.height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) throw new Error('no canvas context');
+            ctx.drawImage(bmp, 0, 0);
+            return await new Promise(function (resolve, reject) {
+              canvas.toBlob(function (b) {
+                if (b) resolve(b);
+                else reject(new Error('PNG encode failed'));
+              }, 'image/png');
+            });
+          } finally {
+            bmp.close();
+          }
+        } catch (e) { /* fall through */ }
+      }
+      const img = new Image();
+      const url = URL.createObjectURL(blob);
+      try {
+        await new Promise(function (resolve, reject) {
+          img.onload = resolve;
+          img.onerror = function () { reject(new Error('image decode failed')); };
+          img.src = url;
+        });
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('no canvas context');
+        ctx.drawImage(img, 0, 0);
+        return await new Promise(function (resolve, reject) {
+          canvas.toBlob(function (b) {
+            if (b) resolve(b);
+            else reject(new Error('PNG encode failed'));
+          }, 'image/png');
+        });
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    }
+
+    async function writeImageBlobToClipboard(blob) {
+      if (!navigator.clipboard || typeof window.ClipboardItem === 'undefined') {
+        throw new Error('ClipboardItem API unavailable');
+      }
+      async function tryWrite(b, mime) {
+        await navigator.clipboard.write([
+          new ClipboardItem({ [mime]: Promise.resolve(b) }),
+        ]);
+      }
+      const mime = clipboardImageMime(blob);
+      if (mime === 'image/png' || mime === 'image/jpeg') {
+        try {
+          await tryWrite(blob, mime);
+          return;
+        } catch (e) { /* try PNG re-encode */ }
+      }
+      const pngBlob = await blobToClipboardPNGBlob(blob);
+      await tryWrite(pngBlob, 'image/png');
+    }
+
+    function openPosterLightbox(src, alt, opts) {
+      opts = opts || {};
+      const nativePixels =
+        opts.nativePixels !== false &&
+        typeof src === 'string' &&
+        src.indexOf('/api/plex/thumb') !== -1;
+
+      if (nativePixels) lbOverlay.classList.add('lb-native');
+      else lbOverlay.classList.remove('lb-native');
+
+      lbImg.onload = function () {
+        lbImg.onload = null;
+        if (nativePixels && lbImg.naturalWidth > 0) {
+          lbImg.style.width = lbImg.naturalWidth + 'px';
+          lbImg.style.height = lbImg.naturalHeight + 'px';
+          lbImg.style.maxWidth = 'none';
+          lbImg.style.maxHeight = 'none';
+        } else {
+          lbImg.style.width = '';
+          lbImg.style.height = '';
+          lbImg.style.maxWidth = '';
+          lbImg.style.maxHeight = '';
+        }
+      };
+
       lbImg.alt = alt || '';
+      lbImg.src = src;
+      lbCurrentSrc = src;
+      lbHint.hidden = false;
+      lbHint.textContent = 'Right-click image for Save image as...';
       lbOverlay.classList.add('lb-open');
-      window._hideMovieInfo();
+      lbReturnToMovieInfo = false;
+      if (opts.resumeMovieInfo && typeof window._suspendMovieInfoForLightbox === 'function') {
+        lbReturnToMovieInfo = !!window._suspendMovieInfoForLightbox();
+      } else if (typeof window._hideMovieInfoImmediate === 'function') {
+        window._hideMovieInfoImmediate();
+      } else {
+        window._hideMovieInfo();
+      }
+      if (typeof window._hidePosterPopup === 'function') window._hidePosterPopup();
+
+      if (lbImg.complete && lbImg.naturalWidth > 0) {
+        lbImg.onload();
+      }
     }
     function closePosterLightbox() {
       lbOverlay.classList.remove('lb-open');
+      lbOverlay.classList.remove('lb-native');
+      lbImg.onload = null;
       lbImg.src = '';
+      lbCurrentSrc = '';
+      lbImg.style.width = '';
+      lbImg.style.height = '';
+      lbImg.style.maxWidth = '';
+      lbImg.style.maxHeight = '';
+      if (lbReturnToMovieInfo && typeof window._resumeMovieInfoAfterLightbox === 'function') {
+        window._resumeMovieInfoAfterLightbox();
+      }
+      lbReturnToMovieInfo = false;
     }
     lbOverlay.addEventListener('click', (e) => {
       if (e.target === lbOverlay || e.target === lbImg) closePosterLightbox();
@@ -1806,18 +2683,63 @@
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && lbOverlay.classList.contains('lb-open')) closePosterLightbox();
     });
+    lbDownloadBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const src = (lbCurrentSrc || lbImg.src || '').trim();
+      if (!src) return;
+      try {
+        const blob = await fetchImageBlob(src);
+        const a = document.createElement('a');
+        const obj = URL.createObjectURL(blob);
+        a.href = obj;
+        a.download = lightboxFilenameFromAlt(lbImg.alt);
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(obj);
+      } catch (err) {
+        lbHint.hidden = false;
+        lbHint.textContent = `Download failed: ${err.message}. You can still right-click the image and use Save image as...`;
+      }
+    });
+    lbCopyBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const src = (lbCurrentSrc || lbImg.src || '').trim();
+      if (!src) return;
+      if (!navigator.clipboard || typeof window.ClipboardItem === 'undefined') {
+        lbHint.hidden = false;
+        lbHint.textContent = 'Copy image is not supported in this browser context. Use Download or right-click Save image as...';
+        return;
+      }
+      try {
+        const blob = await fetchImageBlob(src);
+        await writeImageBlobToClipboard(blob);
+        lbHint.hidden = false;
+        lbHint.textContent = 'Image copied to clipboard.';
+      } catch (err) {
+        lbHint.hidden = false;
+        var msg = err && err.message ? String(err.message) : String(err);
+        if (msg.indexOf('NotAllowed') !== -1 || msg.indexOf('Permission') !== -1) {
+          msg = 'Clipboard permission denied. Try again after clicking the page, or use Download.';
+        }
+        lbHint.textContent = 'Copy failed: ' + msg + ' You can use Download or right-click Save image as...';
+      }
+    });
 
-    function renderDiscoveryRows(items) {
+    function appendDiscoveryRowsRange(start, end) {
       const tbody = document.getElementById('discoveryRows');
-      tbody.innerHTML = '';
-      items.forEach((item, idx) => {
+      const frag = document.createDocumentFragment();
+      for (let idx = start; idx < end; idx++) {
+        const item = discoveryData[idx];
+        if (!item) continue;
         const tr = document.createElement('tr');
 
         const tdCb = document.createElement('td');
         const cb = document.createElement('input');
         cb.type = 'checkbox';
         cb.dataset.row = String(idx);
-        cb.checked = !item.inLibrary;
+        cb.checked = discoveryRowChecked(item);
+        cb.addEventListener('change', () => { item.discoveryChecked = cb.checked; });
         tdCb.appendChild(cb);
         tr.appendChild(tdCb);
 
@@ -1835,7 +2757,7 @@
           img.alt = `Poster: ${item.title || 'movie'}`;
           img.decoding = 'async';
           img.style.cursor = 'zoom-in';
-          img.addEventListener('mouseenter', () => window._showPosterPopup(img, img.src));
+          img.addEventListener('mouseenter', () => window._showPosterPopup(img, displaySrc, item.title, item.overview));
           img.addEventListener('mouseleave', () => window._hidePosterPopup());
           img.addEventListener('error', () => {
             const direct = (item.posterUrl || '').trim();
@@ -1856,6 +2778,8 @@
             fallback.className = 'disc-poster-missing';
             fallback.textContent = 'No art';
             fallback.title = 'Poster failed to load';
+            fallback.addEventListener('mouseenter', () => window._showPosterPopup(fallback, '', item.title, item.overview));
+            fallback.addEventListener('mouseleave', () => window._hidePosterPopup());
             img.replaceWith(fallback);
           });
           tdPoster.appendChild(img);
@@ -1864,6 +2788,8 @@
           ph.className = 'disc-poster-missing';
           ph.textContent = '—';
           ph.title = 'No poster path (unreleased or missing on TMDB)';
+          ph.addEventListener('mouseenter', () => window._showPosterPopup(ph, '', item.title, item.overview));
+          ph.addEventListener('mouseleave', () => window._hidePosterPopup());
           tdPoster.appendChild(ph);
         }
         tr.appendChild(tdPoster);
@@ -1872,8 +2798,8 @@
         const titleSpan = document.createElement('span');
         titleSpan.className = 'disc-title';
         titleSpan.textContent = item.title || '';
-        const plot = (item.overview || '').trim();
-        if (plot) titleSpan.title = plot;
+        titleSpan.addEventListener('mouseenter', () => window._showPosterPopup(titleSpan, displaySrc, item.title, item.overview));
+        titleSpan.addEventListener('mouseleave', () => window._hidePosterPopup());
         tdTitle.appendChild(titleSpan);
         tr.appendChild(tdTitle);
 
@@ -1922,12 +2848,61 @@
         tdAct.appendChild(actWrap);
         tr.appendChild(tdAct);
 
-        tbody.appendChild(tr);
-      });
+        frag.appendChild(tr);
+      }
+      tbody.appendChild(frag);
+    }
 
-      tbody.querySelectorAll('button[data-add-row]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const row = discoveryData[Number(btn.dataset.addRow)];
+    function discoveryAppendOneChunk() {
+      if (discoveryRenderedEnd >= discoveryData.length) return;
+      const next = Math.min(discoveryRenderedEnd + DISCOVERY_SCROLL_CHUNK, discoveryData.length);
+      appendDiscoveryRowsRange(discoveryRenderedEnd, next);
+      discoveryRenderedEnd = next;
+    }
+
+    function renderDiscoveryTableReset() {
+      const wrap = document.getElementById('discoveryTableWrap');
+      const tbody = document.getElementById('discoveryRows');
+      tbody.innerHTML = '';
+      discoveryRenderedEnd = 0;
+      if (!discoveryData.length) return;
+      discoveryAppendOneChunk();
+      if (wrap) wrap.scrollTop = 0;
+      discoveryFillViewport().catch(err => console.error('[Plex Dashboard] discoveryFillViewport', err));
+    }
+
+    async function discoveryFillViewport() {
+      const wrap = document.getElementById('discoveryTableWrap');
+      let guard = 0;
+      while (wrap && discoveryRenderedEnd < discoveryData.length && wrap.scrollHeight <= wrap.clientHeight + 48 && guard < 200) {
+        discoveryAppendOneChunk();
+        await new Promise(r => requestAnimationFrame(r));
+        guard++;
+      }
+    }
+
+    async function discoveryAppendMoreIfNeeded() {
+      if (discoveryScrollBusy || discoveryRenderedEnd >= discoveryData.length) return;
+      const wrap = document.getElementById('discoveryTableWrap');
+      if (!wrap) return;
+      if (wrap.scrollTop + wrap.clientHeight <= wrap.scrollHeight - 240) return;
+      discoveryScrollBusy = true;
+      try {
+        discoveryAppendOneChunk();
+        await new Promise(r => requestAnimationFrame(r));
+      } finally {
+        discoveryScrollBusy = false;
+      }
+    }
+
+    function wireDiscoveryTableActions() {
+      const tbody = document.getElementById('discoveryRows');
+      if (!tbody || tbody.dataset.actionsWired === '1') return;
+      tbody.dataset.actionsWired = '1';
+      tbody.addEventListener('click', async (ev) => {
+        const addBtn = ev.target.closest('button[data-add-row]');
+        if (addBtn) {
+          const row = discoveryData[Number(addBtn.dataset.addRow)];
           if (!row) return;
           try {
             const payload = { items: [{ tmdbId: row.tmdbId, title: row.title, year: row.year }] };
@@ -1941,16 +2916,21 @@
           } catch (err) {
             setStatus('discoveryStatus', `Failed row add: ${err.message}`, false);
           }
-        });
+          return;
+        }
+        const cartBtn = ev.target.closest('button[data-cart-row]');
+        if (cartBtn) {
+          const row = discoveryData[Number(cartBtn.dataset.cartRow)];
+          if (row) addToDiscoveryCart(row);
+        }
       });
+    }
 
-      tbody.querySelectorAll('button[data-cart-row]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const row = discoveryData[Number(btn.dataset.cartRow)];
-          if (!row) return;
-          addToDiscoveryCart(row);
-        });
-      });
+    function wireDiscoveryInfiniteScroll() {
+      const wrap = document.getElementById('discoveryTableWrap');
+      if (!wrap || wrap.dataset.scrollWired === '1') return;
+      wrap.dataset.scrollWired = '1';
+      wrap.addEventListener('scroll', () => { discoveryAppendMoreIfNeeded(); }, { passive: true });
     }
 
     function copyMissingAsMarkdown() {
@@ -2060,7 +3040,7 @@
               discoveryData = data.items || [];
               discoverySort = { key: 'num', dir: 'asc' };
               discoveryData.sort((a, b) => (a.recommendationNo ?? 0) - (b.recommendationNo ?? 0));
-              renderDiscoveryRows(discoveryData);
+              renderDiscoveryTableReset();
               updateDiscoverySortHeaders();
               if (mode === 'studio') {
                 setStatus('discoveryStatus', `${data.company || 'Studio'}: ${data.total} titles, ${data.missing} missing from library`, true);
@@ -2093,19 +3073,19 @@
     }
 
     function selectAllMissing() {
+      discoveryData.forEach(row => {
+        if (!row.inLibrary) row.discoveryChecked = true;
+      });
       document.querySelectorAll('#discoveryRows input[type="checkbox"]').forEach(cb => {
         const row = discoveryData[Number(cb.dataset.row)];
-        cb.checked = !!row && !row.inLibrary;
+        if (row) cb.checked = discoveryRowChecked(row);
       });
     }
 
     async function addSelectedToRadarr() {
-      const selected = [];
-      document.querySelectorAll('#discoveryRows input[type="checkbox"]').forEach(cb => {
-        if (!cb.checked) return;
-        const row = discoveryData[Number(cb.dataset.row)];
-        if (row) selected.push({ tmdbId: row.tmdbId, title: row.title, year: row.year });
-      });
+      const selected = discoveryData
+        .filter(row => discoveryRowChecked(row))
+        .map(row => ({ tmdbId: row.tmdbId, title: row.title, year: row.year }));
       if (selected.length === 0) {
         setStatus('discoveryStatus', 'No selected rows to add.', false);
         return;
@@ -2122,10 +3102,22 @@
     async function loadSettings() {
       try {
         const cfg = await apiJson('/api/settings');
+        currentSettings = {
+          AppDisplayName: (cfg.AppDisplayName || 'plex-smash-deck'),
+          HeroBannerURL: (cfg.HeroBannerURL || ''),
+          HeroBannerHeight: Number(cfg.HeroBannerHeight || 140),
+          HeroBannerHidden: !!cfg.HeroBannerHidden,
+          AutoTargetDetected: !!cfg.AutoTargetDetected,
+        };
         document.getElementById('cfgPlexBase').value = cfg.PlexBaseURL || '';
         document.getElementById('cfgPlexToken').value = cfg.PlexToken || '';
         document.getElementById('cfgLibraryKey').value = cfg.LibraryKey || '1';
         document.getElementById('cfgTargetClient').value = cfg.TargetClientName || 'Living Room';
+        document.getElementById('cfgAutoTargetDetected').checked = !!cfg.AutoTargetDetected;
+        document.getElementById('cfgAppDisplayName').value = cfg.AppDisplayName || 'plex-smash-deck';
+        document.getElementById('cfgHeroBannerURL').value = cfg.HeroBannerURL || '';
+        document.getElementById('cfgHeroBannerHeight').value = Number(cfg.HeroBannerHeight || 140);
+        document.getElementById('cfgHeroBannerHidden').checked = !!cfg.HeroBannerHidden;
         document.getElementById('cfgTMDBKey').value = cfg.TMDBAPIKey || '';
         document.getElementById('cfgTMDBReadToken').value = cfg.TMDBReadToken || '';
         document.getElementById('cfgRadarrURL').value = cfg.RadarrURL || '';
@@ -2134,18 +3126,58 @@
         document.getElementById('cfgRadarrProfile').value = cfg.RadarrProfileID || 1;
         document.getElementById('cfgSnapshotEnabled').checked = !cfg.SnapshotDisabled;
         document.getElementById('cfgSnapshotHour').value = cfg.SnapshotHour ?? 2;
+        applyHeaderBranding();
       } catch (err) {
         setStatus('settingsStatus', `Failed to load: ${err.message}`, false);
       }
     }
 
+    function formatPlayersDebug(d) {
+      if (!d || typeof d !== 'object') return '';
+      const parts = [];
+      parts.push(`LG static: ${d.lgStaticConfigured ? 'yes' : 'no'}`);
+      parts.push(`cloud players: ${d.cloudResourcesOk ? (d.cloudPlayersAdded ?? 0) : 'err'}`);
+      parts.push(`active sessions: ${d.sessionDiscoveryOk ? (d.activeSessionCount ?? 0) : 'err'}`);
+      parts.push(`total targets: ${d.mergedTotal ?? '?'}`);
+      return parts.join(' · ');
+    }
+
+    function formatPlayersDebugDetails(d) {
+      if (!d || typeof d !== 'object') return '';
+      const parts = [];
+      parts.push(d.lgStaticConfigured
+        ? 'LG static target configured (LGTV_ADDR + LGTV_CLIENT_KEY).'
+        : 'LG static target not configured; add LGTV_ADDR + LGTV_CLIENT_KEY in Settings so the TV always appears.');
+      if (d.cloudResourcesOk) {
+        parts.push(`plex.tv resource players discovered: ${d.cloudPlayersAdded ?? 0}.`);
+      } else {
+        parts.push(`plex.tv resource lookup failed: ${(d.cloudResourcesErr || 'unknown').slice(0, 180)}.`);
+      }
+      if (d.sessionDiscoveryOk) {
+        parts.push(`Active Plex sessions seen right now: ${d.activeSessionCount ?? 0} (paused/stopped clients often disappear).`);
+      } else {
+        parts.push(`Session discovery failed: ${(d.sessionDiscoveryErr || 'unknown').slice(0, 180)}.`);
+      }
+      parts.push(`Merged target count shown in selector: ${d.mergedTotal ?? '?'}.`);
+      return parts.join(' ');
+    }
+
     async function loadPlayers() {
       const select = document.getElementById('clientName');
+      const dbgEl = document.getElementById('playersDebug');
       select.innerHTML = '';
+      if (dbgEl) {
+        dbgEl.textContent = '';
+        dbgEl.title = '';
+      }
       try {
         const data = await apiJson('/api/players');
         const targetClient = data.targetClient || 'Living Room';
         const players = data.players || [];
+        if (dbgEl) {
+          dbgEl.textContent = formatPlayersDebug(data.playersDebug);
+          dbgEl.title = formatPlayersDebugDetails(data.playersDebug);
+        }
 
         if (players.length === 0) {
           const option = document.createElement('option');
@@ -2165,10 +3197,13 @@
 
         const targetLower = String(targetClient).toLowerCase();
         const matching = players.find(p => String(p.Name || p.name || '').toLowerCase().includes(targetLower));
-        if (matching) {
+        const preferredDetected = players.find((p) => String(p.URI || p.uri || '').startsWith('ssap://')) || players[0];
+        if (currentSettings.AutoTargetDetected && preferredDetected) {
+          select.value = preferredDetected.Name || preferredDetected.name;
+        } else if (matching) {
           select.value = matching.Name || matching.name;
-        } else if (players[0]) {
-          select.value = players[0].Name || players[0].name;
+        } else if (preferredDetected) {
+          select.value = preferredDetected.Name || preferredDetected.name;
         }
         setStatus('playersStatus', `Loaded ${players.length} player(s).`, true);
       } catch (err) {
@@ -2177,6 +3212,7 @@
         fallback.textContent = `Living Room (players unavailable)`;
         select.appendChild(fallback);
         setStatus('playersStatus', `Player refresh failed: ${err.message}`, false);
+        if (dbgEl) dbgEl.textContent = '';
       }
     }
 
@@ -2236,12 +3272,21 @@
     async function saveSettings() {
       setStatus('settingsStatus', 'Saving...');
       try {
+        const autoTargetDetected = document.getElementById('cfgAutoTargetDetected').checked;
+        const selectedClient = (document.getElementById('clientName').value || '').trim();
+        let targetClient = document.getElementById('cfgTargetClient').value.trim();
+        if (autoTargetDetected && selectedClient) targetClient = selectedClient;
         const payload = {
           Port: '8081',
           PlexBaseURL: document.getElementById('cfgPlexBase').value.trim(),
           PlexToken: document.getElementById('cfgPlexToken').value.trim(),
           LibraryKey: document.getElementById('cfgLibraryKey').value.trim(),
-          TargetClientName: document.getElementById('cfgTargetClient').value.trim(),
+          TargetClientName: targetClient,
+          AutoTargetDetected: autoTargetDetected,
+          AppDisplayName: document.getElementById('cfgAppDisplayName').value.trim(),
+          HeroBannerURL: document.getElementById('cfgHeroBannerURL').value.trim(),
+          HeroBannerHeight: Number(document.getElementById('cfgHeroBannerHeight').value || '140'),
+          HeroBannerHidden: document.getElementById('cfgHeroBannerHidden').checked,
           TMDBAPIKey: document.getElementById('cfgTMDBKey').value.trim(),
           TMDBReadToken: document.getElementById('cfgTMDBReadToken').value.trim(),
           RadarrURL: document.getElementById('cfgRadarrURL').value.trim(),
@@ -2252,7 +3297,17 @@
           SnapshotHour: Number(document.getElementById('cfgSnapshotHour').value),
         };
         await apiJson('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        currentSettings = {
+          AppDisplayName: payload.AppDisplayName || 'plex-smash-deck',
+          HeroBannerURL: payload.HeroBannerURL || '',
+          HeroBannerHeight: Number(payload.HeroBannerHeight || 140),
+          HeroBannerHidden: !!payload.HeroBannerHidden,
+          AutoTargetDetected: !!payload.AutoTargetDetected,
+        };
+        document.getElementById('cfgTargetClient').value = targetClient || 'Living Room';
+        applyHeaderBranding();
         setStatus('settingsStatus', 'Saved settings (persisted).', true);
+        loadPlayers();
       } catch (err) {
         setStatus('settingsStatus', `Failed: ${err.message}`, false);
       }
@@ -2260,16 +3315,28 @@
 
     bindTabs();
     hydrateMoviesFromCache();
+    startLibraryCachePoll();
     loadGenres();
     loadSettings();
     loadPlayers();
     loadPlaylists();
     wirePersonAutocomplete();
     wireDiscoveryTableSort();
+    wireDiscoveryTableActions();
+    wireDiscoveryInfiniteScroll();
     wireArcadeButtonSmash();
     refreshDiscoveryCartCount();
 
-    document.getElementById('loadMoviesBtn').addEventListener('click', loadMovies);
+    document.getElementById('loadMoviesBtn').addEventListener('click', () => {
+      const label = document.getElementById('loadMoviesBtn').textContent || '';
+      loadMovies(label.includes('Refresh'));
+    });
+    document.getElementById('syncRecentMoviesBtn').addEventListener('click', () => {
+      syncRecentMovies();
+    });
+    document.getElementById('movieGrid').addEventListener('scroll', () => {
+      onMovieGridScrollLoad();
+    }, { passive: true });
 
     document.getElementById('movieSearch').addEventListener('input', () => {
       clearTimeout(searchDebounceTimer);
@@ -2283,7 +3350,8 @@
       filterMovieCards();
     });
 
-    document.getElementById('movieSelectAllBtn').addEventListener('click', () => {
+    document.getElementById('movieSelectAllBtn').addEventListener('click', async () => {
+      await ensureAllMoviesMaterialized();
       // Only operates on currently-visible cards so it respects the active search filter.
       const visible = allCardData.filter(e => !e.el.hidden);
       const allSelected = visible.every(e => selectedMovieKeys.has(e.movie.RatingKey));
@@ -2318,6 +3386,15 @@
     document.getElementById('createGenrePlaylistBtn').addEventListener('click', createByGenreRating);
     document.getElementById('previewGenrePlaylistBtn').addEventListener('click', previewByGenreRating);
     document.getElementById('runDiscoveryBtn').addEventListener('click', runDiscovery);
+    document.getElementById('clearTmdbDiscoveryCacheBtn').addEventListener('click', async () => {
+      try {
+        const data = await apiJson('/api/discovery/cache/invalidate', { method: 'POST' });
+        const n = data.removed != null ? data.removed : 0;
+        setStatus('discoveryStatus', `Cleared TMDB disk cache (${n} entr${n === 1 ? 'y' : 'ies'}). Next analysis refetches TMDB.`, true);
+      } catch (err) {
+        setStatus('discoveryStatus', `Clear TMDB cache failed: ${err.message}`, false);
+      }
+    });
     document.getElementById('discoverMode').addEventListener('change', function () {
       const isStudio = this.value === 'studio';
       document.getElementById('discoverPersonWrap').style.display = isStudio ? 'none' : 'contents';
@@ -2631,6 +3708,15 @@
           const data = await apiJson('/api/snapshots', { method: 'POST' });
           const snap = data.snapshot;
           await refreshAll(true);
+          // Snapshot POST already refreshed the shared server movie cache; pull it
+          // into the Dashboard grid so search / cards match Plex without another Plex round-trip.
+          try {
+            await loadMovies(false);
+            setStatus('movieStatus', 'Library list synced with this snapshot (search uses the new titles).', true);
+          } catch (syncErr) {
+            console.error('[Snapshots] dashboard sync after snapshot', syncErr);
+            setStatus('movieStatus', `Snapshot saved but dashboard list refresh failed: ${syncErr.message}`, false);
+          }
           setSnapStatus(`✓ Captured ${snap.count} movies  (${fmtDate(snap.capturedAt)})`, true);
           console.log('[Snapshots] new snapshot:', snap.id, snap.count);
         } catch (err) {
