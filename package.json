@@ -8,6 +8,9 @@
   },
   "scripts": {
     "demo": "PLAYWRIGHT_BROWSERS_PATH=/home/nick/.cache/ms-playwright playwright test scripts/demo.spec.ts --config=playwright.config.ts",
+    "test:players": "playwright test scripts/players.spec.ts --config=playwright.config.ts",
+    "test:discovery-popup": "playwright test scripts/discovery-popup.spec.ts --config=playwright.config.ts",
+    "test:lightbox-clipboard": "playwright test scripts/lightbox-clipboard.spec.ts --config=playwright.config.ts",
     "demo:gif": "bash scripts/make-demo-gif.sh"
   },
   "repository": {

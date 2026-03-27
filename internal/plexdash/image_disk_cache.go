@@ -15,6 +15,24 @@ const tmdbPosterCacheDir = "data/tmdb-poster-cache"
 // plus immutable tells browsers not to revalidate even on force-refresh.
 const immutableCacheControl = "public, max-age=31536000, immutable"
 
+// serveCachedPosterFile streams an existing cache file to w. Returns false if
+// the file is missing or unreadable.
+func serveCachedPosterFile(w http.ResponseWriter, path, contentType string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	ct := contentType
+	if ct == "" {
+		ct = "image/jpeg"
+	}
+	w.Header().Set("Content-Type", ct)
+	w.Header().Set("Cache-Control", immutableCacheControl)
+	io.Copy(w, f) //nolint:errcheck
+	return true
+}
+
 // serveOrCachePoster checks the disk cache at cachePath. If the file exists it
 // is streamed directly to the client. If not, it fetches from upstreamURL,
 // writes the bytes to cachePath atomically (tmp → rename), and streams the
@@ -29,10 +47,11 @@ func serveOrCachePoster(w http.ResponseWriter, upstreamURL, cachePath, contentTy
 	// ── Serve from disk cache ─────────────────────────────────────────────────
 	if f, err := os.Open(cachePath); err == nil {
 		defer f.Close()
-		if ct := contentType; ct == "" {
+		ct := contentType
+		if ct == "" {
 			ct = "image/jpeg"
 		}
-		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Content-Type", ct)
 		w.Header().Set("Cache-Control", immutableCacheControl)
 		io.Copy(w, f) //nolint:errcheck
 		return true

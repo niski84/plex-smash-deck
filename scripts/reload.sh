@@ -17,13 +17,31 @@ cd "$PROJECT_DIR"
 go build -o "$BINARY" ./cmd/plex-dashboard
 echo "  Build OK: $BINARY"
 
-# Load env and start
+# Load env and start (same discovery idea as Go's findDotEnvPath)
 echo "→ Starting plex-dashboard..."
-if [ -f "$PROJECT_DIR/.env" ]; then
+ENV_FILE=""
+if [[ -f "$PROJECT_DIR/.env" ]]; then
+    ENV_FILE="$PROJECT_DIR/.env"
+elif [[ -n "${PLEX_DASHBOARD_ENV_FILE:-}" && -f "${PLEX_DASHBOARD_ENV_FILE}" ]]; then
+    ENV_FILE="$PLEX_DASHBOARD_ENV_FILE"
+else
+    _d="$(cd "$PROJECT_DIR" && pwd)"
+    for _ in $(seq 1 32); do
+        if [[ -f "$_d/.env" ]]; then
+            ENV_FILE="$_d/.env"
+            break
+        fi
+        _p="$(dirname "$_d")"
+        [[ "$_p" == "$_d" ]] && break
+        _d="$_p"
+    done
+fi
+if [[ -n "$ENV_FILE" ]]; then
     set -a
     # shellcheck disable=SC1090
-    source "$PROJECT_DIR/.env"
+    source "$ENV_FILE"
     set +a
+    echo "  Env: $ENV_FILE"
 fi
 
 PORT="${PORT:-8081}"

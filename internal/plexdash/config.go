@@ -15,6 +15,11 @@ type Config struct {
 	PlexToken        string
 	LibraryKey       string
 	TargetClientName string
+	AutoTargetDetected bool
+	AppDisplayName     string
+	HeroBannerURL      string
+	HeroBannerHeight   int
+	HeroBannerHidden   bool
 	TMDBAPIKey       string
 	TMDBReadToken    string
 	RadarrURL        string
@@ -35,7 +40,11 @@ type Config struct {
 }
 
 func LoadConfig() (Config, error) {
-	_ = loadDotEnv(".env")
+	if p := findDotEnvPath(); p != "" {
+		if err := loadDotEnv(p); err != nil {
+			fmt.Fprintf(os.Stderr, "[plexdash] warning: could not read .env from %s: %v\n", p, err)
+		}
+	}
 
 	cfg := Config{
 		Port:             getenv("PORT", "8081"),
@@ -43,6 +52,11 @@ func LoadConfig() (Config, error) {
 		PlexToken:        os.Getenv("PLEX_TOKEN"),
 		LibraryKey:       getenv("PLEX_LIBRARY_KEY", "1"),
 		TargetClientName: getenv("PLEX_TARGET_CLIENT_NAME", "Living Room"),
+		AutoTargetDetected: getenv("PLEX_AUTO_TARGET_DETECTED", "") == "1",
+		AppDisplayName:     getenv("APP_DISPLAY_NAME", "plex-smash-deck"),
+		HeroBannerURL:      os.Getenv("HERO_BANNER_URL"),
+		HeroBannerHeight:   getenvInt("HERO_BANNER_HEIGHT", 140),
+		HeroBannerHidden:   getenv("HERO_BANNER_HIDDEN", "") == "1",
 		TMDBAPIKey:       os.Getenv("TMDB_API_KEY"),
 		TMDBReadToken:    os.Getenv("TMDB_READ_ACCESS_TOKEN"),
 		RadarrURL:        strings.TrimRight(os.Getenv("RADARR_URL"), "/"),
@@ -58,6 +72,12 @@ func LoadConfig() (Config, error) {
 	if err == nil {
 		mergeMissingConfig(&cfg, stored)
 	}
+	if strings.TrimSpace(cfg.AppDisplayName) == "" {
+		cfg.AppDisplayName = "plex-smash-deck"
+	}
+	if cfg.HeroBannerHeight <= 0 {
+		cfg.HeroBannerHeight = 140
+	}
 	return cfg, nil
 }
 
@@ -67,6 +87,37 @@ func getenv(key, fallback string) string {
 		return fallback
 	}
 	return val
+}
+
+// findDotEnvPath locates a .env file so config works when cwd is not the repo root
+// (IDE, systemd, worktrees without a copied .env). Override with PLEX_DASHBOARD_ENV_FILE.
+func findDotEnvPath() string {
+	if p := strings.TrimSpace(os.Getenv("PLEX_DASHBOARD_ENV_FILE")); p != "" {
+		if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
+			return p
+		}
+	}
+	if wd, err := os.Getwd(); err == nil {
+		for dir := filepath.Clean(wd); ; {
+			cand := filepath.Join(dir, ".env")
+			if fi, err := os.Stat(cand); err == nil && !fi.IsDir() {
+				return cand
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
+	}
+	if exe, err := os.Executable(); err == nil {
+		exeDir := filepath.Clean(filepath.Dir(exe))
+		cand := filepath.Join(exeDir, ".env")
+		if fi, err := os.Stat(cand); err == nil && !fi.IsDir() {
+			return cand
+		}
+	}
+	return ""
 }
 
 func loadDotEnv(path string) error {
@@ -88,8 +139,10 @@ func loadDotEnv(path string) error {
 		}
 		key := strings.TrimSpace(line[:idx])
 		val := strings.TrimSpace(line[idx+1:])
-		if _, exists := os.LookupEnv(key); !exists {
-			_ = os.Setenv(key, strings.Trim(val, `"'`))
+		val = strings.Trim(val, `"'`)
+		// Fill missing or blank env so .env wins over empty exports from the parent shell.
+		if cur, exists := os.LookupEnv(key); !exists || strings.TrimSpace(cur) == "" {
+			_ = os.Setenv(key, val)
 		}
 	}
 
@@ -148,6 +201,17 @@ func mergeMissingConfig(dst *Config, src Config) {
 	if dst.TargetClientName == "" {
 		dst.TargetClientName = src.TargetClientName
 	}
+	dst.AutoTargetDetected = src.AutoTargetDetected
+	if dst.AppDisplayName == "" {
+		dst.AppDisplayName = src.AppDisplayName
+	}
+	if dst.HeroBannerURL == "" {
+		dst.HeroBannerURL = src.HeroBannerURL
+	}
+	if dst.HeroBannerHeight == 0 {
+		dst.HeroBannerHeight = src.HeroBannerHeight
+	}
+	dst.HeroBannerHidden = src.HeroBannerHidden
 	if dst.TMDBAPIKey == "" {
 		dst.TMDBAPIKey = src.TMDBAPIKey
 	}
