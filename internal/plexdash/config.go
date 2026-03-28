@@ -10,22 +10,23 @@ import (
 )
 
 type Config struct {
-	Port             string
-	PlexBaseURL      string
-	PlexToken        string
-	LibraryKey       string
-	TargetClientName string
+	Port               string
+	PlexBaseURL        string
+	PlexToken          string
+	LibraryKey         string
+	TargetClientName   string
 	AutoTargetDetected bool
 	AppDisplayName     string
 	HeroBannerURL      string
 	HeroBannerHeight   int
 	HeroBannerHidden   bool
-	TMDBAPIKey       string
-	TMDBReadToken    string
-	RadarrURL        string
-	RadarrAPIKey     string
-	RadarrRootFolder string
-	RadarrProfileID  int
+	TMDBAPIKey         string
+	TMDBReadToken      string
+	RadarrEnabled      bool
+	RadarrURL          string
+	RadarrAPIKey       string
+	RadarrRootFolder   string
+	RadarrProfileID    int
 	// LG webOS TV direct control via SSAP WebSocket (port 3001).
 	// LGTVAddr is the TV's local IP (e.g. "192.168.4.153").
 	// LGTVClientKey is the key obtained during one-time pairing.
@@ -47,24 +48,25 @@ func LoadConfig() (Config, error) {
 	}
 
 	cfg := Config{
-		Port:             getenv("PORT", "8081"),
-		PlexBaseURL:      strings.TrimRight(os.Getenv("PLEX_BASE_URL"), "/"),
-		PlexToken:        os.Getenv("PLEX_TOKEN"),
-		LibraryKey:       getenv("PLEX_LIBRARY_KEY", "1"),
-		TargetClientName: getenv("PLEX_TARGET_CLIENT_NAME", "Living Room"),
+		Port:               getenv("PORT", "8081"),
+		PlexBaseURL:        strings.TrimRight(os.Getenv("PLEX_BASE_URL"), "/"),
+		PlexToken:          os.Getenv("PLEX_TOKEN"),
+		LibraryKey:         getenv("PLEX_LIBRARY_KEY", "1"),
+		TargetClientName:   getenv("PLEX_TARGET_CLIENT_NAME", "Living Room"),
 		AutoTargetDetected: getenv("PLEX_AUTO_TARGET_DETECTED", "") == "1",
 		AppDisplayName:     getenv("APP_DISPLAY_NAME", "plex-smash-deck"),
 		HeroBannerURL:      os.Getenv("HERO_BANNER_URL"),
 		HeroBannerHeight:   getenvInt("HERO_BANNER_HEIGHT", 140),
 		HeroBannerHidden:   getenv("HERO_BANNER_HIDDEN", "") == "1",
-		TMDBAPIKey:       os.Getenv("TMDB_API_KEY"),
-		TMDBReadToken:    os.Getenv("TMDB_READ_ACCESS_TOKEN"),
-		RadarrURL:        strings.TrimRight(os.Getenv("RADARR_URL"), "/"),
-		RadarrAPIKey:     os.Getenv("RADARR_API_KEY"),
-		RadarrRootFolder: os.Getenv("RADARR_ROOT_FOLDER"),
-		RadarrProfileID:  getenvInt("RADARR_PROFILE_ID", 1),
-		LGTVAddr:         os.Getenv("LGTV_ADDR"),
-		LGTVClientKey:    os.Getenv("LGTV_CLIENT_KEY"),
+		TMDBAPIKey:         os.Getenv("TMDB_API_KEY"),
+		TMDBReadToken:      os.Getenv("TMDB_READ_ACCESS_TOKEN"),
+		RadarrEnabled:      getenv("RADARR_ENABLED", "") == "1",
+		RadarrURL:          strings.TrimRight(os.Getenv("RADARR_URL"), "/"),
+		RadarrAPIKey:       os.Getenv("RADARR_API_KEY"),
+		RadarrRootFolder:   os.Getenv("RADARR_ROOT_FOLDER"),
+		RadarrProfileID:    getenvInt("RADARR_PROFILE_ID", 1),
+		LGTVAddr:           os.Getenv("LGTV_ADDR"),
+		LGTVClientKey:      os.Getenv("LGTV_CLIENT_KEY"),
 	}
 
 	// Source from .env first, then fill missing values from persisted settings.
@@ -74,6 +76,13 @@ func LoadConfig() (Config, error) {
 	}
 	if strings.TrimSpace(cfg.AppDisplayName) == "" {
 		cfg.AppDisplayName = "plex-smash-deck"
+	}
+	if !cfg.RadarrEnabled &&
+		(strings.TrimSpace(cfg.RadarrURL) != "" ||
+			strings.TrimSpace(cfg.RadarrAPIKey) != "" ||
+			strings.TrimSpace(cfg.RadarrRootFolder) != "") {
+		// Backward-compat: older saved settings had no explicit toggle.
+		cfg.RadarrEnabled = true
 	}
 	if cfg.HeroBannerHeight <= 0 {
 		cfg.HeroBannerHeight = 140
@@ -218,6 +227,7 @@ func mergeMissingConfig(dst *Config, src Config) {
 	if dst.TMDBReadToken == "" {
 		dst.TMDBReadToken = src.TMDBReadToken
 	}
+	dst.RadarrEnabled = src.RadarrEnabled
 	if dst.RadarrURL == "" {
 		dst.RadarrURL = src.RadarrURL
 	}

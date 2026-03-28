@@ -82,6 +82,7 @@ Tagged releases now also publish a Windows NSIS installer (`*-windows-x64-setup.
   - `Uninstall Plex Smash Deck`
 - Supports an optional **Run at login (background)** shortcut
 - Registers Add/Remove Programs uninstall metadata
+- **Upgrades:** Running a newer setup over an existing install updates the app **in place** (same folder under `%LOCALAPPDATA%`, files overwritten, `DisplayVersion` updated). It does **not** run uninstall first, so data and config next to the install are kept. Silent installs (`/S`) skip the upgrade notice.
 
 ## How it's built
 
@@ -102,6 +103,8 @@ data/
   movie-snapshots/      — JSON snapshot history
   tmdb-discovery-cache/ — TMDB disk cache (7–180 day TTL per resource)
 ```
+
+Snapshot files are **not in git** (gitignored). Each clone/worktree has its own `data/movie-snapshots/` under that checkout’s working directory. To reuse the same history from another path (e.g. the main repo while developing in a worktree), set **`PLEXDASH_SNAPSHOT_DIR`** to an absolute path to that directory.
 
 ## Ideas and other TV support
 
