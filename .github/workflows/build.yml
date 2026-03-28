@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Verify README Screenshots section matches images/manifest.json
+      - name: Verify README Screenshots section (images/manifest.json + docs/images/*.meta.json)
         run: python3 scripts/generate_readme_images.py --check
 
   build:

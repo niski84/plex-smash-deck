@@ -1,0 +1,5 @@
+{
+  "order": 50,
+  "alt": "Dashboard hover: blended TMDB and OMDb ratings with overall average",
+  "caption": "After the hover delay, the panel merges **TMDB vote average** with **OMDb** (IMDb, Rotten Tomatoes, Metacritic) into one **Avg ★** line and shows per-source pills so you can see both the combined score and each provider at a glance."
+}

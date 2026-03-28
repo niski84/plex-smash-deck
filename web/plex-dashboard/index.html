@@ -427,6 +427,13 @@
     .settings-group h4 { margin: 0 0 10px 0; font-size: 14px; color: #ddd; }
     #tab-settings .row { align-items: flex-start; gap: 16px; margin-bottom: 10px; }
     #tab-settings .row:last-child { margin-bottom: 0; }
+    .settings-cache-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
+    .settings-cache-table th,
+    .settings-cache-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #333; vertical-align: top; line-height: 1.4; }
+    .settings-cache-table th { color: #aaa; font-weight: 600; white-space: nowrap; }
+    .settings-cache-table tbody tr:last-child td { border-bottom: none; }
+    .settings-cache-table code { font-size: 11px; word-break: break-all; display: block; max-width: 42rem; }
+    .settings-cache-meta { font-size: 12px; color: #888; margin-top: 8px; line-height: 1.45; }
     .help-doc { margin-top: 10px; padding: 12px; border: 1px solid #333; border-radius: 8px; background: #141414; line-height: 1.55; }
     .help-doc h1, .help-doc h2, .help-doc h3 { margin: 10px 0 6px 0; color: #f0f0f0; }
     .help-doc p { margin: 8px 0; }
@@ -1931,6 +1938,33 @@
       </div>
 
       <div class="settings-group">
+        <h4>Maintaining caches</h4>
+        <p class="muted small" style="margin:0 0 8px 0;max-width:52rem;line-height:1.45;">
+          On-disk paths are under the server’s <strong>working directory</strong> (shown below). <strong>TMDB / OMDb</strong> caches are cleared from the <strong>Discovery</strong> tab. The <strong>movie grid</strong> row reflects this browser’s saved copy (localStorage), not the server.
+        </p>
+        <div class="row" style="margin-bottom:6px;">
+          <button type="button" id="settingsCachesRefreshBtn" data-testid="settings-caches-refresh">Refresh cache info</button>
+          <span id="settingsCachesStatus" class="muted small" data-testid="settings-caches-status">Open this section or click Refresh to load.</span>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="settings-cache-table" aria-label="Cache locations and sizes">
+            <thead>
+              <tr>
+                <th scope="col">Cache</th>
+                <th scope="col">Location</th>
+                <th scope="col">Size</th>
+                <th scope="col">Files</th>
+                <th scope="col">Updated</th>
+                <th scope="col">Notes</th>
+              </tr>
+            </thead>
+            <tbody id="settingsCachesBody" data-testid="settings-caches-body"></tbody>
+          </table>
+        </div>
+        <p id="settingsCachesCwd" class="settings-cache-meta muted" data-testid="settings-caches-cwd" hidden></p>
+      </div>
+
+      <div class="settings-group">
         <h4>Dashboard genre bar</h4>
         <p class="muted small" style="margin:0 0 10px 0;max-width:52rem;line-height:1.45;">
           Quick filter chips above the movie grid default to <strong>Action</strong>, <strong>Comedy</strong>, <strong>Thriller</strong>, <strong>Adventure</strong>, and <strong>Science Fiction</strong> (including Sci‑Fi) when those genres exist in your library. Use <strong>Include any</strong> for OR-matching; <strong>Exclude if any</strong> hides titles that also have those genres (e.g. comedy but not documentary). Open <strong>More genres</strong> for <strong>+</strong> pin, <strong>⊘</strong> exclude, and <strong>−</strong>. Lists below are stored in this browser only.
@@ -2300,6 +2334,136 @@
       if (!bytes || bytes <= 0) return '';
       const gb = bytes / (1024 ** 3);
       return gb >= 10 ? gb.toFixed(1) + ' GB' : gb.toFixed(2) + ' GB';
+    }
+
+    function formatCacheBytes(n) {
+      if (n == null || n === '') return '—';
+      const x = Number(n);
+      if (!Number.isFinite(x) || x < 0) return '—';
+      if (x === 0) return '0 B';
+      if (x < 1024) return `${x} B`;
+      if (x < 1024 * 1024) return `${(x / 1024).toFixed(x < 10 * 1024 ? 1 : 0)} KB`;
+      if (x < 1024 ** 3) return `${(x / (1024 * 1024)).toFixed(x < 10 * 1024 * 1024 ? 2 : 1)} MB`;
+      return `${(x / (1024 ** 3)).toFixed(2)} GB`;
+    }
+
+    function formatCacheInstant(iso) {
+      if (!iso) return '—';
+      try {
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return '—';
+        return d.toLocaleString();
+      } catch (_) {
+        return '—';
+      }
+    }
+
+    function escapeHtmlAttr(s) {
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    async function refreshSettingsCaches() {
+      const body = document.getElementById('settingsCachesBody');
+      const status = document.getElementById('settingsCachesStatus');
+      const cwdEl = document.getElementById('settingsCachesCwd');
+      if (!body) return;
+      if (status) {
+        status.textContent = 'Loading…';
+        status.className = 'muted small';
+      }
+      try {
+        const data = await apiJson('/api/settings/caches');
+        const caches = (data && data.caches) || [];
+        const cwd = data && data.workingDirectory;
+        if (cwdEl) {
+          if (cwd) {
+            cwdEl.hidden = false;
+            cwdEl.textContent = `Server working directory: ${cwd}`;
+          } else {
+            cwdEl.hidden = true;
+          }
+        }
+        const rows = [];
+        for (const c of caches) {
+          const loc = c.location || '—';
+          const locCell =
+            c.kind === 'memory'
+              ? `<span>${escapeHtmlAttr(loc)}</span>`
+              : `<code>${escapeHtmlAttr(loc)}</code>`;
+          let size = '—';
+          if (c.kind === 'memory') {
+            if (typeof c.titleCount === 'number') size = `${c.titleCount} titles (RAM)`;
+          } else if (c.exists === false) {
+            size = '—';
+          } else if (typeof c.bytes === 'number') {
+            size = formatCacheBytes(c.bytes);
+          }
+          let files = '—';
+          if (c.kind === 'memory') {
+            files = '—';
+          } else if (c.exists === false) {
+            files = '0';
+          } else if (typeof c.fileCount === 'number') {
+            files = String(c.fileCount);
+          }
+          const updated = formatCacheInstant(c.updatedAt);
+          let notes = String(c.notes || '');
+          if (c.extra) notes = notes ? `${notes} ${c.extra}` : String(c.extra);
+          rows.push(
+            `<tr>
+        <td>${escapeHtmlAttr(c.label || c.id || '')}</td>
+        <td>${locCell}</td>
+        <td>${escapeHtmlAttr(size)}</td>
+        <td>${escapeHtmlAttr(files)}</td>
+        <td>${escapeHtmlAttr(updated)}</td>
+        <td>${escapeHtmlAttr(notes)}</td>
+      </tr>`
+          );
+        }
+        let browserSize = '—';
+        let browserUpdated = '—';
+        let browserTitles = '—';
+        try {
+          const raw = localStorage.getItem(moviesCacheKey);
+          if (raw) {
+            browserSize = formatCacheBytes(new Blob([raw]).size);
+            const snap = readMoviesCache();
+            if (snap && snap.savedAt) {
+              browserUpdated = formatCacheInstant(new Date(snap.savedAt).toISOString());
+            }
+            if (snap && Array.isArray(snap.movies)) browserTitles = String(snap.movies.length);
+          }
+        } catch (_) { /* ignore */ }
+        let hasBrowserCache = false;
+        try {
+          hasBrowserCache = !!localStorage.getItem(moviesCacheKey);
+        } catch (_) { /* ignore */ }
+        rows.push(
+          `<tr>
+        <td>Movie grid (this browser)</td>
+        <td><code>${escapeHtmlAttr(`localStorage["${moviesCacheKey}"]`)}</code></td>
+        <td>${escapeHtmlAttr(browserSize)}${browserTitles !== '—' ? ` (${browserTitles} titles)` : ''}</td>
+        <td>${hasBrowserCache ? '1' : '0'}</td>
+        <td>${escapeHtmlAttr(browserUpdated)}</td>
+        <td>Cleared with browser site data. Dashboard Load/Refresh updates after the server responds.</td>
+      </tr>`
+        );
+        body.innerHTML = rows.join('\n');
+        if (status) {
+          status.textContent = 'Updated.';
+          status.className = 'muted small ok';
+        }
+      } catch (err) {
+        body.innerHTML = '';
+        if (status) {
+          status.textContent = `Failed: ${err.message}`;
+          status.className = 'muted small err';
+        }
+      }
     }
 
     /** Mbps ≈ (file bytes × 8) / duration — same path as Plex “overall bitrate”. */
@@ -6705,6 +6869,7 @@
       if (e.detail === 'settings') {
         syncSettingsGenreBarFields();
         renderConnectivityHistoryChart();
+        refreshSettingsCaches();
       }
     });
     applyRadarrVisibility();
@@ -6725,6 +6890,15 @@
     wireStudioAutocomplete();
     wireDashboardSearchDatalist();
     initDashboardLibraryTip();
+    const settingsCachesRefreshBtn = document.getElementById('settingsCachesRefreshBtn');
+    if (settingsCachesRefreshBtn) {
+      settingsCachesRefreshBtn.addEventListener('click', () => {
+        refreshSettingsCaches();
+      });
+    }
+    if (document.getElementById('tab-settings')?.classList.contains('active')) {
+      refreshSettingsCaches();
+    }
     wireDiscoveryTableSort();
     wireDiscoveryTableActions();
     wireDiscoveryInfiniteScroll();
