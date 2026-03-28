@@ -389,11 +389,13 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/connectivity", s.handleConnectivity)
 	mux.HandleFunc("/api/settings", s.handleSettings)
 	mux.HandleFunc("/api/movies", s.handleMovies)
+	mux.HandleFunc("/api/omdb-ratings", s.handleOMDbRatings)
 	mux.HandleFunc("/api/movies/cache-status", s.handleMovieCacheStatus)
 	mux.HandleFunc("/api/branding/banner-thumb", s.handleBrandingBannerThumb)
 	mux.HandleFunc("/api/movies/sync-recent", s.handleMoviesSyncRecent)
 	mux.HandleFunc("/api/genres", s.handleGenres)
 	mux.HandleFunc("/api/players", s.handlePlayers)
+	mux.HandleFunc("/api/plex/companion/control", s.handlePlexCompanionControl)
 	mux.HandleFunc("/api/lg/volume", s.handleLgVolume)
 	mux.HandleFunc("/api/playback/status", s.handlePlaybackStatus)
 	mux.HandleFunc("/api/discovery/person-suggest", s.handleDiscoveryPersonSuggest)
@@ -619,6 +621,71 @@ func (s *Server) handleMovies(w http.ResponseWriter, r *http.Request) {
 			"movies": movies[:limit],
 		},
 	})
+}
+
+// handleOMDbRatings: GET /api/omdb-ratings?tmdbId=123 or &imdbId=tt1234567
+// Returns OMDb IMDb/RT/Metacritic rows plus optional TMDB vote average when tmdbId is provided.
+func (s *Server) handleOMDbRatings(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 22*time.Second)
+	defer cancel()
+	cfg := s.snapshot()
+	tmdbStr := strings.TrimSpace(r.URL.Query().Get("tmdbId"))
+	imdb := strings.TrimSpace(r.URL.Query().Get("imdbId"))
+	var tmdbID int
+	if tmdbStr != "" {
+		tmdbID, _ = strconv.Atoi(tmdbStr)
+	}
+	out := map[string]any{"ok": false}
+	omdbKey := strings.TrimSpace(cfg.OMDbAPIKey)
+	tmdbKey := strings.TrimSpace(cfg.TMDBAPIKey)
+	if omdbKey == "" && tmdbKey == "" {
+		out["reason"] = "no_api_keys"
+		respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: out})
+		return
+	}
+	if imdb == "" && tmdbID > 0 && tmdbKey != "" {
+		var err error
+		imdb, err = tmdbFetchMovieExternalIDs(ctx, tmdbKey, tmdbID)
+		if err != nil {
+			imdb = ""
+		}
+	}
+	var entries []OMDbRatingEntry
+	if omdbKey != "" && imdb != "" {
+		detail, err := FetchOMDbRatingsDetail(ctx, omdbKey, imdb)
+		if err != nil {
+			respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: err.Error()})
+			return
+		}
+		entries = append(entries, detail.Entries...)
+	}
+	if tmdbID > 0 && tmdbKey != "" {
+		if v, ok := tmdbFetchMovieVoteAverage(ctx, tmdbKey, tmdbID); ok {
+			entries = append(entries, OMDbRatingEntry{
+				Source:  "tmdb",
+				Label:   "TMDB",
+				Display: fmt.Sprintf("%.1f", v),
+				Score10: v,
+			})
+		}
+	}
+	if imdb != "" {
+		out["imdbId"] = imdb
+	}
+	out["entries"] = entries
+	out["average10"] = averageScore10(entries)
+	if len(entries) > 0 {
+		out["ok"] = true
+	} else if omdbKey != "" && imdb == "" {
+		out["reason"] = "no_imdb_id"
+	} else {
+		out["reason"] = "no_scores"
+	}
+	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: out})
 }
 
 // handleMovieCacheStatus returns how old the in-memory movie list is and (when
@@ -880,6 +947,9 @@ func (s *Server) handleMoviesPlay(w http.ResponseWriter, r *http.Request) {
 		} `json:"items"`
 		ClientName string `json:"clientName"`
 		Shuffle    bool   `json:"shuffle"`
+		// Transport "companion" uses Plex HTTP companion (playMedia) — works for many
+		// players with a non-SSAP URI. Empty or "webos" keeps the previous LG webOS direct path.
+		Transport string `json:"transport"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "invalid JSON: " + err.Error()})
@@ -918,6 +988,47 @@ func (s *Server) handleMoviesPlay(w http.ResponseWriter, r *http.Request) {
 	if clientName == "" {
 		clientName = cfg.TargetClientName
 	}
+
+	transport := strings.ToLower(strings.TrimSpace(req.Transport))
+	if transport == "companion" {
+		if len(req.Items) != 1 {
+			respondJSON(w, http.StatusBadRequest, apiResponse{
+				Success: false,
+				Error:   "transport=companion supports exactly one movie per request (webOS direct still queues multiple titles)",
+			})
+			return
+		}
+		rk := strings.TrimSpace(req.Items[0].RatingKey)
+		if rk == "" {
+			respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "ratingKey is required"})
+			return
+		}
+		lp := client.ListPlayers(ctx)
+		player, err := SelectPlayerForCompanion(lp.Players, clientName)
+		if err != nil {
+			respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: err.Error()})
+			return
+		}
+		if err := client.playMovieOnClient(ctx, player, rk); err != nil {
+			respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: err.Error()})
+			return
+		}
+		title := strings.TrimSpace(req.Items[0].Title)
+		if title == "" {
+			title = "item " + rk
+		}
+		s.recordLocalPlayback(player.Name, []string{title}, "movies_play_companion", "", false)
+		respondJSON(w, http.StatusOK, apiResponse{
+			Success: true,
+			Data: map[string]any{
+				"count":     1,
+				"target":    player.Name,
+				"transport": "companion",
+			},
+		})
+		return
+	}
+
 	targetName, err := client.PlayStreamItemsOnTV(ctx, streamItems, clientName)
 	if err != nil {
 		respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: err.Error()})
@@ -935,6 +1046,64 @@ func (s *Server) handleMoviesPlay(w http.ResponseWriter, r *http.Request) {
 		Data: map[string]any{
 			"count":  len(streamItems),
 			"target": targetName,
+		},
+	})
+}
+
+// handlePlexCompanionControl: POST JSON { "clientName", "action", "seekMs?" } — Plex companion
+// playback commands (pause, play, skipNext, …). Requires a non-SSAP player (see SelectPlayerForCompanion).
+func (s *Server) handlePlexCompanionControl(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+		return
+	}
+	var req struct {
+		ClientName string `json:"clientName"`
+		Action     string `json:"action"`
+		SeekMs     int64  `json:"seekMs"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "invalid JSON: " + err.Error()})
+		return
+	}
+	action := strings.TrimSpace(strings.ToLower(req.Action))
+	if action == "" {
+		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "action is required"})
+		return
+	}
+
+	cfg := s.snapshot()
+	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	defer cancel()
+
+	client := NewPlexClient(cfg)
+	clientName := strings.TrimSpace(req.ClientName)
+	if clientName == "" {
+		clientName = cfg.TargetClientName
+	}
+	lp := client.ListPlayers(ctx)
+	player, err := SelectPlayerForCompanion(lp.Players, clientName)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: err.Error()})
+		return
+	}
+
+	apiAction := action
+	switch action {
+	case "seekto", "seek_to":
+		apiAction = "seekTo"
+	}
+
+	if err := client.SendPlaybackControl(ctx, player, apiAction, req.SeekMs); err != nil {
+		respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: err.Error()})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, apiResponse{
+		Success: true,
+		Data: map[string]any{
+			"target": player.Name,
+			"action": apiAction,
 		},
 	})
 }
@@ -970,6 +1139,11 @@ func (s *Server) handleGenres(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func discoveryQueryBool(raw string) bool {
+	v := strings.TrimSpace(strings.ToLower(raw))
+	return v == "1" || v == "true" || v == "yes"
+}
+
 func (s *Server) handleDiscoveryFilmography(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
@@ -984,6 +1158,7 @@ func (s *Server) handleDiscoveryFilmography(w http.ResponseWriter, r *http.Reque
 	minYear, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("minYear")))
 	maxYear, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("maxYear")))
 	minRating, _ := strconv.ParseFloat(strings.TrimSpace(r.URL.Query().Get("minRating")), 64)
+	excludeNonTheatrical := discoveryQueryBool(r.URL.Query().Get("excludeNonTheatrical"))
 	if person == "" {
 		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "person query is required"})
 		return
@@ -1001,7 +1176,7 @@ func (s *Server) handleDiscoveryFilmography(w http.ResponseWriter, r *http.Reque
 	}
 
 	var cacheStats DiscoveryCacheStats
-	items, err := AnalyzeFilmography(ctx, cfg, client, plexMovies, person, role, playlistTitle, director, coActor, minYear, maxYear, minRating, nil, &cacheStats)
+	items, err := AnalyzeFilmography(ctx, cfg, client, plexMovies, person, role, playlistTitle, director, coActor, minYear, maxYear, minRating, nil, excludeNonTheatrical, &cacheStats)
 	if err != nil {
 		respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: err.Error()})
 		return
@@ -1062,6 +1237,7 @@ func (s *Server) handleDiscoveryStudio(w http.ResponseWriter, r *http.Request) {
 	minYear, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("minYear")))
 	maxYear, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("maxYear")))
 	minRating, _ := strconv.ParseFloat(strings.TrimSpace(r.URL.Query().Get("minRating")), 64)
+	excludeNonTheatrical := discoveryQueryBool(r.URL.Query().Get("excludeNonTheatrical"))
 
 	cfg := s.snapshot()
 	client := NewPlexClient(cfg)
@@ -1074,7 +1250,7 @@ func (s *Server) handleDiscoveryStudio(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items, resolvedName, err := AnalyzeStudio(ctx, cfg, client, plexMovies, company, minYear, maxYear, minRating, nil)
+	items, resolvedName, err := AnalyzeStudio(ctx, cfg, client, plexMovies, company, minYear, maxYear, minRating, nil, excludeNonTheatrical)
 	if err != nil {
 		respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: err.Error()})
 		return
@@ -1134,17 +1310,18 @@ func (s *Server) handleDiscoveryStart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Mode          string  `json:"mode"`
-		Person        string  `json:"person"`
-		Role          string  `json:"role"`
-		PlaylistTitle string  `json:"playlistTitle"`
-		Director      string  `json:"director"`
-		CoActor       string  `json:"coActor"`
-		Company       string  `json:"company"`
-		MinYear       int     `json:"minYear"`
-		MaxYear       int     `json:"maxYear"`
-		MinRating     float64 `json:"minRating"`
-		GenreIDs      []int   `json:"genreIds"`
+		Mode                   string  `json:"mode"`
+		Person                 string  `json:"person"`
+		Role                   string  `json:"role"`
+		PlaylistTitle          string  `json:"playlistTitle"`
+		Director               string  `json:"director"`
+		CoActor                string  `json:"coActor"`
+		Company                string  `json:"company"`
+		MinYear                int     `json:"minYear"`
+		MaxYear                int     `json:"maxYear"`
+		MinRating              float64 `json:"minRating"`
+		GenreIDs               []int   `json:"genreIds"`
+		ExcludeNonTheatrical   bool    `json:"excludeNonTheatrical"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "invalid JSON"})
@@ -1169,7 +1346,7 @@ func (s *Server) handleDiscoveryStart(w http.ResponseWriter, r *http.Request) {
 		switch req.Mode {
 		case "studio":
 			s.discJobs.setRunning(job, "Searching TMDB for "+req.Company+"…")
-			items, resolvedName, err := AnalyzeStudio(ctx, cfg, client, plexMovies, req.Company, req.MinYear, req.MaxYear, req.MinRating, req.GenreIDs)
+			items, resolvedName, err := AnalyzeStudio(ctx, cfg, client, plexMovies, req.Company, req.MinYear, req.MaxYear, req.MinRating, req.GenreIDs, req.ExcludeNonTheatrical)
 			if err != nil {
 				s.discJobs.setFailed(job, err.Error())
 				return
@@ -1188,7 +1365,7 @@ func (s *Server) handleDiscoveryStart(w http.ResponseWriter, r *http.Request) {
 			})
 		case "browse":
 			s.discJobs.setRunning(job, "Fetching TMDB discover (by year)…")
-			items, browseLabel, err := AnalyzeBrowse(ctx, cfg, client, plexMovies, req.MinYear, req.MaxYear, req.MinRating, req.GenreIDs)
+			items, browseLabel, err := AnalyzeBrowse(ctx, cfg, client, plexMovies, req.MinYear, req.MaxYear, req.MinRating, req.GenreIDs, req.ExcludeNonTheatrical)
 			if err != nil {
 				s.discJobs.setFailed(job, err.Error())
 				return
@@ -1209,7 +1386,7 @@ func (s *Server) handleDiscoveryStart(w http.ResponseWriter, r *http.Request) {
 			s.discJobs.setRunning(job, "Fetching TMDB filmography for "+req.Person+"…")
 			var cacheStats DiscoveryCacheStats
 			items, err := AnalyzeFilmography(ctx, cfg, client, plexMovies, req.Person, req.Role,
-				req.PlaylistTitle, req.Director, req.CoActor, req.MinYear, req.MaxYear, req.MinRating, req.GenreIDs, &cacheStats)
+				req.PlaylistTitle, req.Director, req.CoActor, req.MinYear, req.MaxYear, req.MinRating, req.GenreIDs, req.ExcludeNonTheatrical, &cacheStats)
 			if err != nil {
 				s.discJobs.setFailed(job, err.Error())
 				return

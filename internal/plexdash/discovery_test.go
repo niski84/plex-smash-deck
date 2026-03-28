@@ -31,7 +31,7 @@ func Test_movieMatchesGenreFilterOR(t *testing.T) {
 }
 
 func TestAnalyzeBrowse_requiresAtLeastOneYear(t *testing.T) {
-	_, _, err := AnalyzeBrowse(context.Background(), Config{TMDBAPIKey: "x"}, nil, nil, 0, 0, 0, nil)
+	_, _, err := AnalyzeBrowse(context.Background(), Config{TMDBAPIKey: "x"}, nil, nil, 0, 0, 0, nil, false)
 	if err == nil {
 		t.Fatal("expected error when min and max year are both unset")
 	}
@@ -45,5 +45,27 @@ func Test_findMatchingPlexMovie_yearTolerance(t *testing.T) {
 	m, ok := findMatchingPlexMovie(plex, "Example", 2021)
 	if !ok || m.RatingKey != "1" {
 		t.Fatalf("want 2020 match, got %+v ok=%v", m, ok)
+	}
+}
+
+func TestPlexLibraryMatch_byImdb(t *testing.T) {
+	plex := []Movie{{RatingKey: "1", Title: "F1: The Movie", Year: 2025, IMDbID: "tt9990001", ViewCount: 2}}
+	ty := map[string][]int{normalizeTitle("F1: The Movie"): {2025}}
+	byT := buildPlexTMDBIndex(plex)
+	byI := buildPlexIMDBIndex(plex)
+	ok, m := plexLibraryMatch(plex, ty, byT, byI, 0, "tt9990001", "F1", 2025)
+	if !ok || m.RatingKey != "1" {
+		t.Fatalf("want imdb match, got %+v ok=%v", m, ok)
+	}
+}
+
+func TestPlexLibraryMatch_relaxedTitle(t *testing.T) {
+	plex := []Movie{{RatingKey: "1", Title: "F1: The Movie", Year: 2025, ViewCount: 1}}
+	ty := map[string][]int{normalizeTitle("F1: The Movie"): {2025}}
+	byT := buildPlexTMDBIndex(plex)
+	byI := buildPlexIMDBIndex(plex)
+	ok, m := plexLibraryMatch(plex, ty, byT, byI, 0, "", "F1", 2025)
+	if !ok || m.RatingKey != "1" {
+		t.Fatalf("want relaxed title match, got %+v ok=%v", m, ok)
 	}
 }
