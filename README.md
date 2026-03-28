@@ -6,6 +6,22 @@ It turned into something a bit bigger than that.
 
 ![Plex Dashboard demo](docs/demo.gif)
 
+<!-- readme-gallery:start -->
+
+## Screenshots
+
+This section is generated from [`images/manifest.json`](images/manifest.json). Add files under [`images/`](images/) and list them there, then run:
+
+```bash
+./scripts/generate-readme-images.sh
+```
+
+![Dashboard: search, Recently added to Plex sort, genre chips, and movie cards](images/dashboard-movie-grid.png)
+
+![Dashboard: sort dropdown, decade filter, genre tags, Select All, Playback path, Play Selected, and cards with file-size coloring](images/dashboard-sort-controls.png)
+
+<!-- readme-gallery:end -->
+
 ## What it does
 
 **Plays movies on your LG TV** using the SSAP WebSocket protocol built into every modern LG webOS TV. Select one movie or build a multi-select playlist and push it straight over. The TV opens its own media player; Plex is just the file server.
@@ -37,6 +53,20 @@ go run ./cmd/plex-dashboard
 ```
 
 All settings can also be saved through the Settings tab in the UI — no restart needed.
+
+## Documentation
+
+User guides live in **[docs/](docs/)** as Markdown. Read them in the repo, or open the **Help** tab in the UI (same files, with cross-links between topics).
+
+| Doc | Contents |
+|-----|----------|
+| [docs/00-getting-started.md](docs/00-getting-started.md) | First run, `.env`, health check, documentation map |
+| [docs/connecting-your-tv.md](docs/connecting-your-tv.md) | LG TV / network / pairing |
+| [docs/playback-and-webos.md](docs/playback-and-webos.md) | Playback model and webOS limits |
+| [docs/01-dashboard-movies.md](docs/01-dashboard-movies.md) | Movie grid, sort, hover panel, play |
+| [docs/02-discovery.md](docs/02-discovery.md) | Discovery jobs, TMDB, cache, Radarr |
+| [docs/03-snapshots-settings-troubleshooting.md](docs/03-snapshots-settings-troubleshooting.md) | Snapshots, Settings, playlists, FAQ |
+| [docs/04-background-health-checks.md](docs/04-background-health-checks.md) | Background connectivity probes (45s / 4m) vs `/api/health` |
 
 ## Configuration
 
@@ -89,6 +119,7 @@ Tagged releases now also publish a Windows NSIS installer (`*-windows-x64-setup.
 Go standard library backend, vanilla JS frontend, single binary. No web framework, no JavaScript framework, no database. Movie metadata is cached in memory and on disk so Plex takes as few hits as possible.
 
 ```
+images/                 — README screenshots ([`manifest.json`](images/manifest.json)); run `npm run gen:readme`
 cmd/plex-dashboard/     — entry point
 internal/plexdash/
   server.go             — HTTP routes, shared in-memory movie list (invalidated on refresh / snapshot)

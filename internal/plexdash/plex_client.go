@@ -33,6 +33,7 @@ type Movie struct {
 	LastViewedAtEpoch int64
 	ViewCount         int
 	Rating            float64
+	ContentRating     string `json:"contentRating"` // Plex MPAA / TV (library list may omit; hover-meta fills)
 	Summary           string
 	Studio            string
 	Actors            []string
@@ -41,6 +42,8 @@ type Movie struct {
 	PartKey           string // e.g. /library/parts/12345/file.mp4
 	FileContainer     string // e.g. mp4, mkv
 	PartSize          int64
+	// AddedAtEpoch is Unix seconds when the title was added to the Plex library (XML addedAt).
+	AddedAtEpoch int64 `json:"addedAt"`
 }
 
 type CreatePlaylistResult struct {
@@ -163,6 +166,7 @@ func movieFromVideo(video video) Movie {
 	year, _ := strconv.Atoi(video.Year)
 	duration, _ := strconv.ParseInt(video.Duration, 10, 64)
 	lastViewedAt, _ := strconv.ParseInt(video.LastViewedAt, 10, 64)
+	addedAt, _ := strconv.ParseInt(strings.TrimSpace(video.AddedAt), 10, 64)
 	rating, _ := strconv.ParseFloat(video.Rating, 64)
 	viewCount, _ := strconv.Atoi(video.ViewCount)
 	tmdbID, imdbID := plexExternalIDsFromVideo(video)
@@ -191,8 +195,10 @@ func movieFromVideo(video video) Movie {
 		IMDbID:            imdbID,
 		DurationMillis:    duration,
 		LastViewedAtEpoch: lastViewedAt,
+		AddedAtEpoch:      addedAt,
 		ViewCount:         viewCount,
 		Rating:            rating,
+		ContentRating:     strings.TrimSpace(video.ContentRating),
 		Summary:           video.Summary,
 		Studio:            video.Studio,
 		Actors:            tagsToStrings(video.Roles),
@@ -226,6 +232,31 @@ func (p *PlexClient) ListMovies(ctx context.Context, libraryKey string) ([]Movie
 	SortMoviesDefaultView(movies)
 
 	return movies, nil
+}
+
+// FetchMovieHoverMeta returns contentRating and TMDB / IMDb ids from Plex full metadata.
+// The library "all" feed sometimes omits contentRating or child Guids; includeGuids=1 matches ListMovies.
+func (p *PlexClient) FetchMovieHoverMeta(ctx context.Context, ratingKey string) (contentRating string, tmdbID int, imdbID string, err error) {
+	ratingKey = strings.TrimSpace(ratingKey)
+	if ratingKey == "" {
+		return "", 0, "", fmt.Errorf("ratingKey required")
+	}
+	endpoint := fmt.Sprintf("%s/library/metadata/%s?includeGuids=1", p.baseURL, url.PathEscape(ratingKey))
+	body, err := p.get(ctx, endpoint)
+	if err != nil {
+		return "", 0, "", err
+	}
+	var root mediaContainer
+	if err := xml.Unmarshal(body, &root); err != nil {
+		return "", 0, "", fmt.Errorf("decode metadata: %w", err)
+	}
+	if len(root.Videos) == 0 {
+		return "", 0, "", nil
+	}
+	v := root.Videos[0]
+	cr := strings.TrimSpace(v.ContentRating)
+	tid, iid := plexExternalIDsFromVideo(v)
+	return cr, tid, iid, nil
 }
 
 // SortMoviesDefaultView orders movies for the main dashboard: newest release year
@@ -702,6 +733,7 @@ func (p *PlexClient) PlaylistMovies(ctx context.Context, playlistTitle string, l
 		year, _ := strconv.Atoi(video.Year)
 		duration, _ := strconv.ParseInt(video.Duration, 10, 64)
 		lastViewedAt, _ := strconv.ParseInt(video.LastViewedAt, 10, 64)
+		addedAt, _ := strconv.ParseInt(strings.TrimSpace(video.AddedAt), 10, 64)
 		rating, _ := strconv.ParseFloat(video.Rating, 64)
 		viewCount, _ := strconv.Atoi(video.ViewCount)
 
@@ -711,8 +743,10 @@ func (p *PlexClient) PlaylistMovies(ctx context.Context, playlistTitle string, l
 			Year:              year,
 			DurationMillis:    duration,
 			LastViewedAtEpoch: lastViewedAt,
+			AddedAtEpoch:      addedAt,
 			ViewCount:         viewCount,
 			Rating:            rating,
+			ContentRating:     strings.TrimSpace(video.ContentRating),
 			Actors:            tagsToStrings(video.Roles),
 			Directors:         tagsToStrings(video.Directors),
 			Genres:            tagsToStrings(video.Genres),
@@ -1459,9 +1493,11 @@ type video struct {
 	Year         string       `xml:"year,attr"`
 	Duration     string       `xml:"duration,attr"`
 	LastViewedAt string       `xml:"lastViewedAt,attr"`
+	AddedAt      string       `xml:"addedAt,attr"`
 	ViewCount    string       `xml:"viewCount,attr"`
-	Rating       string       `xml:"rating,attr"`
-	Summary      string       `xml:"summary,attr"`
+	Rating         string `xml:"rating,attr"`
+	ContentRating  string `xml:"contentRating,attr"`
+	Summary        string `xml:"summary,attr"`
 	Studio       string       `xml:"studio,attr"`
 	Roles        []mediaTag   `xml:"Role"`
 	Directors    []mediaTag   `xml:"Director"`

@@ -22,6 +22,36 @@ import (
 // /api/movies, snapshot flows, etc.). Discovery, the dashboard, and other handlers
 // all share this same slice so Plex is not refetched on a timer.
 
+// helpDocOrder is the Help tab dropdown order (onboarding first, then feature guides).
+var helpDocOrder = []string{
+	"00-getting-started.md",
+	"connecting-your-tv.md",
+	"playback-and-webos.md",
+	"01-dashboard-movies.md",
+	"02-discovery.md",
+	"03-snapshots-settings-troubleshooting.md",
+	"04-background-health-checks.md",
+}
+
+var helpDocTitles = map[string]string{
+	"00-getting-started.md":                    "Getting started",
+	"connecting-your-tv.md":                    "Connecting your TV",
+	"playback-and-webos.md":                    "Playback and webOS",
+	"01-dashboard-movies.md":                   "Dashboard — movie grid",
+	"02-discovery.md":                          "Discovery",
+	"03-snapshots-settings-troubleshooting.md": "Snapshots, settings & troubleshooting",
+	"04-background-health-checks.md":           "Background connectivity & health checks",
+}
+
+func helpDocSortRank(name string) int {
+	for i, n := range helpDocOrder {
+		if strings.EqualFold(name, n) {
+			return i
+		}
+	}
+	return len(helpDocOrder)
+}
+
 type Server struct {
 	mu           sync.RWMutex
 	cfg          Config
@@ -388,11 +418,14 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/connectivity", s.handleConnectivity)
 	mux.HandleFunc("/api/settings", s.handleSettings)
+	// Register /api/movies/* before /api/movies so path matching is unambiguous across Go versions.
+	mux.HandleFunc("/api/movies/hover-meta", s.handleMoviesHoverMeta)
+	mux.HandleFunc("/api/movies/cache-status", s.handleMovieCacheStatus)
+	mux.HandleFunc("/api/movies/sync-recent", s.handleMoviesSyncRecent)
+	mux.HandleFunc("/api/movies/play", s.handleMoviesPlay)
 	mux.HandleFunc("/api/movies", s.handleMovies)
 	mux.HandleFunc("/api/omdb-ratings", s.handleOMDbRatings)
-	mux.HandleFunc("/api/movies/cache-status", s.handleMovieCacheStatus)
 	mux.HandleFunc("/api/branding/banner-thumb", s.handleBrandingBannerThumb)
-	mux.HandleFunc("/api/movies/sync-recent", s.handleMoviesSyncRecent)
 	mux.HandleFunc("/api/genres", s.handleGenres)
 	mux.HandleFunc("/api/players", s.handlePlayers)
 	mux.HandleFunc("/api/plex/companion/control", s.handlePlexCompanionControl)
@@ -402,6 +435,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/discovery/collaborators", s.handleDiscoveryCollaborators)
 	mux.HandleFunc("/api/discovery/filmography", s.handleDiscoveryFilmography)
 	mux.HandleFunc("/api/discovery/tmdb-genres", s.handleDiscoveryTMDBGenres)
+	mux.HandleFunc("/api/discovery/studio-suggest", s.handleDiscoveryStudioSuggest)
 	mux.HandleFunc("/api/discovery/studio", s.handleDiscoveryStudio)
 	mux.HandleFunc("/api/discovery/start", s.handleDiscoveryStart)
 	mux.HandleFunc("/api/discovery/poll", s.handleDiscoveryPoll)
@@ -421,7 +455,6 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/playlists", s.handleListPlaylists)
 	mux.HandleFunc("/api/playlists/items", s.handlePlaylistItems)
 	mux.HandleFunc("/api/plex/thumb", s.handlePlexThumb)
-	mux.HandleFunc("/api/movies/play", s.handleMoviesPlay)
 	mux.HandleFunc("/api/playlists/play", s.handlePlayPlaylist)
 	mux.HandleFunc("/api/playlists/random", s.handleCreateRandomPlaylist)
 	mux.HandleFunc("/api/playlists/by-people", s.handleCreatePlaylistByPeople)
@@ -459,9 +492,16 @@ func (s *Server) handleHelpDocs(w http.ResponseWriter, r *http.Request) {
 		}
 		title := strings.TrimSuffix(name, filepath.Ext(name))
 		title = strings.ReplaceAll(title, "-", " ")
+		if t, ok := helpDocTitles[name]; ok {
+			title = t
+		}
 		docs = append(docs, map[string]string{"name": name, "title": strings.TrimSpace(title)})
 	}
 	sort.SliceStable(docs, func(i, j int) bool {
+		ri, rj := helpDocSortRank(docs[i]["name"]), helpDocSortRank(docs[j]["name"])
+		if ri != rj {
+			return ri < rj
+		}
 		return strings.ToLower(docs[i]["name"]) < strings.ToLower(docs[j]["name"])
 	})
 	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"docs": docs}})
@@ -619,6 +659,48 @@ func (s *Server) handleMovies(w http.ResponseWriter, r *http.Request) {
 		Data: map[string]any{
 			"count":  len(movies),
 			"movies": movies[:limit],
+		},
+	})
+}
+
+// handleMoviesHoverMeta: GET /api/movies/hover-meta?ratingKey=… — contentRating + tmdbId/imdbId from Plex metadata (includeGuids).
+func (s *Server) handleMoviesHoverMeta(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+		return
+	}
+	rk := strings.TrimSpace(r.URL.Query().Get("ratingKey"))
+	if rk == "" {
+		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "ratingKey required"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+	defer cancel()
+	cfg := s.snapshot()
+	client := NewPlexClient(cfg)
+	if !client.IsConfigured() {
+		respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"contentRating": "", "tmdbId": 0, "imdbId": ""}})
+		return
+	}
+	cr, tmdbID, imdbID, err := client.FetchMovieHoverMeta(ctx, rk)
+	if err != nil {
+		respondJSON(w, http.StatusOK, apiResponse{
+			Success: true,
+			Data: map[string]any{
+				"contentRating": "",
+				"tmdbId":        0,
+				"imdbId":        "",
+				"error":         err.Error(),
+			},
+		})
+		return
+	}
+	respondJSON(w, http.StatusOK, apiResponse{
+		Success: true,
+		Data: map[string]any{
+			"contentRating": cr,
+			"tmdbId":        tmdbID,
+			"imdbId":        imdbID,
 		},
 	})
 }
@@ -1310,18 +1392,18 @@ func (s *Server) handleDiscoveryStart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Mode                   string  `json:"mode"`
-		Person                 string  `json:"person"`
-		Role                   string  `json:"role"`
-		PlaylistTitle          string  `json:"playlistTitle"`
-		Director               string  `json:"director"`
-		CoActor                string  `json:"coActor"`
-		Company                string  `json:"company"`
-		MinYear                int     `json:"minYear"`
-		MaxYear                int     `json:"maxYear"`
-		MinRating              float64 `json:"minRating"`
-		GenreIDs               []int   `json:"genreIds"`
-		ExcludeNonTheatrical   bool    `json:"excludeNonTheatrical"`
+		Mode                 string  `json:"mode"`
+		Person               string  `json:"person"`
+		Role                 string  `json:"role"`
+		PlaylistTitle        string  `json:"playlistTitle"`
+		Director             string  `json:"director"`
+		CoActor              string  `json:"coActor"`
+		Company              string  `json:"company"`
+		MinYear              int     `json:"minYear"`
+		MaxYear              int     `json:"maxYear"`
+		MinRating            float64 `json:"minRating"`
+		GenreIDs             []int   `json:"genreIds"`
+		ExcludeNonTheatrical bool    `json:"excludeNonTheatrical"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "invalid JSON"})
@@ -1493,14 +1575,25 @@ func (s *Server) handleDiscoveryPersonSuggest(w http.ResponseWriter, r *http.Req
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
 
-	suggestions, err := SuggestPeople(ctx, cfg, query)
-	if err != nil {
-		respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: err.Error()})
-		return
-	}
 	movies, _ := s.cachedListMovies(ctx)
 	role := DiscoverCollaborators(movies, query).SuggestedRole
+	suggestions := mergeDiscoverPersonSuggestions(ctx, cfg, movies, query)
 	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"suggestions": suggestions, "suggestedRole": role}})
+}
+
+// handleDiscoveryStudioSuggest: GET /api/discovery/studio-suggest?q=… — library studios + TMDB companies.
+func (s *Server) handleDiscoveryStudioSuggest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+		return
+	}
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	cfg := s.snapshot()
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	movies, _ := s.cachedListMovies(ctx)
+	suggestions := mergeDiscoverStudioSuggestions(ctx, cfg, movies, query)
+	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"suggestions": suggestions}})
 }
 
 func (s *Server) handleDiscoveryCollaborators(w http.ResponseWriter, r *http.Request) {
@@ -1854,11 +1947,13 @@ func jsonAnyToVolumePercent(v any) (int, error) {
 func (s *Server) handleLgVolume(w http.ResponseWriter, r *http.Request) {
 	cfg := s.snapshot()
 	addr := strings.TrimSpace(cfg.LGTVAddr)
-	key := strings.TrimSpace(cfg.LGTVClientKey)
+	ssapKey := strings.TrimSpace(cfg.LGTVClientKey)
+	ipKey := strings.TrimSpace(cfg.LGTVIPControlKey)
+	lgVolumeOK := addr != "" && (ipKey != "" || ssapKey != "")
 
 	switch r.Method {
 	case http.MethodGet:
-		if addr == "" || key == "" {
+		if !lgVolumeOK {
 			respondJSON(w, http.StatusOK, apiResponse{
 				Success: true,
 				Data: map[string]any{
@@ -1869,7 +1964,13 @@ func (s *Server) handleLgVolume(w http.ResponseWriter, r *http.Request) {
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 		defer cancel()
-		st, err := GetVolumeSSAP(ctx, addr, key)
+		var st LGVolumeStatus
+		var err error
+		if ipKey != "" {
+			st, err = GetVolumeLGIP(ctx, addr, ipKey)
+		} else {
+			st, err = GetVolumeSSAP(ctx, addr, ssapKey)
+		}
 		if err != nil {
 			respondJSON(w, http.StatusOK, apiResponse{
 				Success: true,
@@ -1897,7 +1998,7 @@ func (s *Server) handleLgVolume(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if addr == "" || key == "" {
+		if !lgVolumeOK {
 			respondJSON(w, http.StatusOK, apiResponse{
 				Success: true,
 				Data: map[string]any{
@@ -1908,7 +2009,12 @@ func (s *Server) handleLgVolume(w http.ResponseWriter, r *http.Request) {
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 		defer cancel()
-		st, err := SetVolumeSSAP(ctx, addr, key, level)
+		var st LGVolumeStatus
+		if ipKey != "" {
+			st, err = SetVolumeLGIP(ctx, addr, ipKey, level)
+		} else {
+			st, err = SetVolumeSSAP(ctx, addr, ssapKey, level)
+		}
 		if err != nil {
 			respondJSON(w, http.StatusOK, apiResponse{
 				Success: true,

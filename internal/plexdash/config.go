@@ -35,6 +35,10 @@ type Config struct {
 	// LGTVClientKey is the key obtained during one-time pairing.
 	LGTVAddr      string
 	LGTVClientKey string
+	// LGTVIPControlKey is the 8-character LG IP Control key (TV settings → mobile / IP control).
+	// When set, /api/lg/volume uses TCP :9761 (same as lg-webos-smash-deck) instead of SSAP.
+	// Env: LGTV_IP_CONTROL_KEY, or TV_KEYCODE for compatibility with smash-deck .env.
+	LGTVIPControlKey string
 
 	// Snapshot schedule. SnapshotDisabled=false (zero) means enabled — correct
 	// default without needing special handling. SnapshotHour is 0–23 UTC;
@@ -72,6 +76,7 @@ func LoadConfig() (Config, error) {
 		RadarrProfileID:    getenvInt("RADARR_PROFILE_ID", 1),
 		LGTVAddr:           os.Getenv("LGTV_ADDR"),
 		LGTVClientKey:      os.Getenv("LGTV_CLIENT_KEY"),
+		LGTVIPControlKey:   firstNonEmptyEnv("LGTV_IP_CONTROL_KEY", "TV_KEYCODE"),
 	}
 
 	// Source from .env first, then fill missing values from persisted settings.
@@ -101,6 +106,15 @@ func getenv(key, fallback string) string {
 		return fallback
 	}
 	return val
+}
+
+func firstNonEmptyEnv(keys ...string) string {
+	for _, k := range keys {
+		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // findDotEnvPath locates a .env file so config works when cwd is not the repo root
@@ -259,6 +273,9 @@ func mergeMissingConfig(dst *Config, src Config) {
 	}
 	if dst.LGTVClientKey == "" {
 		dst.LGTVClientKey = src.LGTVClientKey
+	}
+	if dst.LGTVIPControlKey == "" {
+		dst.LGTVIPControlKey = src.LGTVIPControlKey
 	}
 	// Snapshot schedule: stored value always wins since zero-value is a valid
 	// explicit choice (enabled=true via !Disabled=false, hour=0=midnight).

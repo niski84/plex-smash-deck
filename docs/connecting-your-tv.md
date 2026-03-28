@@ -17,6 +17,23 @@ This app talks to TVs in two different ways:
 - The TV’s **IP address** (Settings → Network → your Wi‑Fi or Ethernet connection → IP).
 - For first-time control: the TV must **allow the connection** (pairing prompt on screen). After pairing, store `LGTV_ADDR` and `LGTV_CLIENT_KEY` in `.env` or Settings.
 
+### Same prerequisites as Home Assistant’s LG webOS TV integration
+
+Home Assistant’s official help for the **[LG webOS TV](https://www.home-assistant.io/integrations/webostv/)** integration is maintained as markdown in their docs repo ([`source/_integrations/webostv.markdown`](https://github.com/home-assistant/home-assistant.io/blob/current/source/_integrations/webostv.markdown)). That page describes the **same class of TV control** this app uses: LAN access to the TV’s WebSocket API (SSAP-style registration and pairing on **port 3001** with TLS on current firmware, same idea as `lgtv --ssl` in [LGWebOSRemote](https://github.com/klattimer/LGWebOSRemote)). Under the hood, Home Assistant Core uses the Python library **[aiowebostv](https://github.com/home-assistant-libs/aiowebostv)**.
+
+From that document, the parts that apply here as well:
+
+| Topic | What Home Assistant says (summary) |
+|--------|-----------------------------------|
+| **Before pairing** | Enable **LG Connect Apps** in the TV’s **Network** settings. On **older** models, the equivalent may be under **General** as **Mobile App** (wording varies). |
+| **Pairing** | Turn the TV on, start pairing from the app, then **accept the pairing request on the TV** when it appears. |
+| **Pairing fails** | Their troubleshooting step is: make sure **LG Connect Apps** is enabled in **Network**. |
+| **Firewall / VLANs** | If the TV is not on the same L2 network as the server, you may need firewall rules allowing **TCP 3000 and 3001** from the server to the TV. |
+| **Discovery** | Auto-discovery uses **SSDP**; that path also depends on the TV advertising itself on the LAN (related to the same network / “connect apps” story). |
+| **Wake on LAN** | For power-on from the network, newer sets often need **Settings → General → Mobile TV On → Turn on via Wi‑Fi**; Home Assistant links to [these third‑party steps](https://support.quanticapps.com/hc/en-us/articles/115005985729-How-to-turn-on-my-LG-Smart-TV-using-the-App-WebOS-) as a guide. |
+
+So: if you already followed Home Assistant’s LG TV setup, you have done the right TV-side prep for **plex-smash-deck** as well. If you **do not** see **LG Connect Apps** in Network, use the keypad / hidden-menu patterns in the next section (often recommended in Home Assistant community threads when that menu entry is missing).
+
 ### Why people mention a “secret” menu under Network
 
 LG moves options between firmware versions. Some **webOS automation / home‑brew** guides say certain toggles (for example allowing **LG Connect Apps**, **Mobile TV On**, or similar “control from apps on this network” features) only show up after opening an **extra / hidden** view from **Settings → Network**.
@@ -55,7 +72,7 @@ Official entry point: [webOS TV Developer — Developer Mode App](https://webost
 3. Start the server and trigger playback once — the TV should show a **permission / pairing** dialog.
 4. Save the client key the app prints / persists.
 
-If connection fails, confirm **nothing blocks port 3001** on the TV or router (same‑subnet client, no client isolation on guest Wi‑Fi, etc.).
+If connection fails, confirm **nothing blocks port 3001** on the TV or router (same‑subnet client, no client isolation on guest Wi‑Fi, etc.). Also re-check **LG Connect Apps** / **Mobile App** as in the [Home Assistant LG webOS TV](https://www.home-assistant.io/integrations/webostv/) troubleshooting section.
 
 ---
 
