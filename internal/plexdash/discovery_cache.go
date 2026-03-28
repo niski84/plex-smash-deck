@@ -20,6 +20,7 @@ const (
 	discoveryCacheFilmographyTTL    = 60 * 24 * time.Hour
 	discoveryCachePersonIDTTL       = 180 * 24 * time.Hour
 	discoveryCacheStudioDiscoverTTL = 60 * 24 * time.Hour
+	discoveryCacheBrowseDiscoverTTL = 60 * 24 * time.Hour
 	discoveryCacheCompanyIDTTL      = 180 * 24 * time.Hour
 	discoveryCacheGenreMapTTL       = 365 * 24 * time.Hour
 )
@@ -462,6 +463,63 @@ func (d *diskDiscoveryCache) putCompanyID(companyName string, companyID int, res
 	_ = writeJSONAtomic(path, c)
 }
 
+// --- Browse discover (/discover/movie, year range only) ---
+
+type cachedBrowseDiscover struct {
+	cachedEnvelope
+	Movies []tmdbDiscoverMovie `json:"movies"`
+}
+
+// extra is e.g. "g12-28-r85" (genres + min vote tier) or "" for base discover.
+func browseDiscoverCacheFile(minYear, maxYear int, extra string) string {
+	base := fmt.Sprintf("browse-discover-v2-en-y%d-Y%d", minYear, maxYear)
+	if extra == "" {
+		return base + ".json"
+	}
+	return base + "-" + extra + ".json"
+}
+
+func (d *diskDiscoveryCache) getBrowseDiscover(minYear, maxYear int, extra string) ([]tmdbDiscoverMovie, bool) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	path := d.abs(browseDiscoverCacheFile(minYear, maxYear, extra))
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false
+	}
+	var c cachedBrowseDiscover
+	if err := json.Unmarshal(b, &c); err != nil || c.Version != discoveryCacheJSONVersion {
+		return nil, false
+	}
+	if c.expired() {
+		return nil, false
+	}
+	out := make([]tmdbDiscoverMovie, len(c.Movies))
+	copy(out, c.Movies)
+	return out, true
+}
+
+func (d *diskDiscoveryCache) putBrowseDiscover(minYear, maxYear int, extra string, movies []tmdbDiscoverMovie) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_ = d.ensureDir()
+	path := d.abs(browseDiscoverCacheFile(minYear, maxYear, extra))
+	cp := make([]tmdbDiscoverMovie, len(movies))
+	copy(cp, movies)
+	for i := range cp {
+		cp[i].Genres = append([]string(nil), cp[i].Genres...)
+	}
+	c := cachedBrowseDiscover{
+		cachedEnvelope: cachedEnvelope{
+			Version:    discoveryCacheJSONVersion,
+			CachedAt:   time.Now().UTC(),
+			TTLSeconds: int64(discoveryCacheBrowseDiscoverTTL / time.Second),
+		},
+		Movies: cp,
+	}
+	_ = writeJSONAtomic(path, c)
+}
+
 // --- Studio discover (/discover/movie?with_companies=) ---
 
 type cachedStudioDiscover struct {
@@ -469,14 +527,18 @@ type cachedStudioDiscover struct {
 	Movies []tmdbDiscoverMovie `json:"movies"`
 }
 
-func studioDiscoverCacheFile(companyID, minYear, maxYear int) string {
-	return fmt.Sprintf("studio-discover-%d-y%d-Y%d.json", companyID, minYear, maxYear)
+func studioDiscoverCacheFile(companyID, minYear, maxYear int, extra string) string {
+	base := fmt.Sprintf("studio-discover-%d-y%d-Y%d", companyID, minYear, maxYear)
+	if extra == "" {
+		return base + ".json"
+	}
+	return base + "-" + extra + ".json"
 }
 
-func (d *diskDiscoveryCache) getStudioDiscover(companyID, minYear, maxYear int) ([]tmdbDiscoverMovie, bool) {
+func (d *diskDiscoveryCache) getStudioDiscover(companyID, minYear, maxYear int, extra string) ([]tmdbDiscoverMovie, bool) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
-	path := d.abs(studioDiscoverCacheFile(companyID, minYear, maxYear))
+	path := d.abs(studioDiscoverCacheFile(companyID, minYear, maxYear, extra))
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, false
@@ -493,11 +555,11 @@ func (d *diskDiscoveryCache) getStudioDiscover(companyID, minYear, maxYear int) 
 	return out, true
 }
 
-func (d *diskDiscoveryCache) putStudioDiscover(companyID, minYear, maxYear int, movies []tmdbDiscoverMovie) {
+func (d *diskDiscoveryCache) putStudioDiscover(companyID, minYear, maxYear int, extra string, movies []tmdbDiscoverMovie) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	_ = d.ensureDir()
-	path := d.abs(studioDiscoverCacheFile(companyID, minYear, maxYear))
+	path := d.abs(studioDiscoverCacheFile(companyID, minYear, maxYear, extra))
 	cp := make([]tmdbDiscoverMovie, len(movies))
 	copy(cp, movies)
 	for i := range cp {

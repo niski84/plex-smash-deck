@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,19 +33,124 @@ type Server struct {
 	mlKey      string // library key the cache was built for
 
 	discJobs *discoveryJobStore
+
+	playbackMu    sync.RWMutex
+	localPlayback localPlaybackSend
+
+	connMu       sync.RWMutex
+	connectivity ConnectivityPayload
+
+	// Plex stream throughput probe (connectivity): rate-limited, see connectivity.go.
+	streamProbeMu     sync.Mutex
+	plexStreamCache   PlexStreamMetrics
+	lastStreamProbeAt time.Time
+
+	// Plex library title count for /api/movies/cache-status — avoids hammering Plex
+	// when several tabs poll or the hint refreshes often.
+	remoteCountMu     sync.Mutex
+	remoteCountVal    int
+	remoteCountAt     time.Time
+	remoteCountLibKey string
+}
+
+type localPlaybackSend struct {
+	Target       string
+	Titles       []string
+	SentAt       time.Time
+	Source       string // e.g. movies_play, playlist_play
+	PlaylistName string
+	Shuffled     bool
+}
+
+// persistedPlaybackState is written to data/playback-state.json so the dashboard
+// can show the last webOS-direct queue after a server restart (Plex sessions
+// usually omit that playback).
+type persistedPlaybackState struct {
+	Target       string   `json:"target"`
+	Titles       []string `json:"titles"`
+	SentAt       string   `json:"sentAt"`
+	Source       string   `json:"source"`
+	PlaylistName string   `json:"playlistName,omitempty"`
+	Shuffled     bool     `json:"shuffled"`
+}
+
+func playbackStatePath() string {
+	return filepath.Clean("data/playback-state.json")
 }
 
 const (
-	minAllowedYear = 1982
-	maxAllowedYear = 2016
+	minAllowedYear         = 1982
+	maxAllowedYear         = 2016
+	localPlaybackFreshness = 45 * time.Minute
 )
 
 func NewServer(cfg Config, client *PlexClient) *Server {
 	_ = client
-	return &Server{
+	s := &Server{
 		cfg:          cfg,
 		settingsPath: defaultSettingsPath(),
 		discJobs:     newDiscoveryJobStore(),
+	}
+	s.loadPlaybackState()
+	return s
+}
+
+func (s *Server) loadPlaybackState() {
+	b, err := os.ReadFile(playbackStatePath())
+	if err != nil {
+		return
+	}
+	var raw persistedPlaybackState
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return
+	}
+	if len(raw.Titles) == 0 {
+		return
+	}
+	t, err := time.Parse(time.RFC3339, raw.SentAt)
+	if err != nil {
+		return
+	}
+	s.playbackMu.Lock()
+	s.localPlayback = localPlaybackSend{
+		Target:       raw.Target,
+		Titles:       raw.Titles,
+		SentAt:       t,
+		Source:       raw.Source,
+		PlaylistName: raw.PlaylistName,
+		Shuffled:     raw.Shuffled,
+	}
+	s.playbackMu.Unlock()
+}
+
+func (s *Server) persistPlaybackState(state localPlaybackSend) {
+	if len(state.Titles) == 0 || state.SentAt.IsZero() {
+		_ = os.Remove(playbackStatePath())
+		return
+	}
+	raw := persistedPlaybackState{
+		Target:       state.Target,
+		Titles:       state.Titles,
+		SentAt:       state.SentAt.UTC().Format(time.RFC3339),
+		Source:       state.Source,
+		PlaylistName: state.PlaylistName,
+		Shuffled:     state.Shuffled,
+	}
+	b, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(playbackStatePath()), 0o755); err != nil {
+		fmt.Printf("[playback] mkdir: %v\n", err)
+		return
+	}
+	tmp := playbackStatePath() + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		fmt.Printf("[playback] write: %v\n", err)
+		return
+	}
+	if err := os.Rename(tmp, playbackStatePath()); err != nil {
+		fmt.Printf("[playback] rename: %v\n", err)
 	}
 }
 
@@ -78,6 +186,14 @@ func (s *Server) invalidateMovieListCache() {
 	s.mlMu.Lock()
 	s.mlMovies = nil
 	s.mlMu.Unlock()
+	s.invalidatePlexStreamProbe()
+}
+
+func (s *Server) invalidatePlexStreamProbe() {
+	s.streamProbeMu.Lock()
+	s.lastStreamProbeAt = time.Time{}
+	s.plexStreamCache = PlexStreamMetrics{}
+	s.streamProbeMu.Unlock()
 }
 
 // WarmLibraryCacheOnStartup loads the Plex movie library into process memory once
@@ -123,19 +239,167 @@ func (s *Server) replaceConfig(cfg Config) {
 	s.cfg = cfg
 }
 
+func playerNameMatchesTarget(playerName, target string) bool {
+	t := strings.TrimSpace(strings.ToLower(target))
+	if t == "" {
+		return false
+	}
+	p := strings.TrimSpace(strings.ToLower(playerName))
+	if p == "" {
+		return false
+	}
+	return strings.Contains(p, t) || strings.Contains(t, p) || p == t
+}
+
+// pickPrimarySession returns the best session for the target player name, or the
+// first active session when the target is empty or does not match.
+func pickPrimarySession(sessions []PlaybackSession, targetName string) (PlaybackSession, bool, bool) {
+	if len(sessions) == 0 {
+		return PlaybackSession{}, false, false
+	}
+	tn := strings.TrimSpace(targetName)
+	if tn != "" {
+		for i := range sessions {
+			if playerNameMatchesTarget(sessions[i].PlayerName, tn) {
+				return sessions[i], true, true
+			}
+		}
+		return sessions[0], true, false
+	}
+	return sessions[0], true, true
+}
+
+func (s *Server) recordLocalPlayback(target string, titles []string, source, playlistName string, shuffle bool) {
+	if len(titles) == 0 {
+		return
+	}
+	clean := make([]string, 0, len(titles))
+	for _, t := range titles {
+		t = strings.TrimSpace(t)
+		if t != "" {
+			clean = append(clean, t)
+		}
+	}
+	if len(clean) == 0 {
+		return
+	}
+	s.playbackMu.Lock()
+	s.localPlayback = localPlaybackSend{
+		Target:       target,
+		Titles:       clean,
+		SentAt:       time.Now(),
+		Source:       source,
+		PlaylistName: playlistName,
+		Shuffled:     shuffle,
+	}
+	st := s.localPlayback
+	s.playbackMu.Unlock()
+	s.persistPlaybackState(st)
+}
+
+func buildPlaybackStatusPayload(cfg Config, sessions []PlaybackSession, sessionsErr error, local localPlaybackSend) map[string]any {
+	out := map[string]any{
+		"targetClientName": strings.TrimSpace(cfg.TargetClientName),
+		"plexSessions":     sessions,
+	}
+	if sessionsErr != nil {
+		out["plexSessionsError"] = sessionsErr.Error()
+	}
+	now := time.Now()
+	var localPayload map[string]any
+	var localStale bool
+	if !local.SentAt.IsZero() && len(local.Titles) > 0 {
+		localStale = now.Sub(local.SentAt) > localPlaybackFreshness
+		localPayload = map[string]any{
+			"target":       local.Target,
+			"titles":       local.Titles,
+			"sentAt":       local.SentAt.UTC().Format(time.RFC3339),
+			"source":       local.Source,
+			"playlistName": local.PlaylistName,
+			"shuffled":     local.Shuffled,
+			"stale":        localStale,
+			"queueLength":  len(local.Titles),
+		}
+		out["localSend"] = localPayload
+	}
+
+	primaryFrom := "idle"
+	summaryLine := "No Plex session. Play from this dashboard (LG webOS direct) to show the last queue here — Plex usually does not report that as a session."
+	var primary any
+
+	if len(sessions) > 0 {
+		sess, ok, matched := pickPrimarySession(sessions, cfg.TargetClientName)
+		if ok {
+			primaryFrom = "plex_session"
+			title := sess.DisplayTitle()
+			summaryLine = fmt.Sprintf("%s · %s — %s", sess.PlayerName, sess.PlayerState, title)
+			if sess.DurationMs > 0 {
+				summaryLine += fmt.Sprintf(" · %.0f%%", sess.ProgressPercent)
+			}
+			if !matched && strings.TrimSpace(cfg.TargetClientName) != "" {
+				summaryLine += " (first active session; target name did not match)"
+			}
+			primary = sess
+		}
+	} else if localPayload != nil && !localStale {
+		primaryFrom = "local_send"
+		titles := local.Titles
+		t0 := titles[0]
+		rest := len(titles) - 1
+		if rest > 0 {
+			summaryLine = fmt.Sprintf("%s (webOS queue): %s + %d more — TV position not reported by Plex", local.Target, t0, rest)
+		} else {
+			summaryLine = fmt.Sprintf("%s (webOS queue): %s — TV position not reported by Plex", local.Target, t0)
+		}
+		primary = localPayload
+	} else if localPayload != nil {
+		summaryLine = "No Plex session; last send from this app is older than 45m (see localSend if needed)."
+	}
+
+	out["primaryFrom"] = primaryFrom
+	out["summaryLine"] = summaryLine
+	out["primary"] = primary
+	return out
+}
+
+func (s *Server) handlePlaybackStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	cfg := s.snapshot()
+	client := NewPlexClient(cfg)
+	sessions, sessionsErr := client.ListPlaybackSessions(ctx)
+	if sessionsErr != nil {
+		sessions = nil
+	}
+	s.playbackMu.RLock()
+	local := s.localPlayback
+	s.playbackMu.RUnlock()
+	data := buildPlaybackStatusPayload(cfg, sessions, sessionsErr, local)
+	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: data})
+}
+
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/api/health", s.handleHealth)
+	mux.HandleFunc("/api/connectivity", s.handleConnectivity)
 	mux.HandleFunc("/api/settings", s.handleSettings)
 	mux.HandleFunc("/api/movies", s.handleMovies)
 	mux.HandleFunc("/api/movies/cache-status", s.handleMovieCacheStatus)
+	mux.HandleFunc("/api/branding/banner-thumb", s.handleBrandingBannerThumb)
 	mux.HandleFunc("/api/movies/sync-recent", s.handleMoviesSyncRecent)
 	mux.HandleFunc("/api/genres", s.handleGenres)
 	mux.HandleFunc("/api/players", s.handlePlayers)
+	mux.HandleFunc("/api/lg/volume", s.handleLgVolume)
+	mux.HandleFunc("/api/playback/status", s.handlePlaybackStatus)
 	mux.HandleFunc("/api/discovery/person-suggest", s.handleDiscoveryPersonSuggest)
 	mux.HandleFunc("/api/discovery/collaborators", s.handleDiscoveryCollaborators)
 	mux.HandleFunc("/api/discovery/filmography", s.handleDiscoveryFilmography)
+	mux.HandleFunc("/api/discovery/tmdb-genres", s.handleDiscoveryTMDBGenres)
 	mux.HandleFunc("/api/discovery/studio", s.handleDiscoveryStudio)
 	mux.HandleFunc("/api/discovery/start", s.handleDiscoveryStart)
 	mux.HandleFunc("/api/discovery/poll", s.handleDiscoveryPoll)
@@ -148,6 +412,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/snapshots/patterns", s.handleSnapshotPatterns)
 	mux.HandleFunc("/api/snapshots/", s.handleSnapshotByID)
 	mux.HandleFunc("/api/snapshots", s.handleSnapshots)
+	mux.HandleFunc("/api/help/docs", s.handleHelpDocs)
+	mux.HandleFunc("/api/help/doc", s.handleHelpDoc)
 
 	mux.HandleFunc("/api/playlists/preview", s.handlePreviewPlaylist)
 	mux.HandleFunc("/api/playlists", s.handleListPlaylists)
@@ -164,6 +430,65 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("/", http.FileServer(http.Dir(filepath.Clean("web/plex-dashboard"))))
 
 	return requestLogMiddleware(mux)
+}
+
+func (s *Server) handleHelpDocs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+		return
+	}
+	entries, err := os.ReadDir(filepath.Clean("docs"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"docs": []map[string]string{}}})
+			return
+		}
+		respondJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: err.Error()})
+		return
+	}
+	docs := make([]map[string]string, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := strings.TrimSpace(e.Name())
+		if !strings.HasSuffix(strings.ToLower(name), ".md") {
+			continue
+		}
+		title := strings.TrimSuffix(name, filepath.Ext(name))
+		title = strings.ReplaceAll(title, "-", " ")
+		docs = append(docs, map[string]string{"name": name, "title": strings.TrimSpace(title)})
+	}
+	sort.SliceStable(docs, func(i, j int) bool {
+		return strings.ToLower(docs[i]["name"]) < strings.ToLower(docs[j]["name"])
+	})
+	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"docs": docs}})
+}
+
+func (s *Server) handleHelpDoc(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+		return
+	}
+	name := filepath.Base(strings.TrimSpace(r.URL.Query().Get("name")))
+	if name == "" || strings.Contains(name, "..") || !strings.HasSuffix(strings.ToLower(name), ".md") {
+		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "invalid doc name"})
+		return
+	}
+	path := filepath.Join(filepath.Clean("docs"), name)
+	body, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			respondJSON(w, http.StatusNotFound, apiResponse{Success: false, Error: "doc not found"})
+			return
+		}
+		respondJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: err.Error()})
+		return
+	}
+	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{
+		"name":     name,
+		"markdown": string(body),
+	}})
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -328,6 +653,25 @@ func (s *Server) handleMovieCacheStatus(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	out["plexConfigured"] = true
+
+	const remoteCountTTL = 90 * time.Second
+	now := time.Now()
+	s.remoteCountMu.Lock()
+	if s.remoteCountLibKey == cfg.LibraryKey && !s.remoteCountAt.IsZero() && now.Sub(s.remoteCountAt) < remoteCountTTL {
+		n := s.remoteCountVal
+		ageSec := int(now.Sub(s.remoteCountAt).Seconds())
+		s.remoteCountMu.Unlock()
+		out["plexRemoteCount"] = n
+		out["plexRemoteCountCached"] = true
+		out["plexRemoteCountCachedAgeSec"] = ageSec
+		if cacheKey == cfg.LibraryKey && cachedCount > 0 {
+			out["deltaVsCache"] = n - cachedCount
+		}
+		respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: out})
+		return
+	}
+	s.remoteCountMu.Unlock()
+
 	n, err := client.LibraryMovieTotalCount(ctx, cfg.LibraryKey)
 	if err != nil {
 		if errors.Is(err, errPlexTotalSizeMissing) {
@@ -338,11 +682,70 @@ func (s *Server) handleMovieCacheStatus(w http.ResponseWriter, r *http.Request) 
 		respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: out})
 		return
 	}
+	s.remoteCountMu.Lock()
+	s.remoteCountVal = n
+	s.remoteCountAt = time.Now()
+	s.remoteCountLibKey = cfg.LibraryKey
+	s.remoteCountMu.Unlock()
+
 	out["plexRemoteCount"] = n
 	if cacheKey == cfg.LibraryKey && cachedCount > 0 {
 		out["deltaVsCache"] = n - cachedCount
 	}
 	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: out})
+}
+
+// pickMovieForBannerPoster chooses a library title for the dashboard hero when
+// no custom banner URL is set: highest ViewCount, else first with a rating key.
+func pickMovieForBannerPoster(movies []Movie) (Movie, bool) {
+	if len(movies) == 0 {
+		return Movie{}, false
+	}
+	bestIdx := -1
+	for i := range movies {
+		if movies[i].RatingKey == "" {
+			continue
+		}
+		if bestIdx < 0 {
+			bestIdx = i
+			continue
+		}
+		if movies[i].ViewCount > movies[bestIdx].ViewCount {
+			bestIdx = i
+		}
+	}
+	if bestIdx >= 0 {
+		return movies[bestIdx], true
+	}
+	for i := range movies {
+		if movies[i].RatingKey != "" {
+			return movies[i], true
+		}
+	}
+	return Movie{}, false
+}
+
+// handleBrandingBannerThumb returns JSON { "url": "/api/plex/thumb?ratingKey=..." }
+// so the dashboard can show a poster even before the client has loaded /api/movies.
+func (s *Server) handleBrandingBannerThumb(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	defer cancel()
+	movies, err := s.cachedListMovies(ctx)
+	if err != nil {
+		respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"url": "", "error": err.Error()}})
+		return
+	}
+	m, ok := pickMovieForBannerPoster(movies)
+	if !ok {
+		respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"url": ""}})
+		return
+	}
+	u := "/api/plex/thumb?ratingKey=" + url.QueryEscape(m.RatingKey)
+	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"url": u}})
 }
 
 // handleMoviesSyncRecent merges titles from Plex’s recentlyAdded feed into the
@@ -521,6 +924,12 @@ func (s *Server) handleMoviesPlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	titles := make([]string, len(streamItems))
+	for i, it := range streamItems {
+		titles[i] = strings.TrimSpace(it.Title)
+	}
+	s.recordLocalPlayback(targetName, titles, "movies_play", "", req.Shuffle)
+
 	respondJSON(w, http.StatusOK, apiResponse{
 		Success: true,
 		Data: map[string]any{
@@ -592,7 +1001,7 @@ func (s *Server) handleDiscoveryFilmography(w http.ResponseWriter, r *http.Reque
 	}
 
 	var cacheStats DiscoveryCacheStats
-	items, err := AnalyzeFilmography(ctx, cfg, client, plexMovies, person, role, playlistTitle, director, coActor, minYear, maxYear, minRating, &cacheStats)
+	items, err := AnalyzeFilmography(ctx, cfg, client, plexMovies, person, role, playlistTitle, director, coActor, minYear, maxYear, minRating, nil, &cacheStats)
 	if err != nil {
 		respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: err.Error()})
 		return
@@ -665,7 +1074,7 @@ func (s *Server) handleDiscoveryStudio(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items, resolvedName, err := AnalyzeStudio(ctx, cfg, client, plexMovies, company, minYear, maxYear, minRating)
+	items, resolvedName, err := AnalyzeStudio(ctx, cfg, client, plexMovies, company, minYear, maxYear, minRating, nil)
 	if err != nil {
 		respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: err.Error()})
 		return
@@ -678,6 +1087,39 @@ func (s *Server) handleDiscoveryStudio(w http.ResponseWriter, r *http.Request) {
 			"items":   items,
 		},
 	})
+}
+
+// handleDiscoveryTMDBGenres returns TMDB /genre/movie/list entries (id + name) for optional discovery filters.
+func (s *Server) handleDiscoveryTMDBGenres(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+		return
+	}
+	cfg := s.snapshot()
+	if strings.TrimSpace(cfg.TMDBAPIKey) == "" {
+		respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"genres": []any{}}})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	defer cancel()
+	cache := newDiskDiscoveryCache(defaultDiscoveryCacheDir())
+	m, err := tmdbGenreMapWithCache(ctx, cfg.TMDBAPIKey, cache)
+	if err != nil {
+		respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: err.Error()})
+		return
+	}
+	type row struct {
+		ID   int    `json:"id"`
+		Name string `json:"name"`
+	}
+	rows := make([]row, 0, len(m))
+	for id, name := range m {
+		rows = append(rows, row{ID: id, Name: name})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		return strings.ToLower(rows[i].Name) < strings.ToLower(rows[j].Name)
+	})
+	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"genres": rows}})
 }
 
 // handleDiscoveryStart kicks off a filmography or studio analysis in the
@@ -702,6 +1144,7 @@ func (s *Server) handleDiscoveryStart(w http.ResponseWriter, r *http.Request) {
 		MinYear       int     `json:"minYear"`
 		MaxYear       int     `json:"maxYear"`
 		MinRating     float64 `json:"minRating"`
+		GenreIDs      []int   `json:"genreIds"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "invalid JSON"})
@@ -723,9 +1166,10 @@ func (s *Server) handleDiscoveryStart(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if req.Mode == "studio" {
+		switch req.Mode {
+		case "studio":
 			s.discJobs.setRunning(job, "Searching TMDB for "+req.Company+"…")
-			items, resolvedName, err := AnalyzeStudio(ctx, cfg, client, plexMovies, req.Company, req.MinYear, req.MaxYear, req.MinRating)
+			items, resolvedName, err := AnalyzeStudio(ctx, cfg, client, plexMovies, req.Company, req.MinYear, req.MaxYear, req.MinRating, req.GenreIDs)
 			if err != nil {
 				s.discJobs.setFailed(job, err.Error())
 				return
@@ -742,11 +1186,30 @@ func (s *Server) handleDiscoveryStart(w http.ResponseWriter, r *http.Request) {
 				"missing": missing,
 				"items":   items,
 			})
-		} else {
+		case "browse":
+			s.discJobs.setRunning(job, "Fetching TMDB discover (by year)…")
+			items, browseLabel, err := AnalyzeBrowse(ctx, cfg, client, plexMovies, req.MinYear, req.MaxYear, req.MinRating, req.GenreIDs)
+			if err != nil {
+				s.discJobs.setFailed(job, err.Error())
+				return
+			}
+			missing := 0
+			for _, it := range items {
+				if !it.InLibrary {
+					missing++
+				}
+			}
+			s.discJobs.setDone(job, map[string]any{
+				"browseLabel": browseLabel,
+				"total":       len(items),
+				"missing":     missing,
+				"items":       items,
+			})
+		default:
 			s.discJobs.setRunning(job, "Fetching TMDB filmography for "+req.Person+"…")
 			var cacheStats DiscoveryCacheStats
 			items, err := AnalyzeFilmography(ctx, cfg, client, plexMovies, req.Person, req.Role,
-				req.PlaylistTitle, req.Director, req.CoActor, req.MinYear, req.MaxYear, req.MinRating, &cacheStats)
+				req.PlaylistTitle, req.Director, req.CoActor, req.MinYear, req.MaxYear, req.MinRating, req.GenreIDs, &cacheStats)
 			if err != nil {
 				s.discJobs.setFailed(job, err.Error())
 				return
@@ -905,6 +1368,10 @@ func (s *Server) handleDiscoveryAddToRadarr(w http.ResponseWriter, r *http.Reque
 	}
 
 	cfg := s.snapshot()
+	if !cfg.RadarrEnabled {
+		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "radarr integration is disabled in Settings"})
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 	defer cancel()
 	result, err := AddMoviesToRadarr(ctx, cfg, req.Items)
@@ -1038,6 +1505,9 @@ func (s *Server) handlePlayPlaylist(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: err.Error()})
 		return
 	}
+	if len(result.SentTitles) > 0 {
+		s.recordLocalPlayback(result.TargetClient, result.SentTitles, "playlist_play", result.PlaylistTitle, false)
+	}
 	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: result})
 }
 
@@ -1142,11 +1612,145 @@ func (s *Server) handlePlayers(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, apiResponse{
 		Success: true,
 		Data: map[string]any{
-			"targetClient":  cfg.TargetClientName,
-			"players":       lp.Players,
-			"playersDebug":  lp.Debug,
+			"targetClient": cfg.TargetClientName,
+			"players":      lp.Players,
 		},
 	})
+}
+
+// decodeLgVolumePostJSON reads {"level":0-100} or {"volume":...} (UseNumber for JS floats).
+func decodeLgVolumePostJSON(r *http.Request) (int, error) {
+	dec := json.NewDecoder(r.Body)
+	dec.UseNumber()
+	var m map[string]any
+	if err := dec.Decode(&m); err != nil {
+		return 0, fmt.Errorf("invalid JSON body")
+	}
+	var raw any
+	var ok bool
+	if raw, ok = m["level"]; ok {
+		return jsonAnyToVolumePercent(raw)
+	}
+	if raw, ok = m["volume"]; ok {
+		return jsonAnyToVolumePercent(raw)
+	}
+	return 0, fmt.Errorf(`body needs "level" or "volume" (0-100)`)
+}
+
+func jsonAnyToVolumePercent(v any) (int, error) {
+	var n int
+	switch x := v.(type) {
+	case json.Number:
+		i64, err := x.Int64()
+		if err != nil {
+			f, ferr := x.Float64()
+			if ferr != nil {
+				return 0, fmt.Errorf("level must be a number")
+			}
+			n = int(math.Round(f))
+		} else {
+			n = int(i64)
+		}
+	case float64:
+		n = int(math.Round(x))
+	case int:
+		n = x
+	case int64:
+		n = int(x)
+	default:
+		return 0, fmt.Errorf("level must be a number")
+	}
+	if n < 0 {
+		n = 0
+	}
+	if n > 100 {
+		n = 100
+	}
+	return n, nil
+}
+
+func (s *Server) handleLgVolume(w http.ResponseWriter, r *http.Request) {
+	cfg := s.snapshot()
+	addr := strings.TrimSpace(cfg.LGTVAddr)
+	key := strings.TrimSpace(cfg.LGTVClientKey)
+
+	switch r.Method {
+	case http.MethodGet:
+		if addr == "" || key == "" {
+			respondJSON(w, http.StatusOK, apiResponse{
+				Success: true,
+				Data: map[string]any{
+					"supported": false,
+				},
+			})
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		defer cancel()
+		st, err := GetVolumeSSAP(ctx, addr, key)
+		if err != nil {
+			respondJSON(w, http.StatusOK, apiResponse{
+				Success: true,
+				Data: map[string]any{
+					"supported": true,
+					"error":     err.Error(),
+				},
+			})
+			return
+		}
+		respondJSON(w, http.StatusOK, apiResponse{
+			Success: true,
+			Data: map[string]any{
+				"supported": true,
+				"volume":    st.Volume,
+				"mute":      st.Mute,
+			},
+		})
+	case http.MethodPost:
+		level, err := decodeLgVolumePostJSON(r)
+		if err != nil {
+			respondJSON(w, http.StatusBadRequest, apiResponse{
+				Success: false,
+				Error:   err.Error(),
+			})
+			return
+		}
+		if addr == "" || key == "" {
+			respondJSON(w, http.StatusOK, apiResponse{
+				Success: true,
+				Data: map[string]any{
+					"supported": false,
+				},
+			})
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+		defer cancel()
+		st, err := SetVolumeSSAP(ctx, addr, key, level)
+		if err != nil {
+			respondJSON(w, http.StatusOK, apiResponse{
+				Success: true,
+				Data: map[string]any{
+					"supported": true,
+					"error":     err.Error(),
+				},
+			})
+			return
+		}
+		respondJSON(w, http.StatusOK, apiResponse{
+			Success: true,
+			Data: map[string]any{
+				"supported": true,
+				"volume":    st.Volume,
+				"mute":      st.Mute,
+			},
+		})
+	default:
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{
+			Success: false,
+			Error:   "method not allowed",
+		})
+	}
 }
 
 func (s *Server) handleCreatePlaylistByPeople(w http.ResponseWriter, r *http.Request) {

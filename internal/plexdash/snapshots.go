@@ -12,6 +12,16 @@ import (
 
 const defaultSnapshotDir = "data/movie-snapshots"
 
+// snapshotDir returns the directory for index.json and snapshot-*.json files.
+// Set PLEXDASH_SNAPSHOT_DIR to an absolute path to share history across git worktrees
+// (snapshots are gitignored and default to per-checkout data/movie-snapshots).
+func snapshotDir() string {
+	if d := strings.TrimSpace(os.Getenv("PLEXDASH_SNAPSHOT_DIR")); d != "" {
+		return filepath.Clean(d)
+	}
+	return defaultSnapshotDir
+}
+
 // SnapshotMovie is the lightweight movie record stored inside each snapshot.
 type SnapshotMovie struct {
 	Title     string   `json:"title"`
@@ -46,8 +56,6 @@ type SnapshotDiff struct {
 	Removed   []SnapshotMovie `json:"removed"`
 	NetChange int             `json:"netChange"`
 }
-
-func snapshotDir() string { return defaultSnapshotDir }
 
 func snapshotFilePath(id string) string {
 	return filepath.Join(snapshotDir(), "snapshot-"+id+".json")

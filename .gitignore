@@ -18,6 +18,7 @@ data/tmdb-discovery-cache/
 data/plex-thumb-cache/
 data/tmdb-poster-cache/
 data/plexdash-settings.json
+data/playback-state.json
 data/plexdash-discovery.log
 
 # Node / Playwright

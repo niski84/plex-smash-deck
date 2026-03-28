@@ -11,17 +11,8 @@
       background: radial-gradient(circle at top, #1a1e30 0%, #0d101a 45%, #080a10 100%);
       color: #eee;
     }
-    .device-name {
-      display: inline-block;
-      margin-bottom: 14px;
-      padding: 10px 14px;
-      border-radius: 10px;
-      border: 2px solid #2a324d;
-      background: linear-gradient(180deg, #151a2c 0%, #0f1422 100%);
-      font-weight: 700;
-      letter-spacing: 0.6px;
-    }
     .hero-banner {
+      position: relative;
       margin: 0 0 14px 0;
       border-radius: 12px;
       border: 1px solid #2d3b64;
@@ -29,13 +20,214 @@
       overflow: hidden;
       display: none;
     }
+    .hero-banner.is-visible {
+      display: block;
+    }
     .hero-banner img {
       display: block;
       width: 100%;
       object-fit: cover;
+      object-position: center 20%;
       background: #0b0f1b;
     }
+    .hero-banner.hero-banner--placeholder {
+      background: linear-gradient(145deg, #1e2840 0%, #0e1322 45%, #161d32 100%);
+    }
+    .hero-banner.hero-banner--placeholder .hero-banner-img {
+      display: none !important;
+    }
+    .hero-banner-overlay {
+      position: absolute;
+      left: 14px;
+      bottom: 12px;
+      z-index: 2;
+      max-width: calc(100% - 28px);
+      pointer-events: none;
+    }
+    .hero-banner-title {
+      display: inline-block;
+      margin: 0;
+      padding: 10px 18px;
+      border-radius: 10px;
+      border: 2px solid rgba(255, 255, 255, 0.22);
+      background: rgba(22, 24, 32, 0.88);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      color: #f4f7ff;
+      font-weight: 800;
+      font-size: clamp(1.05rem, 2.4vw, 1.5rem);
+      letter-spacing: 0.05em;
+      line-height: 1.2;
+      text-shadow:
+        0 0 1px rgba(0, 0, 0, 1),
+        0 2px 12px rgba(0, 0, 0, 0.75);
+      box-shadow: 0 4px 28px rgba(0, 0, 0, 0.45);
+    }
+    .tabs-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .tabs-row .tabs { margin-bottom: 0; }
     .tabs { display: flex; gap: 10px; margin-bottom: 12px; }
+    .connectivity-summary {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      max-width: min(580px, 100%);
+      padding: 6px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(12, 16, 28, 0.55);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .connectivity-summary.connectivity-summary--problem {
+      border-width: 2px;
+      border-color: rgba(248, 113, 113, 0.78);
+      background: rgba(36, 10, 10, 0.5);
+    }
+    .connectivity-summary.connectivity-summary--warn {
+      border-width: 2px;
+      border-color: rgba(250, 204, 21, 0.55);
+      background: rgba(36, 30, 8, 0.45);
+    }
+    .conn-pills {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .conn-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      white-space: nowrap;
+      color: #cbd5e1;
+      font-weight: 600;
+    }
+    .conn-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .conn-dot.ok { background: #4ade80; box-shadow: 0 0 6px rgba(74, 222, 128, 0.45); }
+    .conn-dot.warn { background: #facc15; }
+    .conn-dot.error { background: #f87171; box-shadow: 0 0 6px rgba(248, 113, 113, 0.4); }
+    .conn-dot.skip { background: #64748b; opacity: 0.88; }
+    .conn-summary-line {
+      color: #e2e8f0;
+      flex: 1 1 140px;
+      min-width: 120px;
+      font-size: 11px;
+    }
+    .connectivity-summary.connectivity-summary--problem .conn-summary-line { color: #fecaca; font-weight: 700; }
+    .connectivity-summary.connectivity-summary--warn .conn-summary-line { color: #fef08a; font-weight: 700; }
+    .connectivity-detail .conn-table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+    .connectivity-detail .conn-table td { border-bottom: 1px solid #2a2a2a; padding: 8px 10px; vertical-align: top; font-size: 13px; }
+    .connectivity-detail .conn-table td:first-child { width: 22px; }
+    .conn-history-block {
+      margin-top: 18px;
+      padding-top: 14px;
+      border-top: 1px solid #2d2d2d;
+    }
+    .conn-history-block h5 {
+      margin: 0 0 6px 0;
+      font-size: 14px;
+      color: #ddd;
+    }
+    .conn-hist-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      gap: 12px 16px;
+      margin: 10px 0 12px 0;
+    }
+    .conn-hist-controls label { font-size: 12px; color: #9ca3af; display: flex; flex-direction: column; gap: 4px; }
+    .conn-hist-controls select,
+    .conn-hist-controls input[type="date"] {
+      padding: 6px 8px;
+      border-radius: 6px;
+      border: 1px solid #444;
+      background: #141414;
+      color: #eee;
+      font-size: 13px;
+      min-width: 140px;
+    }
+    .conn-hist-chart-wrap {
+      background: #12151c;
+      border: 1px solid #2a2f3d;
+      border-radius: 8px;
+      padding: 12px 10px 8px 10px;
+      overflow-x: auto;
+    }
+    .conn-hist-bars {
+      display: flex;
+      align-items: flex-end;
+      gap: 3px;
+      min-height: 132px;
+      padding: 0 4px;
+    }
+    .conn-hist-bar-col {
+      flex: 1 1 0;
+      min-width: 8px;
+      max-width: 48px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-end;
+      min-height: 120px;
+    }
+    .conn-hist-bar-spacer {
+      flex: 1 1 auto;
+      min-height: 0;
+      width: 100%;
+    }
+    .conn-hist-bar {
+      flex-shrink: 0;
+      width: 100%;
+      max-width: 28px;
+      min-height: 2px;
+      border-radius: 3px 3px 0 0;
+      background: linear-gradient(180deg, #7ca0ff 0%, #4d6ee0 100%);
+      transition: height 0.15s ease;
+    }
+    .conn-hist-bar.conn-hist-bar--warn { background: linear-gradient(180deg, #facc15 0%, #ca8a04 100%); }
+    .conn-hist-bar.conn-hist-bar--empty { background: #2d3344; min-height: 4px; opacity: 0.65; }
+    .conn-hist-xlab {
+      margin-top: 6px;
+      font-size: 9px;
+      color: #6b7280;
+      text-align: center;
+      line-height: 1.1;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .conn-hist-ylabel {
+      font-size: 11px;
+      color: #8b93a8;
+      margin-bottom: 6px;
+    }
+    .now-playing-bar {
+      font-size: 13px;
+      line-height: 1.45;
+      padding: 8px 14px;
+      margin-bottom: 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(88, 109, 175, 0.35);
+      background: rgba(18, 24, 38, 0.92);
+      color: rgba(235, 240, 255, 0.92);
+    }
+    .now-playing-bar .np-label { opacity: 0.72; margin-right: 8px; font-weight: 600; letter-spacing: 0.02em; }
+    .now-playing-bar.err { border-color: rgba(248, 113, 113, 0.45); color: #fecaca; }
     .tab-btn {
       position: relative;
       overflow: hidden;
@@ -79,6 +271,20 @@
       transform: translateY(1px);
       box-shadow: inset 0 2px 0 rgba(255,255,255,0.3), inset 0 -2px 0 rgba(0,0,0,0.3), 0 3px 0 #9a5f0b;
     }
+    /* Snapshots tab: refresh is secondary to “Take Snapshot” but must not look disabled (avoid flat #1a2040). */
+    button.snap-refresh-btn {
+      background: linear-gradient(180deg, #7ca0ff 0%, #4d6ee0 100%);
+      color: #0f1428;
+      border-color: #3d56b8;
+      box-shadow: inset 0 2px 0 rgba(255,255,255,0.38), inset 0 -3px 0 rgba(0,0,0,0.28), 0 4px 0 #344fae;
+      text-transform: none;
+      letter-spacing: 0.03em;
+    }
+    button.snap-refresh-btn:hover { filter: brightness(1.07); }
+    button.snap-refresh-btn:active {
+      transform: translateY(1px);
+      box-shadow: inset 0 2px 0 rgba(255,255,255,0.35), inset 0 -2px 0 rgba(0,0,0,0.28), 0 3px 0 #344fae;
+    }
     button::after {
       content: "";
       position: absolute;
@@ -112,6 +318,23 @@
     .muted { color: #aaa; font-size: 13px; }
     .ok { color: #7CFC95; }
     .err { color: #ff7777; }
+    .hidden { display: none !important; }
+    .settings-group { margin-top: 14px; padding-top: 12px; border-top: 1px solid #2d2d2d; }
+    .settings-group:first-of-type { margin-top: 8px; }
+    .settings-group h4 { margin: 0 0 10px 0; font-size: 14px; color: #ddd; }
+    #tab-settings .row { align-items: flex-start; gap: 16px; margin-bottom: 10px; }
+    #tab-settings .row:last-child { margin-bottom: 0; }
+    .help-doc { margin-top: 10px; padding: 12px; border: 1px solid #333; border-radius: 8px; background: #141414; line-height: 1.55; }
+    .help-doc h1, .help-doc h2, .help-doc h3 { margin: 10px 0 6px 0; color: #f0f0f0; }
+    .help-doc p { margin: 8px 0; }
+    .help-doc ul { max-height: none; overflow: visible; margin: 8px 0; }
+    .help-doc code { background: #222; padding: 1px 4px; border-radius: 4px; }
+    .help-doc pre { background: #111; border: 1px solid #2a2a2a; border-radius: 6px; padding: 10px; overflow-x: auto; }
+    .help-tip {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 18px; height: 18px; border-radius: 999px; border: 1px solid #666;
+      font-size: 12px; color: #ddd; cursor: help; user-select: none;
+    }
     ul { margin: 0; padding-left: 20px; max-height: 380px; overflow: auto; }
     table { width: 100%; border-collapse: collapse; margin-top: 10px; }
     th, td { border-bottom: 1px solid #333; padding: 8px; text-align: left; font-size: 13px; vertical-align: top; }
@@ -210,12 +433,191 @@
     }
 
     /* ── Movie Grid (Dashboard Tab) ────────────────────── */
+    .movies-filter-stack {
+      margin-bottom: 10px;
+    }
     .movies-toolbar {
       display: flex;
       align-items: center;
       gap: 8px;
       flex-wrap: wrap;
-      margin-bottom: 10px;
+      margin-bottom: 0;
+    }
+    .movie-genre-tags-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      gap: 8px 10px;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid #2a2d3a;
+    }
+    .movie-genre-tags-label {
+      flex-shrink: 0;
+      margin-top: 3px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      font-size: 9px;
+      color: #6b7280;
+    }
+    .movie-genre-tags-stack {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 0;
+    }
+    .movie-genre-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      min-width: 0;
+      align-items: center;
+    }
+    .movie-genre-tag-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 1px;
+    }
+    .movie-genre-tag {
+      border-radius: 999px;
+      padding: 3px 9px;
+      font-size: 9px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid #3d4558;
+      background: linear-gradient(180deg, #1c2130 0%, #141824 100%);
+      color: #b8c0d8;
+      transition: border-color 0.12s, color 0.12s, box-shadow 0.12s, filter 0.12s;
+      user-select: none;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+      text-transform: none;
+      letter-spacing: 0.02em;
+    }
+    .movie-genre-tag:hover {
+      border-color: #5a6ba8;
+      color: #e8ecff;
+      filter: brightness(1.05);
+    }
+    .movie-genre-tag.is-active {
+      background: linear-gradient(180deg, #7ca0ff 0%, #4d6ee0 100%);
+      color: #0f1428;
+      border-color: #3d56b8;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 2px 0 #344fae;
+    }
+    .movie-genre-tag::after {
+      display: none;
+    }
+    /* − only while “More genres” is open; + stays in the expanded more row only */
+    .movie-genre-tags-bar:not(.movie-genre-edit-open) .movie-genre-tag-remove {
+      display: none !important;
+    }
+    .movie-genre-tag-remove,
+    .movie-genre-tag-add {
+      flex-shrink: 0;
+      width: 18px;
+      height: 18px;
+      padding: 0;
+      margin: 0;
+      border-radius: 4px;
+      font-size: 13px;
+      line-height: 1;
+      font-weight: 700;
+      cursor: pointer;
+      border: 1px solid #3d4558;
+      background: #1a1e2a;
+      color: #94a3b8;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: color 0.12s, border-color 0.12s, background 0.12s;
+      position: relative;
+      text-transform: none;
+      letter-spacing: 0;
+      box-shadow: none;
+    }
+    .movie-genre-tag-remove::after,
+    .movie-genre-tag-add::after {
+      display: none;
+    }
+    .movie-genre-tag-remove:hover,
+    .movie-genre-tag-add:hover {
+      color: #e2e8f0;
+      border-color: #5a6ba8;
+      background: #232836;
+    }
+    /* hidden must win: a plain .movie-genre-more-row { display:flex } overrides the UA [hidden] rule. */
+    .movie-genre-more-row[hidden] {
+      display: none !important;
+    }
+    .movie-genre-more-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      gap: 6px 10px;
+      padding: 6px 0 2px 0;
+      border-top: 1px dashed #2f3548;
+    }
+    button.movie-genre-more-btn[hidden] {
+      display: none !important;
+    }
+    .movie-genre-more-label {
+      flex-shrink: 0;
+      margin-top: 2px;
+      font-size: 8px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: #5c6378;
+    }
+    .movie-genre-more-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+    }
+    .movie-genre-more-name {
+      font-size: 9px;
+      color: #8b93a8;
+      padding: 2px 0 2px 4px;
+      user-select: none;
+    }
+    .movie-genre-more-btn {
+      flex-shrink: 0;
+      margin-top: 1px;
+      font-size: 9px;
+      padding: 3px 10px;
+      text-transform: none;
+      letter-spacing: 0.02em;
+      background: linear-gradient(180deg, #252a38 0%, #1a1e2a 100%);
+      color: #9ca8c4;
+      border: 1px solid #3d4558;
+      border-radius: 6px;
+      cursor: pointer;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+    }
+    .movie-genre-more-btn:hover {
+      filter: brightness(1.06);
+      color: #dce3f5;
+    }
+    .movie-genre-more-btn::after {
+      display: none;
+    }
+    .movie-genre-clear-btn {
+      flex-shrink: 0;
+      margin-top: 1px;
+      font-size: 9px;
+      padding: 3px 10px;
+      text-transform: none;
+      letter-spacing: 0.03em;
+      background: linear-gradient(180deg, #2f3548 0%, #232836 100%);
+      color: #aeb9d4;
+      border-color: #3d4558;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 2px 0 #1a1e2a;
+    }
+    .movie-genre-clear-btn:hover { filter: brightness(1.08); color: #e2e8f0; }
+    .movie-genre-clear-btn::after {
+      display: none;
     }
     .movies-search {
       flex: 1;
@@ -332,6 +734,14 @@
       font-size: 10px;
       color: #444;
       flex-shrink: 0;
+    }
+    .movie-card-size.mc-stream-warn {
+      color: #eab308;
+      font-weight: 600;
+    }
+    .movie-card-size.mc-stream-risk {
+      color: #f87171;
+      font-weight: 700;
     }
     /* ── Movie Info Popup ───────────────────────────────── */
     #movieInfoPopup {
@@ -548,19 +958,20 @@
       overflow: hidden;
     }
     #posterLightbox.lb-open { display: flex; }
-    /* Plex thumb proxy: one image pixel per CSS pixel (scroll if larger than viewport). */
+    /* Plex thumb: show full resolution but scale down to fit the viewport (single scroll area). */
     #posterLightbox.lb-native.lb-open {
       overflow: auto;
       align-items: center;
       justify-content: center;
-      padding: 36px 20px;
+      padding: 52px 16px 56px;
+      box-sizing: border-box;
     }
     #posterLightbox.lb-native img {
-      max-width: none;
-      max-height: none;
+      max-width: min(96vw, 100%);
+      max-height: calc(100vh - 120px);
       width: auto;
       height: auto;
-      object-fit: unset;
+      object-fit: contain;
       image-rendering: auto;
       box-shadow: 0 8px 48px rgba(0,0,0,0.8);
       border-radius: 8px;
@@ -653,15 +1064,27 @@
       <button type="button" class="mip-plot-more" hidden>Show more</button>
     </div>
   </div>
-  <div class="device-name" id="appDisplayName">plex-smash-deck</div>
   <div class="hero-banner" id="heroBanner">
-    <img id="heroBannerImg" alt="Dashboard banner" />
+    <img id="heroBannerImg" class="hero-banner-img" alt="" />
+    <div class="hero-banner-overlay">
+      <span class="hero-banner-title" id="appDisplayName">plex-smash-deck</span>
+    </div>
   </div>
-  <div class="tabs">
-    <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
-    <button class="tab-btn" data-tab="discovery">Discovery</button>
-    <button class="tab-btn" data-tab="snapshots">Snapshots</button>
-    <button class="tab-btn" data-tab="settings">Settings</button>
+  <div class="tabs-row">
+    <div class="tabs" role="tablist" aria-label="Main sections">
+      <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+      <button class="tab-btn" data-tab="discovery">Discovery</button>
+      <button class="tab-btn" data-tab="snapshots">Snapshots</button>
+      <button class="tab-btn" data-tab="settings">Settings</button>
+      <button class="tab-btn" data-tab="help">Help</button>
+    </div>
+    <div id="connectivitySummary" class="connectivity-summary" role="status" aria-live="polite" data-testid="connectivity-summary">
+      <span class="muted small">Connectivity…</span>
+    </div>
+  </div>
+  <div id="nowPlayingBar" class="now-playing-bar" role="status" aria-live="polite">
+    <span class="np-label">Playback</span>
+    <span id="nowPlayingText" class="muted">Loading…</span>
   </div>
 
   <section id="tab-dashboard" class="tab-panel active">
@@ -673,7 +1096,12 @@
         <select id="clientName" data-testid="client-name"></select>
         <button id="refreshPlayersBtn" type="button" data-testid="refresh-players-btn" title="Re-scan available playback targets (LG static config, plex.tv devices, active sessions).">Refresh Players</button>
         <span id="playersStatus" class="muted" data-testid="players-status">Uses discovered Plex players; falls back to configured default.</span>
-        <div id="playersDebug" class="small muted" data-testid="players-debug" style="flex-basis:100%;margin-top:6px;line-height:1.4;"></div>
+        <div id="lgVolumeRow" class="row" data-testid="lg-volume-row" style="display:none;flex-basis:100%;flex-wrap:wrap;align-items:center;gap:10px;margin-top:10px;">
+          <label for="lgVolumeSlider" style="margin:0;">TV volume</label>
+          <input type="range" id="lgVolumeSlider" data-testid="lg-volume-slider" min="0" max="100" value="0" style="flex:1;min-width:120px;max-width:280px;" />
+          <span id="lgVolumeLabel" class="muted" data-testid="lg-volume-label" style="min-width:4.5em;">—</span>
+        </div>
+        <p id="playbackHintLine" class="muted small" style="flex-basis:100%;margin:8px 0 0 0;line-height:1.45;" aria-live="polite"></p>
       </div>
     </div>
 
@@ -681,16 +1109,33 @@
       <div class="row" style="align-items:center; margin-bottom:10px;">
         <h3 style="margin:0; flex:0 0 auto;">Library</h3>
         <button id="loadMoviesBtn" data-testid="load-movies-btn" style="margin-left:8px;" title="Load/refresh the full Plex movie library into server memory. Does not clear TMDB or poster caches.">Load Movies</button>
-        <button type="button" id="syncRecentMoviesBtn" style="margin-left:6px;font-size:12px;" disabled title="Faster than full refresh: merge only recently added Plex titles. Use full refresh to remove deleted titles.">Sync new titles</button>
+        <button type="button" id="syncRecentMoviesBtn" style="margin-left:6px;font-size:12px;" disabled title="Enabled when this list’s title count differs from Plex. Merges recently added titles from Plex (not a full refresh).">Sync new titles</button>
         <span id="movieStatus" class="muted" data-testid="movie-status" style="margin-left:8px;">Idle</span>
       </div>
       <p id="libraryCacheLine" class="muted small" style="margin:0 0 8px 0;line-height:1.45;min-height:1.2em;" aria-live="polite"></p>
-      <p class="muted small" style="margin:0 0 10px 0;line-height:1.4;"><strong>Tip:</strong> Hover a movie card for about <strong>2s</strong> for details. Scroll or move onto the next card to dismiss. Click the poster in the hover panel for native-size image.</p>
-      <div class="movies-toolbar">
-        <input type="search" id="movieSearch" class="movies-search" placeholder="Search by title, actor, or director…" data-testid="movie-search" />
-        <span id="movieCount" class="movies-count-badge" data-testid="movie-count">0 movies</span>
-        <button id="movieSelectAllBtn" style="font-size:12px;">Select All</button>
-        <button id="moviePlaySelectedBtn" class="movies-play-selected-btn" disabled data-testid="movie-play-selected">▶ Play Selected (0)</button>
+      <p class="muted small" style="margin:0 0 10px 0;line-height:1.4;"><strong>Tip:</strong> Hover a movie card for about <strong>0.75s</strong> for details. Scroll or move onto the next card to dismiss. Click the poster in the hover panel for native-size image. <strong>File size</strong> turns <span style="color:#eab308;">yellow</span> or <span style="color:#f87171;">red</span> if that movie probably needs more bandwidth than your latest <strong>Plex speed</strong> check (Settings → Connectivity); your TV’s Wi‑Fi can differ.</p>
+      <div class="movies-filter-stack">
+        <div class="movies-toolbar">
+          <input type="search" id="movieSearch" class="movies-search" placeholder="Search by title, actor, or director…" data-testid="movie-search" />
+          <span id="movieCount" class="movies-count-badge" data-testid="movie-count">0 movies</span>
+          <button id="movieSelectAllBtn" style="font-size:12px;">Select All</button>
+          <button id="moviePlaySelectedBtn" class="movies-play-selected-btn" disabled data-testid="movie-play-selected">▶ Play Selected (0)</button>
+        </div>
+        <div
+          class="movie-genre-tags-bar"
+          title="Click a genre to filter the grid (OR). Open More genres to remove (−) or pin (+) tags. Pinned genres stay on the bar. Saved in this browser."
+        >
+          <span class="movie-genre-tags-label">Genres</span>
+          <div class="movie-genre-tags-stack">
+            <div id="movieGenreTags" class="movie-genre-tags" role="group" aria-label="Filter by genre. Any selected genre matches." data-testid="movie-genre-tags"></div>
+            <div id="movieGenreMoreRow" class="movie-genre-more-row" hidden data-testid="movie-genre-more-row">
+              <span class="movie-genre-more-label">More</span>
+              <div id="movieGenreTagsMore" class="movie-genre-tags" data-testid="movie-genre-tags-more"></div>
+            </div>
+          </div>
+          <button type="button" id="movieGenreMoreToggle" class="movie-genre-more-btn" aria-expanded="false" hidden data-testid="movie-genre-more-toggle">More genres</button>
+          <button type="button" id="movieGenreClearBtn" class="movie-genre-clear-btn" hidden data-testid="movie-genre-clear">Clear tags</button>
+        </div>
       </div>
       <div id="movieGrid" class="movies-grid" data-testid="movie-list"></div>
       <p id="moviePlayStatus" class="muted" style="margin-top:8px;"></p>
@@ -700,6 +1145,10 @@
       <h3>Play Playlist</h3>
       <div class="row">
         <label for="playlistSelect">Playlist</label>
+        <span
+          class="help-tip"
+          title="LG webOS Plex does not expose a reliable playlist-control API. We fetch media paths from Plex and launch playback on webOS using direct Plex-backed media URLs. See Help tab for details."
+        >?</span>
         <select id="playlistSelect" data-testid="playlist-title"></select>
         <button id="refreshPlaylistsBtn" type="button">Refresh Playlists</button>
         <button id="playSelectedPlaylistBtn" data-testid="create-and-play-btn">Play Selected</button>
@@ -749,14 +1198,28 @@
     </div>
   </section>
 
+  <section id="tab-help" class="tab-panel">
+    <div class="card">
+      <h3>Help</h3>
+      <div class="row">
+        <label for="helpDocSelect">Document</label>
+        <select id="helpDocSelect" style="min-width: 320px;"></select>
+        <button id="helpReloadBtn" type="button">Reload docs</button>
+        <span id="helpStatus" class="muted">Loading docs…</span>
+      </div>
+      <div id="helpDocContent" class="help-doc muted">No help document selected.</div>
+    </div>
+  </section>
+
   <section id="tab-discovery" class="tab-panel">
     <div class="card">
       <h3>Discovery — filmography gaps</h3>
-      <p class="muted"><strong>Tip:</strong> Plot and poster preview appear only after you hold the pointer on the <strong>title or poster</strong> for <strong>about 2 seconds</strong>. Then you can move onto the floating panel; click the image there for a larger poster. — Find TMDB credits missing from your Plex library. Min rating uses TMDB vote average (0–10). <strong>Filtered out:</strong> documentaries (TMDB genre or “documentary” in text), TV movies / news, and typical “making of” / behind-the-scenes extras. <strong>Cache:</strong> TMDB responses stay on disk under <code>data/tmdb-discovery-cache/</code> until you use <strong>Clear TMDB cache</strong> below. The Plex library list is the same in-memory snapshot as the Dashboard tab (refreshed when you click <strong>Refresh Movies</strong> there, or when a scheduled snapshot runs). <strong>Poster/debug:</strong> server appends diagnostics to <code>data/plexdash-discovery.log</code>.</p>
+      <p class="muted"><strong>Tip:</strong> Plot and poster preview appear after you hold the pointer on the <strong>title or poster</strong> for <strong>about 0.75 seconds</strong>. Then you can move onto the floating panel; click the image there for a larger poster. — <strong>By year &amp; TMDB rating</strong> uses TMDB’s discover list (no actor/studio): set min and/or max year and optional min rating. Other modes find credits vs your library. Min rating uses TMDB vote average (0–10). <strong>Filtered out:</strong> documentaries (TMDB genre or “documentary” in text), TV movies / news, and typical “making of” / behind-the-scenes extras. <strong>Cache:</strong> TMDB responses stay on disk under <code>data/tmdb-discovery-cache/</code> until you use <strong>Clear TMDB cache</strong> below. The Plex library list is the same in-memory snapshot as the Dashboard tab (refreshed when you click <strong>Refresh Movies</strong> there, or when a scheduled snapshot runs). <strong>Poster/debug:</strong> server appends diagnostics to <code>data/plexdash-discovery.log</code>.</p>
       <div class="row">
         <select id="discoverMode" data-testid="discover-mode" style="min-width:170px;">
           <option value="person">By Actor / Director</option>
           <option value="studio">By Studio</option>
+          <option value="browse">By year &amp; TMDB rating</option>
         </select>
         <span id="discoverPersonWrap" style="display:contents;">
           <input id="discoverPerson" placeholder="Actor or Director name" list="personSuggestions" data-testid="discover-person" />
@@ -774,16 +1237,16 @@
       </div>
       <div class="row" style="margin-top: 8px;">
         <label for="discoverMinRating">Min TMDB rating</label>
+        <label for="discoverGenreIds" style="align-self:center;">Genres (optional)</label>
+        <select id="discoverGenreIds" data-testid="discover-genre-ids" multiple size="5" style="min-width:200px;max-width:min(360px,100%);" title="Hold Ctrl/Cmd to select multiple. Matches TMDB genres (any selected).">
+        </select>
         <select id="discoverMinRating" data-testid="discover-min-rating">
-          <option value="0">Any</option>
-          <option value="5.0">5.0+</option>
-          <option value="5.5">5.5+</option>
-          <option value="6.0">6.0+</option>
-          <option value="6.5">6.5+</option>
-          <option value="7.0">7.0+</option>
-          <option value="7.5">7.5+</option>
-          <option value="8.0">8.0+</option>
-          <option value="8.5">8.5+</option>
+          <option value="0" selected>Any (no minimum)</option>
+          <option value="1.0">1.0+</option><option value="1.5">1.5+</option><option value="2.0">2.0+</option><option value="2.5">2.5+</option>
+          <option value="3.0">3.0+</option><option value="3.5">3.5+</option><option value="4.0">4.0+</option><option value="4.5">4.5+</option>
+          <option value="5.0">5.0+</option><option value="5.5">5.5+</option><option value="6.0">6.0+</option><option value="6.5">6.5+</option>
+          <option value="7.0">7.0+</option><option value="7.5">7.5+</option><option value="8.0">8.0+</option><option value="8.5">8.5+</option>
+          <option value="9.0">9.0+</option><option value="9.5">9.5+</option>
         </select>
         <span id="discoverPersonFilters" style="display:contents;">
           <select id="discoverDirectorFilter">
@@ -808,7 +1271,7 @@
         <button id="clearDiscoveryCartBtn" type="button">Clear cart</button>
         <span id="discoveryStatus" class="muted" data-testid="discovery-status">Idle</span>
       </div>
-      <div class="small">Click column headers to sort. Cart is saved in this browser (local). <strong>Copy missing</strong> = not in library; <strong>Copy all titles</strong> = every row in current order; <strong>Copy cart</strong> = items you added to the cart (Markdown, includes TMDB id).</div>
+      <div class="small">Optional <strong>Genres</strong>: hold Ctrl/Cmd to pick multiple TMDB genres — a title matches if it has <strong>any</strong> of them (OR). Browse/studio pass this to TMDB discover; actor/director mode filters after credits load. Results favor <strong>newer releases</strong> (TMDB release date). Min TMDB rating is optional (choose <strong>Any</strong> for the full filmography). Library matching uses TMDB ids from Plex when available, otherwise title/year. Watched titles stay listed. Click column headers to resort. Cart is saved in this browser (local). <strong>Copy missing</strong> = not in library; <strong>Copy all titles</strong> = every row in current order; <strong>Copy cart</strong> = items you added to the cart (Markdown, includes TMDB id).</div>
       <div id="discoveryTableWrap">
         <table>
           <thead id="discoveryTableHead">
@@ -839,7 +1302,7 @@
     <div class="card" style="padding: 14px 20px;">
       <div class="row" style="gap:14px; align-items:center; flex-wrap:wrap;">
         <button id="takeSnapshotBtn" data-testid="take-snapshot-btn">📸 Take Snapshot</button>
-        <button id="snapRefreshBtn" data-testid="snap-refresh-btn" style="background:#1a2040; border-color:#2a3260;">↻ Refresh View</button>
+        <button type="button" id="snapRefreshBtn" class="snap-refresh-btn" data-testid="snap-refresh-btn">↻ Refresh View</button>
         <span id="snapStatus" class="muted" data-testid="snap-status">Loading…</span>
       </div>
     </div>
@@ -930,6 +1393,8 @@
       <h3>Settings</h3>
       <p class="muted">Environment values are loaded first. Save here to persist missing values between runs.</p>
 
+      <div class="settings-group">
+        <h4>Plex</h4>
       <div class="row">
         <div>
           <label for="cfgPlexBase">Plex Base URL</label><br />
@@ -950,9 +1415,9 @@
           <div class="small">Movie section key, usually `1`.</div>
         </div>
         <div>
-          <label for="cfgTargetClient">Default Target Player Name</label><br />
-          <input id="cfgTargetClient" placeholder="Living Room" />
-          <div class="small">Fallback player name for Create &amp; Play.</div>
+          <label for="cfgTargetClient">Default Target Player</label><br />
+          <select id="cfgTargetClient" style="min-width: 280px;"></select>
+          <div class="small">Pick from detected players; this is used as fallback for play actions.</div>
         </div>
       </div>
       <div class="row" style="margin-top:2px;">
@@ -962,19 +1427,25 @@
         </label>
         <span class="small">If enabled, playback defaults to the best currently detected TV/client and falls back if unavailable.</span>
       </div>
+      </div>
 
+      <div class="settings-group">
+        <h4>Branding</h4>
       <div class="row" style="margin-top:10px;">
         <div>
           <label for="cfgAppDisplayName">App Header Name</label><br />
           <input id="cfgAppDisplayName" placeholder="plex-smash-deck" style="min-width: 280px;" />
-          <div class="small">Shown at the top-left of the dashboard.</div>
+          <div class="small">Shown on the dashboard hero banner (over the image).</div>
         </div>
         <div>
           <label for="cfgHeroBannerURL">Banner Image URL (optional)</label><br />
           <input id="cfgHeroBannerURL" placeholder="https://.../banner.jpg" style="min-width: 360px;" />
-          <div class="small">Leave blank to auto-use your most watched movie poster.</div>
         </div>
       </div>
+      <p class="muted small" style="margin:10px 0 0 0; max-width:52rem; line-height:1.45;">
+        <strong>Banner image:</strong> Leave the URL blank to use a poster from your Plex library (most-played, or any title). The server can supply a thumb from its library cache even before you click Load Movies.
+        Check <strong>Hide banner image</strong> below to remove the hero strip entirely.
+      </p>
       <div class="row" style="margin-top:2px;">
         <div>
           <label for="cfgHeroBannerHeight">Banner Height (px)</label><br />
@@ -986,20 +1457,101 @@
           Hide banner image
         </label>
       </div>
+      </div>
 
+      <div class="settings-group">
+        <h4>TMDB</h4>
       <div class="row">
         <div>
           <label for="cfgTMDBKey">TMDB API Key (v3)</label><br />
           <input id="cfgTMDBKey" placeholder="TMDB API Key" style="min-width: 360px;" />
-          <div class="small">Used for discovery search and filmography lookup.</div>
+          <div class="small">Used for discovery search and filmography lookup. <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener noreferrer">Get API key</a>.</div>
         </div>
         <div>
           <label for="cfgTMDBReadToken">TMDB Read Access Token</label><br />
           <input id="cfgTMDBReadToken" placeholder="TMDB Read Access Token" style="min-width: 360px;" />
-          <div class="small">Optional token; kept for compatibility/future use.</div>
+          <div class="small">Optional token; kept for compatibility/future use. <a href="https://www.themoviedb.org/signup" target="_blank" rel="noopener noreferrer">Create TMDB account</a>.</div>
+        </div>
+      </div>
+      </div>
+
+      <div class="settings-group">
+        <h4>Connectivity</h4>
+        <p class="muted small" style="margin:0 0 10px 0;max-width:52rem;line-height:1.45;">
+          Playback video goes <strong>directly from Plex to the TV</strong>; this app does not proxy the movie stream. Background checks run about every <strong>45s</strong> (internet, Plex <code>/identity</code>, TMDB, LG SSAP). Every <strong>~4 minutes</strong> the server also pulls a small <strong>ranged sample</strong> (up to 512&nbsp;KB) from one small library file to estimate Plex throughput. The Dashboard library hint caches Plex title count for <strong>90s</strong> to limit duplicate API calls. LG volume polls every 15s (TV only, not Plex).
+          Last update: <strong id="connDetailUpdated">—</strong>
+        </p>
+        <div id="connectivityDetail" class="connectivity-detail" aria-live="polite" data-testid="connectivity-detail"></div>
+
+        <div id="connectivityHistoryBlock" class="conn-history-block" data-testid="connectivity-history-block">
+          <h5>Connectivity history</h5>
+          <p class="muted small" style="margin:0 0 8px 0;max-width:52rem;line-height:1.45;">
+            Each time this browser loads fresh data from <code>/api/connectivity</code>, a compact sample is saved locally (same machine as this tab). Use the chart to spot trends. Data stays in your browser — not on the server.
+          </p>
+          <div class="conn-hist-controls">
+            <label>Metric
+              <select id="connHistMetric" data-testid="conn-hist-metric">
+                <option value="plexMbps">Plex speed (Mb/s)</option>
+                <option value="health">Overall health (0–1)</option>
+                <option value="internetMs">Internet latency (ms)</option>
+                <option value="plexMs">Plex /identity (ms)</option>
+                <option value="tmdbMs">TMDB (ms)</option>
+                <option value="lgMs">LG TV (ms)</option>
+              </select>
+            </label>
+            <label>View
+              <select id="connHistRange" data-testid="conn-hist-range">
+                <option value="hour">Hourly (one day)</option>
+                <option value="day">Daily (one month)</option>
+                <option value="week">Weekly (8 weeks)</option>
+              </select>
+            </label>
+            <label>Date
+              <input type="date" id="connHistDate" data-testid="conn-hist-date" />
+            </label>
+            <button type="button" id="connHistRedrawBtn" class="snap-refresh-btn">Redraw chart</button>
+            <button type="button" id="connHistClearBtn">Clear local history</button>
+          </div>
+          <p id="connHistSummary" class="muted small" style="margin:0 0 8px 0;" data-testid="conn-hist-summary"></p>
+          <div class="conn-hist-ylabel" id="connHistYLabel"></div>
+          <div class="conn-hist-chart-wrap">
+            <div id="connHistChart" class="conn-hist-bars" data-testid="conn-hist-chart" role="img" aria-label="Connectivity history"></div>
+          </div>
         </div>
       </div>
 
+      <div class="settings-group">
+        <h4>Dashboard genre bar</h4>
+        <p class="muted small" style="margin:0 0 10px 0;max-width:52rem;line-height:1.45;">
+          Quick filter chips above the movie grid default to <strong>Action</strong>, <strong>Comedy</strong>, <strong>Thriller</strong>, <strong>Adventure</strong>, and <strong>Science Fiction</strong> (including Sci‑Fi) when those genres exist in your library. Use <strong>−</strong> / <strong>+</strong> on the Dashboard to hide or pin tags. Lists below are stored in this browser only.
+        </p>
+        <div class="row" style="align-items:flex-start;">
+          <div>
+            <label for="settingsGenrePinned">Pinned genres (one per line)</label><br />
+            <textarea id="settingsGenrePinned" rows="5" style="min-width:280px;max-width:100%;font-family:inherit;font-size:13px;" placeholder="Horror&#10;Drama"></textarea>
+            <div class="small">Extra tags shown first on the bar (before default slots).</div>
+          </div>
+          <div>
+            <label for="settingsGenreHidden">Hidden default genres (one per line)</label><br />
+            <textarea id="settingsGenreHidden" rows="5" style="min-width:280px;max-width:100%;font-family:inherit;font-size:13px;" placeholder="Comedy"></textarea>
+            <div class="small">Default slots removed with −.</div>
+          </div>
+        </div>
+        <div class="row" style="margin-top:4px;">
+          <button type="button" id="settingsGenreBarApplyBtn">Apply genre bar lists</button>
+          <button type="button" id="settingsGenreBarResetBtn" class="snap-refresh-btn">Reset genre bar to defaults</button>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <h4>Radarr</h4>
+      <div class="row" style="margin-top:2px;">
+        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;">
+          <input type="checkbox" id="cfgRadarrEnabled" style="width:16px;height:16px;" />
+          Use Radarr integration
+        </label>
+      </div>
+      <div id="radarrSettingsBlock">
       <div class="row">
         <div>
           <label for="cfgRadarrURL">Radarr URL</label><br />
@@ -1024,6 +1576,8 @@
           <input id="cfgRadarrProfile" placeholder="1" />
           <div class="small">Quality profile ID used on add.</div>
         </div>
+      </div>
+      </div>
       </div>
 
       <div class="row"><button id="saveSettingsBtn">Save Settings</button><span id="settingsStatus" class="muted">Not saved yet.</span></div>
@@ -1081,19 +1635,28 @@
     let allCardData = []; // [{movie, el, searchText}] — grows as the grid scrolls
     let moviesMaterializedCount = 0;
     let moviesMaterializePromise = null;
+    /** Last /api/connectivity payload — used to color movie file sizes vs Plex sample throughput. */
+    let lastConnectivityData = null;
     let movieGridScrollBusy = false;
     /** True when #movieGrid DOM order was reordered for an active search (restore library order when cleared). */
     let movieGridOrderIsSearchSorted = false;
+    let discoveredPlayers = [];
     const MOVIE_GRID_INITIAL = 100;
     const MOVIE_GRID_CHUNK = 120;
     let searchDebounceTimer = null;
     const selectedMovieKeys = new Set();
+    /** Genre bubbles on Dashboard: OR match (title shown if it has any selected genre). */
+    const selectedDashboardGenres = new Set();
+    const GENRE_BAR_PREFS_KEY = 'plexdash.genreBar.prefs.v1';
+    const GENRE_BAR_DEFAULT_SEEDS = ['Action', 'Comedy', 'Thriller', 'Adventure', 'Science Fiction'];
+    let genreMoreRowExpanded = false;
     let currentSettings = {
       AppDisplayName: 'plex-smash-deck',
       HeroBannerURL: '',
       HeroBannerHeight: 140,
       HeroBannerHidden: false,
       AutoTargetDetected: false,
+      RadarrEnabled: false,
     };
 
     function pickMostWatchedMovie(movies) {
@@ -1109,7 +1672,18 @@
       return best;
     }
 
-    function applyHeaderBranding() {
+    /** Poster URL for hero when no banner URL: prefer highest view count, else first title with a rating key. */
+    function pickBannerFallbackMovie(movies) {
+      const w = pickMostWatchedMovie(movies);
+      if (w && w.RatingKey) return w;
+      if (!Array.isArray(movies)) return null;
+      for (const m of movies) {
+        if (m && m.RatingKey) return m;
+      }
+      return null;
+    }
+
+    async function applyHeaderBranding() {
       const titleEl = document.getElementById('appDisplayName');
       const bannerEl = document.getElementById('heroBanner');
       const bannerImg = document.getElementById('heroBannerImg');
@@ -1117,26 +1691,55 @@
       titleEl.textContent = appTitle;
       document.title = appTitle;
       if (currentSettings.HeroBannerHidden) {
-        bannerEl.style.display = 'none';
+        bannerEl.classList.remove('is-visible', 'hero-banner--placeholder');
         bannerImg.removeAttribute('src');
+        bannerImg.style.display = '';
+        bannerImg.onerror = null;
         return;
       }
       let src = (currentSettings.HeroBannerURL || '').trim();
       if (!src) {
-        const fallbackMovie = pickMostWatchedMovie(moviesAll);
+        const fallbackMovie = pickBannerFallbackMovie(moviesAll);
         if (fallbackMovie && fallbackMovie.RatingKey) {
           src = `/api/plex/thumb?ratingKey=${encodeURIComponent(fallbackMovie.RatingKey)}`;
         }
       }
       if (!src) {
-        bannerEl.style.display = 'none';
-        bannerImg.removeAttribute('src');
-        return;
+        try {
+          const d = await apiJson('/api/branding/banner-thumb');
+          if (d && d.url) src = d.url;
+        } catch (err) {
+          console.warn('[Plex Dashboard] banner-thumb fallback', err);
+        }
       }
       const h = Math.max(80, Math.min(420, Number(currentSettings.HeroBannerHeight || 140)));
       bannerImg.style.height = `${h}px`;
-      bannerEl.style.display = '';
-      if (bannerImg.src !== src) bannerImg.src = src;
+      bannerEl.style.minHeight = '';
+
+      const showPlaceholderOnly = () => {
+        bannerEl.classList.add('hero-banner--placeholder', 'is-visible');
+        bannerImg.removeAttribute('src');
+        bannerImg.style.display = 'none';
+        bannerEl.style.minHeight = `${h}px`;
+        bannerImg.onerror = null;
+      };
+
+      if (!src) {
+        showPlaceholderOnly();
+        return;
+      }
+
+      bannerEl.classList.remove('hero-banner--placeholder');
+      bannerImg.style.display = '';
+      bannerEl.style.minHeight = '';
+      bannerEl.classList.add('is-visible');
+      bannerImg.onerror = () => {
+        console.warn('[Plex Dashboard] hero banner image failed, using placeholder');
+        showPlaceholderOnly();
+      };
+      if (bannerImg.src !== src) {
+        bannerImg.src = src;
+      }
     }
 
     function setStatus(id, message, ok) {
@@ -1150,6 +1753,51 @@
       const payload = await res.json();
       if (!payload.success) throw new Error(payload.error || 'API error');
       return payload.data;
+    }
+
+    // Plex /status/sessions — keep coarse to avoid extra load while the TV streams directly from Plex.
+    const PLAYBACK_POLL_MS = 8 * 60 * 1000;
+    let playbackPollTimer = null;
+
+    const LG_VOLUME_POLL_MS = 15 * 1000;
+    let lgVolumePollTimer = null;
+    let lgVolumePollSuppressUntil = 0;
+    let lgVolumePostDebounceTimer = null;
+
+    async function loadPlaybackStatus() {
+      const el = document.getElementById('nowPlayingText');
+      const bar = document.getElementById('nowPlayingBar');
+      const hint = document.getElementById('playbackHintLine');
+      if (!el || !bar) return;
+      try {
+        const d = await apiJson('/api/playback/status');
+        const line = d.summaryLine || '—';
+        el.textContent = line;
+        if (hint) {
+          hint.textContent = line;
+          hint.className = d.plexSessionsError ? 'small err' : 'muted small';
+        }
+        const hasErr = !!d.plexSessionsError;
+        el.className = hasErr ? 'err' : 'muted';
+        bar.classList.toggle('err', hasErr);
+        bar.title = hasErr ? String(d.plexSessionsError) : '';
+      } catch (err) {
+        const msg = 'Playback status unavailable: ' + err.message;
+        el.textContent = msg;
+        if (hint) {
+          hint.textContent = msg;
+          hint.className = 'small err';
+        }
+        el.className = 'err';
+        bar.classList.add('err');
+        bar.title = err.message;
+      }
+    }
+
+    function startPlaybackPoll() {
+      if (playbackPollTimer) clearInterval(playbackPollTimer);
+      loadPlaybackStatus();
+      playbackPollTimer = setInterval(loadPlaybackStatus, PLAYBACK_POLL_MS);
     }
 
     function readMoviesCache() {
@@ -1193,6 +1841,76 @@
       return gb >= 10 ? gb.toFixed(1) + ' GB' : gb.toFixed(2) + ' GB';
     }
 
+    /** Mbps ≈ (file bytes × 8) / duration — same path as Plex “overall bitrate”. */
+    function movieAvgBitrateMbps(movie) {
+      const sz = Number(movie && movie.PartSize) || 0;
+      const ms = Number(movie && movie.DurationMillis) || 0;
+      if (sz <= 0 || ms < 5000) return null;
+      const sec = ms / 1000;
+      return (sz * 8) / sec / 1e6;
+    }
+
+    function effectivePlexSampleMbps() {
+      const conn = lastConnectivityData;
+      if (!conn || !conn.plexStream) return null;
+      const ps = conn.plexStream;
+      const m = Number(ps.mbps);
+      if (!ps.probedAt || !(m > 0)) return null;
+      return m;
+    }
+
+    function movieStreamHint(movie) {
+      const measured = effectivePlexSampleMbps();
+      const avg = movieAvgBitrateMbps(movie);
+      if (measured == null || avg == null) {
+        return { level: 'unknown', detail: '' };
+      }
+      const ratio = avg / measured;
+      // Red: average bitrate exceeds measured sample. Yellow: between ~72% and 100% of sample (tight headroom).
+      if (ratio > 1) {
+        return {
+          level: 'risk',
+          detail: `This movie needs ~${avg.toFixed(1)} Mb/s on average; your last Plex speed check was ~${measured.toFixed(1)} Mb/s — may buffer (TV Wi‑Fi can differ).`,
+        };
+      }
+      if (ratio > 0.72) {
+        return {
+          level: 'warn',
+          detail: `~${avg.toFixed(1)} Mb/s needed vs ~${measured.toFixed(1)} Mb/s measured — tight; TV path may differ.`,
+        };
+      }
+      return {
+        level: 'ok',
+        detail: `~${avg.toFixed(1)} Mb/s needed vs ~${measured.toFixed(1)} Mb/s measured — should be fine on a similar link.`,
+      };
+    }
+
+    function applyStreamHintToMovieSizeEl(sizeSpan, movie) {
+      if (!sizeSpan) return;
+      sizeSpan.classList.remove('mc-stream-warn', 'mc-stream-risk');
+      const base = sizeSpan.dataset.sizeBaseTitle || '';
+      const { level, detail } = movieStreamHint(movie);
+      if (level === 'risk') {
+        sizeSpan.classList.add('mc-stream-risk');
+        sizeSpan.title = detail || base;
+        return;
+      }
+      if (level === 'warn') {
+        sizeSpan.classList.add('mc-stream-warn');
+        sizeSpan.title = detail || base;
+        return;
+      }
+      sizeSpan.title = detail || base || `File size: ${sizeSpan.textContent}`;
+    }
+
+    function refreshAllMovieStreamHints() {
+      if (!allCardData || !allCardData.length) return;
+      for (const row of allCardData) {
+        const sz = row.el && row.el.querySelector && row.el.querySelector('.movie-card-size');
+        if (sz) applyStreamHintToMovieSizeEl(sz, row.movie);
+      }
+    }
+
     function movieToStreamItem(movie) {
       return {
         ratingKey: movie.RatingKey,
@@ -1214,6 +1932,7 @@
           body: JSON.stringify({ items, clientName, shuffle: !!shuffle }),
         });
         setStatus('moviePlayStatus', `Playing ${data.count} movie(s) on ${data.target}`, true);
+        setTimeout(loadPlaybackStatus, 2500);
       } catch (err) {
         setStatus('moviePlayStatus', `Failed: ${err.message}`, false);
       }
@@ -1280,7 +1999,9 @@
         const sizeSpan = document.createElement('span');
         sizeSpan.className = 'movie-card-size';
         sizeSpan.textContent = sizeStr;
-        sizeSpan.title = `File size: ${sizeStr}`;
+        sizeSpan.dataset.sizeBaseTitle = `File size: ${sizeStr}`;
+        sizeSpan.title = sizeSpan.dataset.sizeBaseTitle;
+        applyStreamHintToMovieSizeEl(sizeSpan, movie);
         yearEl.appendChild(sizeSpan);
       }
       info.appendChild(titleEl);
@@ -1311,6 +2032,9 @@
       moviesMaterializedCount = 0;
       moviesMaterializePromise = null;
       movieGridOrderIsSearchSorted = false;
+      selectedDashboardGenres.clear();
+      document.querySelectorAll('#movieGenreTags .movie-genre-tag').forEach((el) => el.classList.remove('is-active'));
+      updateDashboardGenreClearBtn();
       document.getElementById('movieGrid').innerHTML = '';
     }
 
@@ -1330,6 +2054,7 @@
       }
       grid.appendChild(frag);
       moviesMaterializedCount = end;
+      refreshAllMovieStreamHints();
     }
 
     async function materializeMoreMovies(chunk) {
@@ -1377,12 +2102,30 @@
       return 1;
     }
 
+    function movieGenresList(movie) {
+      const raw = (movie && (movie.Genres || movie.genres)) || [];
+      if (!Array.isArray(raw)) return [];
+      return raw.map((g) => String(g).trim()).filter(Boolean);
+    }
+
+    function movieMatchesGenreBubbles(movie) {
+      if (selectedDashboardGenres.size === 0) return true;
+      const want = new Set([...selectedDashboardGenres].map((g) => String(g).trim().toLowerCase()));
+      for (const g of movieGenresList(movie)) {
+        if (want.has(g.toLowerCase())) return true;
+      }
+      return false;
+    }
+
     function filterMovieCardsSync() {
       const grid = document.getElementById('movieGrid');
       const q = (document.getElementById('movieSearch')?.value || '').trim().toLowerCase();
+      const genreOn = selectedDashboardGenres.size > 0;
       let shown = 0;
       for (const entry of allCardData) {
-        const matches = !q || entry.searchText.includes(q);
+        const genreOk = movieMatchesGenreBubbles(entry.movie);
+        const textOk = !q || entry.searchText.includes(q);
+        const matches = genreOk && textOk;
         entry.el.hidden = !matches;
         if (matches) shown++;
       }
@@ -1405,24 +2148,26 @@
         movieGridOrderIsSearchSorted = false;
         grid.scrollTop = 0;
       }
-      updateMovieCountDisplay(q, shown);
+      updateMovieCountDisplay(q, shown, genreOn);
     }
 
     // Show/hide materialized cards. When there is a search query, the full library
     // is materialized first so matches are not limited to the first scroll chunk.
     function filterMovieCards() {
       const q = (document.getElementById('movieSearch')?.value || '').trim().toLowerCase();
+      const needFullLibrary = !!(q || selectedDashboardGenres.size > 0);
       const run = async () => {
-        if (q) await ensureAllMoviesMaterialized();
+        if (needFullLibrary) await ensureAllMoviesMaterialized();
         requestAnimationFrame(() => filterMovieCardsSync());
       };
-      if (q) run().catch(err => console.error('[Plex Dashboard] filterMovieCards', err));
+      if (needFullLibrary) run().catch(err => console.error('[Plex Dashboard] filterMovieCards', err));
       else requestAnimationFrame(() => filterMovieCardsSync());
     }
 
-    function updateMovieCountDisplay(q, shown) {
+    function updateMovieCountDisplay(q, shown, genreOn) {
       const total = moviesAll.length;
-      if (!q) {
+      const filtering = !!(q || genreOn);
+      if (!filtering) {
         const mat = moviesMaterializedCount;
         if (mat < total && mat > 0) {
           document.getElementById('movieCount').textContent =
@@ -1437,11 +2182,32 @@
         (s < total) ? `${s} of ${total} movies` : `${s} movies`;
     }
 
+    function deriveGenreListFromMovies(movies) {
+      const seen = new Set();
+      const out = [];
+      for (const m of movies || []) {
+        for (const g of movieGenresList(m)) {
+          const lower = g.toLowerCase();
+          if (seen.has(lower)) continue;
+          seen.add(lower);
+          out.push(g);
+        }
+      }
+      out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+      return out;
+    }
+
+    function refreshDashboardGenreTagsFromLibrary() {
+      buildDashboardGenreTags(deriveGenreListFromMovies(moviesAll));
+    }
+
     async function renderMovies(movies) {
       resetMovieGridState(movies || []);
       await materializeMoreMovies(MOVIE_GRID_INITIAL);
       filterMovieCardsSync();
-      applyHeaderBranding();
+      refreshAllMovieStreamHints();
+      refreshDashboardGenreTagsFromLibrary();
+      await applyHeaderBranding();
     }
 
     function hydrateMoviesFromCache() {
@@ -1626,17 +2392,25 @@
     function updateSyncRecentButton(d) {
       const btn = document.getElementById('syncRecentMoviesBtn');
       if (!btn) return;
+      const delta = d && typeof d.deltaVsCache === 'number' ? d.deltaVsCache : null;
       const can =
         d &&
         d.plexConfigured &&
         d.cacheKeyMatches &&
         d.cachedCount > 0 &&
-        typeof d.deltaVsCache === 'number' &&
-        d.deltaVsCache > 0;
+        delta !== null &&
+        delta !== 0;
       btn.disabled = !can;
-      btn.title = can
-        ? `Plex reports ${d.deltaVsCache} more title(s) than this list — merge via recently added only (fast)`
-        : 'Available after the server has a full list and Plex reports more titles than this list';
+      if (!can) {
+        btn.title =
+          'Enabled when the server list’s title count does not match Plex (after Load Movies). Merges recently added titles only; use Refresh for a full sync or to drop removed titles.';
+        return;
+      }
+      if (delta > 0) {
+        btn.title = `Plex reports ${delta} more title(s) than this list — merge via recently added only (fast)`;
+      } else {
+        btn.title = `This list has ${-delta} more title(s) than Plex’s count — try sync to pull recent Plex changes, or Refresh Movies for a full resync`;
+      }
     }
 
     async function syncRecentMovies() {
@@ -1700,6 +2474,7 @@
         const clientName = document.getElementById('clientName').value || 'Living Room';
         const data = await apiJson('/api/playlists/play', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, clientName }) });
         setStatus('playlistResult', `Started "${data.PlaylistTitle}" on ${data.TargetClient}`, true);
+        setTimeout(loadPlaybackStatus, 2500);
       } catch (err) {
         setStatus('playlistResult', `Failed: ${err.message}`, false);
       }
@@ -1719,12 +2494,258 @@
       }
     }
 
+    function updateDashboardGenreClearBtn() {
+      const b = document.getElementById('movieGenreClearBtn');
+      if (!b) return;
+      const n = selectedDashboardGenres.size;
+      b.hidden = n === 0;
+      b.setAttribute('aria-hidden', n === 0 ? 'true' : 'false');
+    }
+
+    function genrePrefKey(name) {
+      let k = String(name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      if (k === 'sci-fi' || k === 'sci fi' || k === 'scifi') k = 'science fiction';
+      return k;
+    }
+
+    function prettyPrefKeyLabel(k) {
+      if (!k) return '';
+      if (k === 'science fiction') return 'Science Fiction';
+      return k.split(/[\s-]+/).filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    }
+
+    function loadGenreBarPrefs() {
+      try {
+        const raw = localStorage.getItem(GENRE_BAR_PREFS_KEY);
+        if (!raw) return { pinned: [], hidden: [] };
+        const o = JSON.parse(raw);
+        const pinned = Array.isArray(o.pinned) ? o.pinned.map(genrePrefKey).filter(Boolean) : [];
+        const hidden = Array.isArray(o.hidden) ? o.hidden.map(genrePrefKey).filter(Boolean) : [];
+        return { pinned: [...new Set(pinned)], hidden: [...new Set(hidden)] };
+      } catch {
+        return { pinned: [], hidden: [] };
+      }
+    }
+
+    function saveGenreBarPrefs(prefs) {
+      localStorage.setItem(GENRE_BAR_PREFS_KEY, JSON.stringify({ pinned: prefs.pinned, hidden: prefs.hidden }));
+    }
+
+    function computeOrderedMainGenres(allGenres, prefs) {
+      const byKey = new Map();
+      for (const g of allGenres || []) {
+        const k = genrePrefKey(g);
+        if (!k || byKey.has(k)) continue;
+        byKey.set(k, String(g).trim());
+      }
+      const hidden = new Set(prefs.hidden || []);
+      const main = [];
+      const mainKeys = new Set();
+      for (const pk of prefs.pinned || []) {
+        const disp = byKey.get(pk);
+        if (disp) {
+          main.push(disp);
+          mainKeys.add(pk);
+        }
+      }
+      for (const seed of GENRE_BAR_DEFAULT_SEEDS) {
+        const pk = genrePrefKey(seed);
+        if (hidden.has(pk)) continue;
+        if (mainKeys.has(pk)) continue;
+        const disp = byKey.get(pk);
+        if (disp) {
+          main.push(disp);
+          mainKeys.add(pk);
+        }
+      }
+      const more = [];
+      for (const g of allGenres || []) {
+        const pk = genrePrefKey(g);
+        if (!pk || mainKeys.has(pk)) continue;
+        more.push(String(g).trim());
+      }
+      return { main, more, mainKeys };
+    }
+
+    function syncSettingsGenreBarFields() {
+      const pinEl = document.getElementById('settingsGenrePinned');
+      const hidEl = document.getElementById('settingsGenreHidden');
+      if (!pinEl || !hidEl) return;
+      const p = loadGenreBarPrefs();
+      pinEl.value = (p.pinned || []).map(prettyPrefKeyLabel).join('\n');
+      hidEl.value = (p.hidden || []).map(prettyPrefKeyLabel).join('\n');
+    }
+
+    function parseGenreBarTextarea(text) {
+      const keys = [];
+      const seen = new Set();
+      for (const line of String(text || '').split('\n')) {
+        const k = genrePrefKey(line);
+        if (!k || seen.has(k)) continue;
+        seen.add(k);
+        keys.push(k);
+      }
+      return keys;
+    }
+
+    function applyGenreBarFromSettingsFields() {
+      const prefs = {
+        pinned: parseGenreBarTextarea(document.getElementById('settingsGenrePinned')?.value),
+        hidden: parseGenreBarTextarea(document.getElementById('settingsGenreHidden')?.value),
+      };
+      saveGenreBarPrefs(prefs);
+      syncSettingsGenreBarFields();
+      refreshDashboardGenreTagsFromLibrary();
+      filterMovieCards();
+    }
+
+    function resetGenreBarPrefsToDefaults() {
+      saveGenreBarPrefs({ pinned: [], hidden: [] });
+      genreMoreRowExpanded = false;
+      syncSettingsGenreBarFields();
+      refreshDashboardGenreTagsFromLibrary();
+      filterMovieCards();
+    }
+
+    function onGenreBarRemove(displayName) {
+      const pk = genrePrefKey(displayName);
+      const prefs = loadGenreBarPrefs();
+      if ((prefs.pinned || []).includes(pk)) {
+        prefs.pinned = prefs.pinned.filter((k) => k !== pk);
+      } else if (!(prefs.hidden || []).includes(pk)) {
+        prefs.hidden = [...(prefs.hidden || []), pk];
+      }
+      selectedDashboardGenres.delete(displayName);
+      saveGenreBarPrefs(prefs);
+      refreshDashboardGenreTagsFromLibrary();
+      filterMovieCards();
+    }
+
+    function onGenreBarPin(displayName) {
+      const pk = genrePrefKey(displayName);
+      const prefs = loadGenreBarPrefs();
+      prefs.hidden = (prefs.hidden || []).filter((k) => k !== pk);
+      if (!(prefs.pinned || []).includes(pk)) prefs.pinned = [...(prefs.pinned || []), pk];
+      saveGenreBarPrefs(prefs);
+      refreshDashboardGenreTagsFromLibrary();
+    }
+
+    function syncGenreBarEditOpenClass() {
+      const bar = document.querySelector('.movie-genre-tags-bar');
+      if (bar) bar.classList.toggle('movie-genre-edit-open', !!genreMoreRowExpanded);
+    }
+
+    function toggleGenreMoreRow() {
+      genreMoreRowExpanded = !genreMoreRowExpanded;
+      const list = deriveGenreListFromMovies(moviesAll);
+      const { more } = computeOrderedMainGenres(list, loadGenreBarPrefs());
+      const row = document.getElementById('movieGenreMoreRow');
+      const btn = document.getElementById('movieGenreMoreToggle');
+      if (row) row.hidden = !genreMoreRowExpanded || more.length === 0;
+      if (btn) {
+        btn.setAttribute('aria-expanded', genreMoreRowExpanded ? 'true' : 'false');
+        btn.textContent = genreMoreRowExpanded ? 'Fewer genres' : 'More genres';
+      }
+      syncGenreBarEditOpenClass();
+    }
+
+    function buildDashboardGenreTags(genres) {
+      const wrap = document.getElementById('movieGenreTags');
+      const moreWrap = document.getElementById('movieGenreTagsMore');
+      const moreRow = document.getElementById('movieGenreMoreRow');
+      const toggleBtn = document.getElementById('movieGenreMoreToggle');
+      if (!wrap || !moreWrap || !moreRow) return;
+
+      const allGenres = Array.isArray(genres) && genres.length ? genres : deriveGenreListFromMovies(moviesAll);
+      const prefs = loadGenreBarPrefs();
+      const { main, more } = computeOrderedMainGenres(allGenres, prefs);
+
+      const validKeys = new Set(allGenres.map((g) => genrePrefKey(g)));
+      for (const sel of [...selectedDashboardGenres]) {
+        if (!validKeys.has(genrePrefKey(sel))) selectedDashboardGenres.delete(sel);
+      }
+
+      wrap.innerHTML = '';
+      for (const name of main) {
+        const row = document.createElement('span');
+        row.className = 'movie-genre-tag-wrap';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'movie-genre-tag';
+        btn.textContent = name;
+        btn.dataset.genre = name;
+        btn.addEventListener('click', () => {
+          if (selectedDashboardGenres.has(name)) {
+            selectedDashboardGenres.delete(name);
+            btn.classList.remove('is-active');
+          } else {
+            selectedDashboardGenres.add(name);
+            btn.classList.add('is-active');
+          }
+          updateDashboardGenreClearBtn();
+          filterMovieCards();
+        });
+        const rem = document.createElement('button');
+        rem.type = 'button';
+        rem.className = 'movie-genre-tag-remove';
+        rem.textContent = '−';
+        rem.setAttribute('aria-label', `Remove ${name} from genre bar`);
+        rem.title = 'Remove from bar';
+        rem.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onGenreBarRemove(name);
+        });
+        row.appendChild(btn);
+        row.appendChild(rem);
+        wrap.appendChild(row);
+      }
+      wrap.querySelectorAll('.movie-genre-tag').forEach((btn) => {
+        const n = btn.dataset.genre;
+        if (n && selectedDashboardGenres.has(n)) btn.classList.add('is-active');
+      });
+
+      moreWrap.innerHTML = '';
+      for (const name of more) {
+        const item = document.createElement('span');
+        item.className = 'movie-genre-more-item';
+        const add = document.createElement('button');
+        add.type = 'button';
+        add.className = 'movie-genre-tag-add';
+        add.textContent = '+';
+        add.setAttribute('aria-label', `Pin ${name} to genre bar`);
+        add.title = 'Pin to bar';
+        add.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onGenreBarPin(name);
+        });
+        const lab = document.createElement('span');
+        lab.className = 'movie-genre-more-name';
+        lab.textContent = name;
+        item.appendChild(add);
+        item.appendChild(lab);
+        moreWrap.appendChild(item);
+      }
+
+      if (toggleBtn) {
+        toggleBtn.hidden = more.length === 0;
+        toggleBtn.setAttribute('aria-expanded', genreMoreRowExpanded ? 'true' : 'false');
+        toggleBtn.textContent = genreMoreRowExpanded ? 'Fewer genres' : 'More genres';
+      }
+      moreRow.hidden = !genreMoreRowExpanded || more.length === 0;
+
+      syncGenreBarEditOpenClass();
+      updateDashboardGenreClearBtn();
+    }
+
     async function loadGenres() {
       const genreSelect = document.getElementById('genreSelect');
       genreSelect.innerHTML = '<option value="">All Genres</option>';
       try {
         const data = await apiJson('/api/genres');
-        for (const genre of (data.genres || [])) {
+        const list = data.genres || [];
+        for (const genre of list) {
           const opt = document.createElement('option');
           opt.value = genre;
           opt.textContent = genre;
@@ -2035,7 +3056,7 @@
       return { total, withMeta, loaded, pending, imgCount: imgs.length };
     }
 
-    /** Hover delay for dashboard movie popup and discovery popup (default 2s). Tests set window.__PLEXDASH_HOVER_POPUP_MS; legacy __PLEXDASH_DISC_POPUP_HOVER_MS still works. */
+    /** Hover delay for dashboard movie popup and discovery popup (default 750ms). Tests set window.__PLEXDASH_HOVER_POPUP_MS; legacy __PLEXDASH_DISC_POPUP_HOVER_MS still works. */
     function plexdashHoverPopupDelayMs() {
       if (typeof window.__PLEXDASH_HOVER_POPUP_MS === 'number' && window.__PLEXDASH_HOVER_POPUP_MS >= 0) {
         return window.__PLEXDASH_HOVER_POPUP_MS;
@@ -2043,7 +3064,7 @@
       if (typeof window.__PLEXDASH_DISC_POPUP_HOVER_MS === 'number' && window.__PLEXDASH_DISC_POPUP_HOVER_MS >= 0) {
         return window.__PLEXDASH_DISC_POPUP_HOVER_MS;
       }
-      return 2000;
+      return 750;
     }
 
     /** Return the full-size URL for a poster thumbnail src.
@@ -2525,6 +3546,7 @@
     const lbHint = document.getElementById('posterLightboxHint');
     let lbReturnToMovieInfo = false;
     let lbCurrentSrc = '';
+    let lbBodyOverflowPrev = '';
 
     function lightboxFilenameFromAlt(alt) {
       const base = (String(alt || 'poster').trim() || 'poster')
@@ -2628,24 +3650,22 @@
 
       lbImg.onload = function () {
         lbImg.onload = null;
-        if (nativePixels && lbImg.naturalWidth > 0) {
-          lbImg.style.width = lbImg.naturalWidth + 'px';
-          lbImg.style.height = lbImg.naturalHeight + 'px';
-          lbImg.style.maxWidth = 'none';
-          lbImg.style.maxHeight = 'none';
-        } else {
-          lbImg.style.width = '';
-          lbImg.style.height = '';
-          lbImg.style.maxWidth = '';
-          lbImg.style.maxHeight = '';
-        }
+        /* Sizing is CSS-driven (fit viewport); do not set intrinsic pixel width/height. */
+        lbImg.style.width = '';
+        lbImg.style.height = '';
+        lbImg.style.maxWidth = '';
+        lbImg.style.maxHeight = '';
       };
 
       lbImg.alt = alt || '';
       lbImg.src = src;
       lbCurrentSrc = src;
       lbHint.hidden = false;
-      lbHint.textContent = 'Right-click image for Save image as...';
+      lbHint.textContent = nativePixels
+        ? 'Scaled to fit the window; full resolution via Download / Copy. Right-click image for Save image as…'
+        : 'Right-click image for Save image as…';
+      lbBodyOverflowPrev = document.body.style.overflow || '';
+      document.body.style.overflow = 'hidden';
       lbOverlay.classList.add('lb-open');
       lbReturnToMovieInfo = false;
       if (opts.resumeMovieInfo && typeof window._suspendMovieInfoForLightbox === 'function') {
@@ -2662,6 +3682,7 @@
       }
     }
     function closePosterLightbox() {
+      document.body.style.overflow = lbBodyOverflowPrev;
       lbOverlay.classList.remove('lb-open');
       lbOverlay.classList.remove('lb-native');
       lbImg.onload = null;
@@ -2843,7 +3864,7 @@
         cartBtn.dataset.cartRow = String(idx);
         cartBtn.textContent = 'Add to cart';
 
-        actWrap.appendChild(addBtn);
+        if (currentSettings.RadarrEnabled) actWrap.appendChild(addBtn);
         actWrap.appendChild(cartBtn);
         tdAct.appendChild(actWrap);
         tr.appendChild(tdAct);
@@ -2902,6 +3923,10 @@
       tbody.addEventListener('click', async (ev) => {
         const addBtn = ev.target.closest('button[data-add-row]');
         if (addBtn) {
+          if (!currentSettings.RadarrEnabled) {
+            setStatus('discoveryStatus', 'Radarr integration is disabled in Settings.', false);
+            return;
+          }
           const row = discoveryData[Number(addBtn.dataset.addRow)];
           if (!row) return;
           try {
@@ -2987,6 +4012,31 @@
     // Active poll timer so it can be cancelled if the user starts a new search.
     let _discoveryPollTimer = null;
 
+    function selectedDiscoveryGenreIds() {
+      const sel = document.getElementById('discoverGenreIds');
+      if (!sel) return [];
+      return Array.from(sel.selectedOptions).map(o => Number(o.value)).filter(n => Number.isFinite(n) && n > 0);
+    }
+
+    async function loadDiscoveryTmdbGenres() {
+      const sel = document.getElementById('discoverGenreIds');
+      if (!sel || sel.dataset.loaded === '1') return;
+      try {
+        const data = await apiJson('/api/discovery/tmdb-genres');
+        const genres = data.genres || [];
+        sel.innerHTML = '';
+        for (const g of genres) {
+          const opt = document.createElement('option');
+          opt.value = String(g.id);
+          opt.textContent = g.name;
+          sel.appendChild(opt);
+        }
+        sel.dataset.loaded = '1';
+      } catch (e) {
+        console.error('[Plex Dashboard] discovery TMDB genres', e);
+      }
+    }
+
     function _cancelDiscoveryPoll() {
       if (_discoveryPollTimer) { clearTimeout(_discoveryPollTimer); _discoveryPollTimer = null; }
     }
@@ -2998,12 +4048,21 @@
       const minYear = document.getElementById('discoverMinYear').value.trim();
       const maxYear = document.getElementById('discoverMaxYear').value.trim();
       const minRating = document.getElementById('discoverMinRating').value || '0';
+      const genreIds = selectedDiscoveryGenreIds();
 
       let body;
       if (mode === 'studio') {
         const company = document.getElementById('discoverStudio').value.trim();
         if (!company) { setStatus('discoveryStatus', 'Enter a studio / production company name.', false); return; }
-        body = { mode: 'studio', company, minYear: Number(minYear) || 0, maxYear: Number(maxYear) || 0, minRating: Number(minRating) };
+        body = { mode: 'studio', company, minYear: Number(minYear) || 0, maxYear: Number(maxYear) || 0, minRating: Number(minRating), genreIds };
+      } else if (mode === 'browse') {
+        const minY = Number(minYear) || 0;
+        const maxY = Number(maxYear) || 0;
+        if (!minY && !maxY) {
+          setStatus('discoveryStatus', 'Set at least one year (min or max) for TMDB browse.', false);
+          return;
+        }
+        body = { mode: 'browse', minYear: minY, maxYear: maxY, minRating: Number(minRating), genreIds };
       } else {
         const person = document.getElementById('discoverPerson').value.trim();
         const role = document.getElementById('discoverRole').value;
@@ -3011,7 +4070,7 @@
         const coActor = document.getElementById('discoverCoActorFilter').value.trim();
         const playlistTitle = document.getElementById('discoverPlaylistTitle').value.trim();
         body = { mode: 'filmography', person, role, playlistTitle, director, coActor,
-                 minYear: Number(minYear) || 0, maxYear: Number(maxYear) || 0, minRating: Number(minRating) };
+                 minYear: Number(minYear) || 0, maxYear: Number(maxYear) || 0, minRating: Number(minRating), genreIds };
       }
 
       let jobId;
@@ -3044,6 +4103,9 @@
               updateDiscoverySortHeaders();
               if (mode === 'studio') {
                 setStatus('discoveryStatus', `${data.company || 'Studio'}: ${data.total} titles, ${data.missing} missing from library`, true);
+              } else if (mode === 'browse') {
+                const bl = data.browseLabel || 'Browse';
+                setStatus('discoveryStatus', `${bl}: ${data.total} titles, ${data.missing} missing from library`, true);
               } else {
                 const cacheHint = formatDiscoveryCacheLine(data.cache);
                 setStatus('discoveryStatus', `Found ${data.total} titles, missing ${data.missing}${cacheHint ? '. ' + cacheHint : ''}`, true);
@@ -3083,6 +4145,10 @@
     }
 
     async function addSelectedToRadarr() {
+      if (!currentSettings.RadarrEnabled) {
+        setStatus('discoveryStatus', 'Radarr integration is disabled in Settings.', false);
+        return;
+      }
       const selected = discoveryData
         .filter(row => discoveryRowChecked(row))
         .map(row => ({ tmdbId: row.tmdbId, title: row.title, year: row.year }));
@@ -3099,20 +4165,62 @@
       }
     }
 
+    function renderTargetClientSelect(selectedValue) {
+      const select = document.getElementById('cfgTargetClient');
+      if (!select) return;
+      const current = (selectedValue || '').trim() || 'Living Room';
+      select.innerHTML = '';
+      const seen = new Set();
+      for (const p of discoveredPlayers || []) {
+        const name = String(p.Name || p.name || '').trim();
+        if (!name || seen.has(name.toLowerCase())) continue;
+        seen.add(name.toLowerCase());
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        select.appendChild(opt);
+      }
+      if (!seen.has(current.toLowerCase())) {
+        const custom = document.createElement('option');
+        custom.value = current;
+        custom.textContent = `${current} (saved)`;
+        select.appendChild(custom);
+      }
+      if (select.options.length === 0) {
+        const fallback = document.createElement('option');
+        fallback.value = 'Living Room';
+        fallback.textContent = 'Living Room';
+        select.appendChild(fallback);
+      }
+      select.value = current;
+    }
+
+    function applyRadarrVisibility() {
+      const enabled = !!currentSettings.RadarrEnabled;
+      const cfgWrap = document.getElementById('radarrSettingsBlock');
+      const addSelectedBtn = document.getElementById('addSelectedToRadarrBtn');
+      if (cfgWrap) cfgWrap.classList.toggle('hidden', !enabled);
+      if (addSelectedBtn) addSelectedBtn.classList.toggle('hidden', !enabled);
+    }
+
     async function loadSettings() {
       try {
         const cfg = await apiJson('/api/settings');
+        const radarrEnabled = (typeof cfg.RadarrEnabled === 'boolean')
+          ? cfg.RadarrEnabled
+          : !!((cfg.RadarrURL || '').trim() || (cfg.RadarrAPIKey || '').trim() || (cfg.RadarrRootFolder || '').trim());
         currentSettings = {
           AppDisplayName: (cfg.AppDisplayName || 'plex-smash-deck'),
           HeroBannerURL: (cfg.HeroBannerURL || ''),
           HeroBannerHeight: Number(cfg.HeroBannerHeight || 140),
           HeroBannerHidden: !!cfg.HeroBannerHidden,
           AutoTargetDetected: !!cfg.AutoTargetDetected,
+          RadarrEnabled: !!radarrEnabled,
         };
         document.getElementById('cfgPlexBase').value = cfg.PlexBaseURL || '';
         document.getElementById('cfgPlexToken').value = cfg.PlexToken || '';
         document.getElementById('cfgLibraryKey').value = cfg.LibraryKey || '1';
-        document.getElementById('cfgTargetClient').value = cfg.TargetClientName || 'Living Room';
+        renderTargetClientSelect(cfg.TargetClientName || 'Living Room');
         document.getElementById('cfgAutoTargetDetected').checked = !!cfg.AutoTargetDetected;
         document.getElementById('cfgAppDisplayName').value = cfg.AppDisplayName || 'plex-smash-deck';
         document.getElementById('cfgHeroBannerURL').value = cfg.HeroBannerURL || '';
@@ -3120,64 +4228,75 @@
         document.getElementById('cfgHeroBannerHidden').checked = !!cfg.HeroBannerHidden;
         document.getElementById('cfgTMDBKey').value = cfg.TMDBAPIKey || '';
         document.getElementById('cfgTMDBReadToken').value = cfg.TMDBReadToken || '';
+        document.getElementById('cfgRadarrEnabled').checked = !!radarrEnabled;
         document.getElementById('cfgRadarrURL').value = cfg.RadarrURL || '';
         document.getElementById('cfgRadarrAPIKey').value = cfg.RadarrAPIKey || '';
         document.getElementById('cfgRadarrRoot').value = cfg.RadarrRootFolder || '';
         document.getElementById('cfgRadarrProfile').value = cfg.RadarrProfileID || 1;
         document.getElementById('cfgSnapshotEnabled').checked = !cfg.SnapshotDisabled;
         document.getElementById('cfgSnapshotHour').value = cfg.SnapshotHour ?? 2;
-        applyHeaderBranding();
+        applyRadarrVisibility();
+        syncSettingsGenreBarFields();
+        await applyHeaderBranding();
       } catch (err) {
         setStatus('settingsStatus', `Failed to load: ${err.message}`, false);
       }
     }
 
-    function formatPlayersDebug(d) {
-      if (!d || typeof d !== 'object') return '';
-      const parts = [];
-      parts.push(`LG static: ${d.lgStaticConfigured ? 'yes' : 'no'}`);
-      parts.push(`cloud players: ${d.cloudResourcesOk ? (d.cloudPlayersAdded ?? 0) : 'err'}`);
-      parts.push(`active sessions: ${d.sessionDiscoveryOk ? (d.activeSessionCount ?? 0) : 'err'}`);
-      parts.push(`total targets: ${d.mergedTotal ?? '?'}`);
-      return parts.join(' · ');
+    function applyLgVolumeUI(d) {
+      const row = document.getElementById('lgVolumeRow');
+      const slider = document.getElementById('lgVolumeSlider');
+      const label = document.getElementById('lgVolumeLabel');
+      if (!row || !slider || !label) return;
+      if (!d || d.supported !== true) {
+        row.style.display = 'none';
+        return;
+      }
+      row.style.display = 'flex';
+      if (d.error) {
+        label.textContent = d.error.length > 72 ? `${d.error.slice(0, 72)}…` : d.error;
+        label.className = 'small err';
+        // Keep slider usable so the user can retry; polling may recover after transient SSAP errors.
+        slider.disabled = false;
+        return;
+      }
+      label.className = 'muted';
+      slider.disabled = false;
+      const v = typeof d.volume === 'number' ? d.volume : 0;
+      const m = d.mute ? ' (muted)' : '';
+      slider.value = String(v);
+      label.textContent = `${v}%${m}`;
     }
 
-    function formatPlayersDebugDetails(d) {
-      if (!d || typeof d !== 'object') return '';
-      const parts = [];
-      parts.push(d.lgStaticConfigured
-        ? 'LG static target configured (LGTV_ADDR + LGTV_CLIENT_KEY).'
-        : 'LG static target not configured; add LGTV_ADDR + LGTV_CLIENT_KEY in Settings so the TV always appears.');
-      if (d.cloudResourcesOk) {
-        parts.push(`plex.tv resource players discovered: ${d.cloudPlayersAdded ?? 0}.`);
-      } else {
-        parts.push(`plex.tv resource lookup failed: ${(d.cloudResourcesErr || 'unknown').slice(0, 180)}.`);
+    async function pollLgVolume() {
+      if (Date.now() < lgVolumePollSuppressUntil) return;
+      const slider = document.getElementById('lgVolumeSlider');
+      if (slider && document.activeElement === slider) return;
+      try {
+        const d = await apiJson('/api/lg/volume');
+        applyLgVolumeUI(d);
+      } catch {
+        const row = document.getElementById('lgVolumeRow');
+        if (row) row.style.display = 'none';
       }
-      if (d.sessionDiscoveryOk) {
-        parts.push(`Active Plex sessions seen right now: ${d.activeSessionCount ?? 0} (paused/stopped clients often disappear).`);
-      } else {
-        parts.push(`Session discovery failed: ${(d.sessionDiscoveryErr || 'unknown').slice(0, 180)}.`);
-      }
-      parts.push(`Merged target count shown in selector: ${d.mergedTotal ?? '?'}.`);
-      return parts.join(' ');
+    }
+
+    function startLgVolumePoll() {
+      if (lgVolumePollTimer) clearInterval(lgVolumePollTimer);
+      pollLgVolume();
+      lgVolumePollTimer = setInterval(pollLgVolume, LG_VOLUME_POLL_MS);
     }
 
     async function loadPlayers() {
       const select = document.getElementById('clientName');
-      const dbgEl = document.getElementById('playersDebug');
+      const cfgTargetSelect = document.getElementById('cfgTargetClient');
       select.innerHTML = '';
-      if (dbgEl) {
-        dbgEl.textContent = '';
-        dbgEl.title = '';
-      }
       try {
         const data = await apiJson('/api/players');
         const targetClient = data.targetClient || 'Living Room';
         const players = data.players || [];
-        if (dbgEl) {
-          dbgEl.textContent = formatPlayersDebug(data.playersDebug);
-          dbgEl.title = formatPlayersDebugDetails(data.playersDebug);
-        }
+        discoveredPlayers = players;
+        renderTargetClientSelect((cfgTargetSelect && cfgTargetSelect.value) || targetClient);
 
         if (players.length === 0) {
           const option = document.createElement('option');
@@ -3207,12 +4326,13 @@
         }
         setStatus('playersStatus', `Loaded ${players.length} player(s).`, true);
       } catch (err) {
+        discoveredPlayers = [];
+        renderTargetClientSelect((cfgTargetSelect && cfgTargetSelect.value) || 'Living Room');
         const fallback = document.createElement('option');
         fallback.value = 'Living Room';
         fallback.textContent = `Living Room (players unavailable)`;
         select.appendChild(fallback);
         setStatus('playersStatus', `Player refresh failed: ${err.message}`, false);
-        if (dbgEl) dbgEl.textContent = '';
       }
     }
 
@@ -3245,6 +4365,495 @@
       }
     }
 
+    function escapeHTML(s) {
+      return String(s || '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    const CONNECTIVITY_POLL_MS = 12 * 1000;
+    let connectivityPollTimer = null;
+
+    const CONNECTIVITY_HISTORY_KEY = 'plexdash.connectivity.history.v1';
+    const CONNECTIVITY_HISTORY_MAX_SAMPLES = 12000;
+    const CONNECTIVITY_HISTORY_MAX_AGE_MS = 120 * 24 * 60 * 60 * 1000; // 120 days
+    const CONN_HIST_DAY_MS = 24 * 60 * 60 * 1000;
+    let lastConnHistServerU = '';
+
+    function loadConnectivityHistory() {
+      try {
+        const raw = localStorage.getItem(CONNECTIVITY_HISTORY_KEY);
+        if (!raw) return { v: 1, samples: [] };
+        const o = JSON.parse(raw);
+        if (!o || !Array.isArray(o.samples)) return { v: 1, samples: [] };
+        return { v: 1, samples: o.samples };
+      } catch {
+        return { v: 1, samples: [] };
+      }
+    }
+
+    function saveConnectivityHistory(state) {
+      const now = Date.now();
+      let samples = (state.samples || []).filter((s) => s && typeof s.t === 'number' && now - s.t < CONNECTIVITY_HISTORY_MAX_AGE_MS);
+      if (samples.length > CONNECTIVITY_HISTORY_MAX_SAMPLES) {
+        samples = samples.slice(-CONNECTIVITY_HISTORY_MAX_SAMPLES);
+      }
+      localStorage.setItem(CONNECTIVITY_HISTORY_KEY, JSON.stringify({ v: 1, samples }));
+    }
+
+    function hydrateConnHistDedupe() {
+      const st = loadConnectivityHistory();
+      const arr = st.samples;
+      if (arr.length) {
+        const last = arr[arr.length - 1];
+        if (last && last.u) lastConnHistServerU = last.u;
+      }
+    }
+
+    function compactConnectivitySample(data) {
+      const c = {};
+      for (const x of data.checks || []) {
+        if (!x || !x.id) continue;
+        c[x.id] = {
+          l: x.level,
+          ms: x.latencyMs != null ? Number(x.latencyMs) : null,
+        };
+      }
+      const ps = data.plexStream || {};
+      const t = Date.parse(data.updatedAt) || Date.now();
+      return {
+        t,
+        u: data.updatedAt || '',
+        o: data.overall || 'warn',
+        c,
+        smb: ps.mbps != null && Number(ps.mbps) > 0 ? Math.round(Number(ps.mbps) * 100) / 100 : null,
+        sl: ps.level || 'skip',
+        stm: ps.msTotal != null ? Number(ps.msTotal) : null,
+      };
+    }
+
+    function appendConnectivityHistorySample(data) {
+      if (!data || !data.updatedAt) return;
+      if (data.updatedAt === lastConnHistServerU) return;
+      lastConnHistServerU = data.updatedAt;
+      const state = loadConnectivityHistory();
+      state.samples.push(compactConnectivitySample(data));
+      saveConnectivityHistory(state);
+    }
+
+    function overallToHealth(o) {
+      if (o === 'ok') return 1;
+      if (o === 'warn') return 0.5;
+      if (o === 'error') return 0;
+      return 0.5;
+    }
+
+    function extractMetricFromSample(s, metric) {
+      if (!s) return null;
+      if (metric === 'health') return overallToHealth(s.o);
+      if (metric === 'plexMbps') return s.smb;
+      const map = { internetMs: 'internet', plexMs: 'plex', tmdbMs: 'tmdb', lgMs: 'lgtv' };
+      const id = map[metric];
+      if (!id || !s.c || !s.c[id]) return null;
+      const ms = s.c[id].ms;
+      return typeof ms === 'number' && ms >= 0 ? ms : null;
+    }
+
+    function avgVals(vals) {
+      if (!vals.length) return null;
+      return vals.reduce((a, b) => a + b, 0) / vals.length;
+    }
+
+    function localYMDH(t) {
+      const d = new Date(t);
+      return {
+        y: d.getFullYear(),
+        mon: d.getMonth(),
+        day: d.getDate(),
+        hr: d.getHours(),
+      };
+    }
+
+    function startOfMondayLocal(y, mon, day) {
+      const x = new Date(y, mon, day);
+      const dow = (x.getDay() + 6) % 7;
+      x.setDate(x.getDate() - dow);
+      x.setHours(0, 0, 0, 0);
+      return x.getTime();
+    }
+
+    function bucketsConnHistHourly(samples, y, mon, day, metric) {
+      const out = [];
+      for (let hr = 0; hr < 24; hr++) {
+        const vals = [];
+        for (const s of samples) {
+          const p = localYMDH(s.t);
+          if (p.y === y && p.mon === mon && p.day === day && p.hr === hr) {
+            const v = extractMetricFromSample(s, metric);
+            if (v != null && !Number.isNaN(v)) vals.push(v);
+          }
+        }
+        out.push({ label: `${hr}h`, avg: avgVals(vals), n: vals.length });
+      }
+      return out;
+    }
+
+    function bucketsConnHistDaily(samples, y, mon, metric) {
+      const last = new Date(y, mon + 1, 0).getDate();
+      const out = [];
+      for (let day = 1; day <= last; day++) {
+        const vals = [];
+        for (const s of samples) {
+          const p = localYMDH(s.t);
+          if (p.y === y && p.mon === mon && p.day === day) {
+            const v = extractMetricFromSample(s, metric);
+            if (v != null && !Number.isNaN(v)) vals.push(v);
+          }
+        }
+        out.push({ label: String(day), avg: avgVals(vals), n: vals.length });
+      }
+      return out;
+    }
+
+    function bucketsConnHistWeekly(samples, y, mon, day, metric) {
+      const endMonday = startOfMondayLocal(y, mon - 1, day);
+      const out = [];
+      for (let w = 0; w < 8; w++) {
+        const weekStart = endMonday - (7 - w) * 7 * CONN_HIST_DAY_MS;
+        const weekEnd = weekStart + 7 * CONN_HIST_DAY_MS;
+        const vals = [];
+        for (const s of samples) {
+          if (s.t >= weekStart && s.t < weekEnd) {
+            const v = extractMetricFromSample(s, metric);
+            if (v != null && !Number.isNaN(v)) vals.push(v);
+          }
+        }
+        const wl = new Date(weekStart);
+        const label = `${wl.getMonth() + 1}/${wl.getDate()}`;
+        out.push({ label, avg: avgVals(vals), n: vals.length });
+      }
+      return out;
+    }
+
+    function formatConnHistValue(metric, v) {
+      if (v == null || Number.isNaN(v)) return '—';
+      if (metric === 'health') return v.toFixed(2);
+      if (metric === 'plexMbps') return `${v.toFixed(1)} Mb/s`;
+      return `${Math.round(v)} ms`;
+    }
+
+    function initConnHistDateDefault() {
+      const el = document.getElementById('connHistDate');
+      if (!el || el.value) return;
+      el.value = new Date().toISOString().slice(0, 10);
+    }
+
+    function renderConnectivityHistoryChart() {
+      const chart = document.getElementById('connHistChart');
+      const summary = document.getElementById('connHistSummary');
+      const yLab = document.getElementById('connHistYLabel');
+      if (!chart) return;
+      initConnHistDateDefault();
+      const metricEl = document.getElementById('connHistMetric');
+      const rangeEl = document.getElementById('connHistRange');
+      const dateEl = document.getElementById('connHistDate');
+      const metric = metricEl?.value || 'plexMbps';
+      const range = rangeEl?.value || 'hour';
+      const dateVal = dateEl?.value;
+      if (!dateVal) {
+        chart.innerHTML = '<span class="muted small">Pick a date.</span>';
+        if (summary) summary.textContent = '';
+        if (yLab) yLab.textContent = '';
+        return;
+      }
+      const parts = dateVal.split('-').map(Number);
+      const sy = parts[0];
+      const sm = parts[1];
+      const sd = parts[2];
+      const state = loadConnectivityHistory();
+      const samples = state.samples || [];
+      let buckets;
+      if (range === 'hour') buckets = bucketsConnHistHourly(samples, sy, sm - 1, sd, metric);
+      else if (range === 'day') buckets = bucketsConnHistDaily(samples, sy, sm - 1, metric);
+      else buckets = bucketsConnHistWeekly(samples, sy, sm, sd, metric);
+
+      const withVals = buckets.filter((b) => b.avg != null);
+      const maxRaw = withVals.length ? Math.max(...withVals.map((b) => b.avg)) : 0;
+      const maxV = metric === 'health' ? Math.max(1, maxRaw) : Math.max(maxRaw, 1e-6);
+      const totalN = buckets.reduce((a, b) => a + (b.n || 0), 0);
+      const maxSeen = withVals.length ? Math.max(...withVals.map((b) => b.avg)) : null;
+
+      const metricLabel = metricEl?.selectedOptions[0]?.textContent?.trim() || metric;
+      if (yLab) {
+        yLab.textContent = `Average ${metricLabel} (local time) · bar height ∝ value in this view`;
+      }
+
+      if (summary) {
+        if (!totalN) {
+          summary.textContent =
+            'No samples in this view. Open the Dashboard tab and leave it running so connectivity polls can record data (deduped by server probe time).';
+        } else {
+          summary.textContent = `${buckets.length} buckets · ${totalN} samples in view · peak avg ${formatConnHistValue(metric, maxSeen)}`;
+        }
+      }
+
+      const chartH = 100;
+      chart.innerHTML = buckets
+        .map((b) => {
+          let hPx;
+          let barCls = 'conn-hist-bar';
+          if (b.avg == null || Number.isNaN(b.avg)) {
+            hPx = 4;
+            barCls += ' conn-hist-bar--empty';
+          } else {
+            hPx = Math.max(4, Math.round((b.avg / maxV) * chartH));
+            if (metric === 'health' && b.avg < 0.85) barCls += ' conn-hist-bar--warn';
+          }
+          const tip =
+            b.avg == null
+              ? 'No data'
+              : `avg ${formatConnHistValue(metric, b.avg)} · ${b.n} sample(s)`;
+          return `<div class="conn-hist-bar-col" title="${escapeHTML(tip)}"><div class="conn-hist-bar-spacer"></div><div class="${barCls}" style="height:${hPx}px;width:100%;max-width:28px;"></div><span class="conn-hist-xlab">${escapeHTML(b.label)}</span></div>`;
+        })
+        .join('');
+    }
+
+    function wireConnectivityHistoryControls() {
+      const redraw = () => renderConnectivityHistoryChart();
+      ['connHistMetric', 'connHistRange', 'connHistDate'].forEach((id) => {
+        const node = document.getElementById(id);
+        if (node) node.addEventListener('change', redraw);
+      });
+      const btnR = document.getElementById('connHistRedrawBtn');
+      if (btnR) btnR.addEventListener('click', redraw);
+      const btnC = document.getElementById('connHistClearBtn');
+      if (btnC) {
+        btnC.addEventListener('click', () => {
+          localStorage.removeItem(CONNECTIVITY_HISTORY_KEY);
+          lastConnHistServerU = '';
+          renderConnectivityHistoryChart();
+        });
+      }
+    }
+
+    function levelToDotClass(level) {
+      if (level === 'ok') return 'ok';
+      if (level === 'warn') return 'warn';
+      if (level === 'error') return 'error';
+      return 'skip';
+    }
+
+    function renderConnectivityUI(data) {
+      const sumEl = document.getElementById('connectivitySummary');
+      const detailEl = document.getElementById('connectivityDetail');
+      const updEl = document.getElementById('connDetailUpdated');
+      if (!sumEl) return;
+
+      lastConnectivityData = data;
+      refreshAllMovieStreamHints();
+
+      const overall = data.overall || 'warn';
+      sumEl.classList.remove('connectivity-summary--problem', 'connectivity-summary--warn');
+      if (overall === 'error') sumEl.classList.add('connectivity-summary--problem');
+      else if (overall === 'warn') sumEl.classList.add('connectivity-summary--warn');
+
+      const checks = Array.isArray(data.checks) ? data.checks : [];
+      const abbr = { internet: 'Net', plex: 'Plex', tmdb: 'TMDB', lgtv: 'LG' };
+      const pills = checks.map((c) => {
+        const cls = levelToDotClass(c.level);
+        const tip = `${c.label}: ${c.message}`;
+        const short = abbr[c.id] || c.id;
+        return `<span class="conn-pill" title="${escapeHTML(tip)}"><span class="conn-dot ${cls}" aria-hidden="true"></span>${escapeHTML(short)}</span>`;
+      }).join('');
+
+      const sumText = data.summary || (overall === 'ok' ? 'All OK' : '—');
+      sumEl.innerHTML = `<span class="conn-pills">${pills}</span><span class="conn-summary-line">${escapeHTML(sumText)}</span>`;
+
+      if (updEl) {
+        if (data.updatedAt) {
+          try {
+            updEl.textContent = new Date(data.updatedAt).toLocaleString();
+          } catch (_) {
+            updEl.textContent = data.updatedAt;
+          }
+        } else {
+          updEl.textContent = '—';
+        }
+      }
+
+      if (detailEl) {
+        const ps = data.plexStream;
+        const hasStream = ps && (ps.message || ps.probedAt);
+        if (!checks.length && !hasStream) {
+          detailEl.innerHTML = '<p class="muted small">No probe data yet.</p>';
+          return;
+        }
+        const rows = checks.map((c) => {
+          const cls = levelToDotClass(c.level);
+          const ms = c.latencyMs != null ? ` <span class="muted small">(${c.latencyMs} ms)</span>` : '';
+          return `<tr><td><span class="conn-dot ${cls}" title="${escapeHTML(c.level)}"></span></td><td><strong>${escapeHTML(c.label)}</strong></td><td>${escapeHTML(c.message)}${ms}</td></tr>`;
+        }).join('');
+        let streamBlock = '';
+        if (hasStream) {
+          const scls = levelToDotClass(ps.level || 'skip');
+          let probed = '';
+          try {
+            if (ps.probedAt) probed = new Date(ps.probedAt).toLocaleString();
+          } catch (_) {
+            probed = ps.probedAt || '';
+          }
+          const bits = [];
+          if (ps.movieTitle) bits.push(`Sample file: ${ps.movieTitle}`);
+          if (probed) bits.push(`Probed ${probed}`);
+          if (ps.mbps != null && ps.mbps > 0) bits.push(`${Number(ps.mbps).toFixed(1)} Mb/s`);
+          const sub = bits.length ? `<div class="small muted" style="margin-top:4px;">${escapeHTML(bits.join(' · '))}</div>` : '';
+          const sms = ps.msTotal != null ? ` <span class="muted small">(${ps.msTotal} ms)</span>` : '';
+          streamBlock = `<h5 style="margin:16px 0 8px 0;font-size:13px;color:#ccc;">Plex speed check (this PC → Plex, not the TV)</h5><table class="conn-table"><tbody><tr><td><span class="conn-dot ${scls}" title="${escapeHTML(ps.level || '')}"></span></td><td><strong>Plex speed</strong></td><td>${escapeHTML(ps.message || '—')}${sms}${sub}</td></tr></tbody></table>`;
+        }
+        const mainTable = rows ? `<table class="conn-table"><tbody>${rows}</tbody></table>` : '';
+        detailEl.innerHTML = mainTable + streamBlock;
+      }
+    }
+
+    async function pollConnectivity() {
+      const sumEl = document.getElementById('connectivitySummary');
+      try {
+        const data = await apiJson('/api/connectivity');
+        appendConnectivityHistorySample(data);
+        renderConnectivityUI(data);
+      } catch (err) {
+        if (sumEl) {
+          sumEl.classList.remove('connectivity-summary--warn');
+          sumEl.classList.add('connectivity-summary--problem');
+          sumEl.innerHTML = `<span class="conn-summary-line">${escapeHTML('Connectivity API unavailable: ' + (err && err.message ? err.message : String(err)))}</span>`;
+        }
+      }
+    }
+
+    function startConnectivityPoll() {
+      if (connectivityPollTimer) clearInterval(connectivityPollTimer);
+      pollConnectivity();
+      connectivityPollTimer = setInterval(pollConnectivity, CONNECTIVITY_POLL_MS);
+    }
+
+    /** Escape HTML, then apply **bold** and [label](https://...) for help docs (not a full Markdown engine). */
+    function formatHelpInline(raw) {
+      let s = escapeHTML(raw);
+      s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+      return s;
+    }
+
+    function renderHelpMarkdown(md) {
+      const lines = String(md || '').replaceAll('\r\n', '\n').split('\n');
+      const out = [];
+      let inList = false;
+      let inCode = false;
+      for (const raw of lines) {
+        const line = raw || '';
+        if (line.startsWith('```')) {
+          if (!inCode) {
+            if (inList) { out.push('</ul>'); inList = false; }
+            out.push('<pre><code>');
+            inCode = true;
+          } else {
+            out.push('</code></pre>');
+            inCode = false;
+          }
+          continue;
+        }
+        if (inCode) {
+          out.push(escapeHTML(line) + '\n');
+          continue;
+        }
+        if (line.startsWith('### ')) {
+          if (inList) { out.push('</ul>'); inList = false; }
+          out.push('<h3>' + formatHelpInline(line.slice(4)) + '</h3>');
+          continue;
+        }
+        if (line.startsWith('## ')) {
+          if (inList) { out.push('</ul>'); inList = false; }
+          out.push('<h2>' + formatHelpInline(line.slice(3)) + '</h2>');
+          continue;
+        }
+        if (line.startsWith('# ')) {
+          if (inList) { out.push('</ul>'); inList = false; }
+          out.push('<h1>' + formatHelpInline(line.slice(2)) + '</h1>');
+          continue;
+        }
+        if (line.startsWith('- ')) {
+          if (!inList) { out.push('<ul>'); inList = true; }
+          out.push('<li>' + formatHelpInline(line.slice(2)) + '</li>');
+          continue;
+        }
+        if (inList) { out.push('</ul>'); inList = false; }
+        if (!line.trim()) {
+          out.push('');
+          continue;
+        }
+        out.push('<p>' + formatHelpInline(line) + '</p>');
+      }
+      if (inList) out.push('</ul>');
+      if (inCode) out.push('</code></pre>');
+      return out.join('\n');
+    }
+
+    async function loadHelpDocs() {
+      const select = document.getElementById('helpDocSelect');
+      const status = document.getElementById('helpStatus');
+      const content = document.getElementById('helpDocContent');
+      try {
+        status.textContent = 'Loading docs...';
+        const data = await apiJson('/api/help/docs');
+        const docs = data.docs || [];
+        select.innerHTML = '';
+        if (!docs.length) {
+          const opt = document.createElement('option');
+          opt.value = '';
+          opt.textContent = 'No docs found';
+          select.appendChild(opt);
+          content.className = 'help-doc muted';
+          content.textContent = 'Create markdown files in docs/*.md to populate this Help page.';
+          status.textContent = 'No docs found.';
+          return;
+        }
+        for (const d of docs) {
+          const opt = document.createElement('option');
+          opt.value = d.name;
+          opt.textContent = d.title || d.name;
+          select.appendChild(opt);
+        }
+        status.textContent = `Loaded ${docs.length} document(s).`;
+        await loadHelpDoc(select.value);
+      } catch (err) {
+        status.textContent = `Failed to load docs: ${err.message}`;
+        content.className = 'help-doc err';
+        content.textContent = 'Unable to load help docs.';
+      }
+    }
+
+    async function loadHelpDoc(name) {
+      const content = document.getElementById('helpDocContent');
+      const status = document.getElementById('helpStatus');
+      if (!name) {
+        content.className = 'help-doc muted';
+        content.textContent = 'No help document selected.';
+        return;
+      }
+      try {
+        const data = await apiJson(`/api/help/doc?name=${encodeURIComponent(name)}`);
+        content.className = 'help-doc';
+        content.innerHTML = renderHelpMarkdown(data.markdown || '');
+        status.textContent = `Showing ${data.name}`;
+      } catch (err) {
+        content.className = 'help-doc err';
+        content.textContent = `Failed to load document: ${err.message}`;
+      }
+    }
+
     async function loadPlaylistItems() {
       const title = document.getElementById('playlistSelect').value;
       const list = document.getElementById('playlistItemsList');
@@ -3274,6 +4883,7 @@
       try {
         const autoTargetDetected = document.getElementById('cfgAutoTargetDetected').checked;
         const selectedClient = (document.getElementById('clientName').value || '').trim();
+        const radarrEnabled = document.getElementById('cfgRadarrEnabled').checked;
         let targetClient = document.getElementById('cfgTargetClient').value.trim();
         if (autoTargetDetected && selectedClient) targetClient = selectedClient;
         const payload = {
@@ -3289,6 +4899,7 @@
           HeroBannerHidden: document.getElementById('cfgHeroBannerHidden').checked,
           TMDBAPIKey: document.getElementById('cfgTMDBKey').value.trim(),
           TMDBReadToken: document.getElementById('cfgTMDBReadToken').value.trim(),
+          RadarrEnabled: radarrEnabled,
           RadarrURL: document.getElementById('cfgRadarrURL').value.trim(),
           RadarrAPIKey: document.getElementById('cfgRadarrAPIKey').value.trim(),
           RadarrRootFolder: document.getElementById('cfgRadarrRoot').value.trim(),
@@ -3303,9 +4914,12 @@
           HeroBannerHeight: Number(payload.HeroBannerHeight || 140),
           HeroBannerHidden: !!payload.HeroBannerHidden,
           AutoTargetDetected: !!payload.AutoTargetDetected,
+          RadarrEnabled: !!payload.RadarrEnabled,
         };
-        document.getElementById('cfgTargetClient').value = targetClient || 'Living Room';
-        applyHeaderBranding();
+        renderTargetClientSelect(targetClient || 'Living Room');
+        applyRadarrVisibility();
+        renderDiscoveryTableReset();
+        await applyHeaderBranding();
         setStatus('settingsStatus', 'Saved settings (persisted).', true);
         loadPlayers();
       } catch (err) {
@@ -3314,12 +4928,29 @@
     }
 
     bindTabs();
+    hydrateConnHistDedupe();
+    wireConnectivityHistoryControls();
+    initConnHistDateDefault();
+    renderConnectivityHistoryChart();
+    document.addEventListener('tabChanged', (e) => {
+      if (e.detail === 'settings') {
+        syncSettingsGenreBarFields();
+        renderConnectivityHistoryChart();
+      }
+    });
+    applyRadarrVisibility();
+    syncSettingsGenreBarFields();
     hydrateMoviesFromCache();
     startLibraryCachePoll();
     loadGenres();
+    loadDiscoveryTmdbGenres();
     loadSettings();
     loadPlayers();
+    startLgVolumePoll();
+    startPlaybackPoll();
+    startConnectivityPoll();
     loadPlaylists();
+    loadHelpDocs();
     wirePersonAutocomplete();
     wireDiscoveryTableSort();
     wireDiscoveryTableActions();
@@ -3349,6 +4980,19 @@
       clearTimeout(searchDebounceTimer);
       filterMovieCards();
     });
+
+    document.getElementById('movieGenreClearBtn').addEventListener('click', () => {
+      selectedDashboardGenres.clear();
+      document.querySelectorAll('#movieGenreTags .movie-genre-tag').forEach((el) => el.classList.remove('is-active'));
+      updateDashboardGenreClearBtn();
+      filterMovieCards();
+    });
+    const movieGenreMoreToggle = document.getElementById('movieGenreMoreToggle');
+    if (movieGenreMoreToggle) movieGenreMoreToggle.addEventListener('click', toggleGenreMoreRow);
+    const settingsGenreBarApplyBtn = document.getElementById('settingsGenreBarApplyBtn');
+    if (settingsGenreBarApplyBtn) settingsGenreBarApplyBtn.addEventListener('click', applyGenreBarFromSettingsFields);
+    const settingsGenreBarResetBtn = document.getElementById('settingsGenreBarResetBtn');
+    if (settingsGenreBarResetBtn) settingsGenreBarResetBtn.addEventListener('click', resetGenreBarPrefsToDefaults);
 
     document.getElementById('movieSelectAllBtn').addEventListener('click', async () => {
       await ensureAllMoviesMaterialized();
@@ -3380,8 +5024,55 @@
 
     document.getElementById('playSelectedPlaylistBtn').addEventListener('click', playSelectedPlaylist);
     document.getElementById('refreshPlayersBtn').addEventListener('click', loadPlayers);
+    async function commitLgVolumeToTV(level) {
+      if (!Number.isFinite(level)) return;
+      level = Math.max(0, Math.min(100, Math.round(level)));
+      lgVolumePollSuppressUntil = Date.now() + 6000;
+      try {
+        const d = await apiJson('/api/lg/volume', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ level }),
+        });
+        applyLgVolumeUI(d);
+      } catch (err) {
+        const label = document.getElementById('lgVolumeLabel');
+        if (label) {
+          label.textContent = err.message || 'Failed';
+          label.className = 'small err';
+        }
+      }
+    }
+
+    const lgVolSlider = document.getElementById('lgVolumeSlider');
+    lgVolSlider.addEventListener('pointerdown', () => {
+      lgVolumePollSuppressUntil = Date.now() + 8000;
+    });
+    lgVolSlider.addEventListener('touchstart', () => {
+      lgVolumePollSuppressUntil = Date.now() + 8000;
+    }, { passive: true });
+
+    lgVolSlider.addEventListener('input', (e) => {
+      const v = Number(e.target.value);
+      const el = document.getElementById('lgVolumeLabel');
+      if (el) el.textContent = `${v}%`;
+      if (lgVolumePostDebounceTimer) clearTimeout(lgVolumePostDebounceTimer);
+      lgVolumePostDebounceTimer = setTimeout(() => {
+        lgVolumePostDebounceTimer = null;
+        commitLgVolumeToTV(v);
+      }, 380);
+    });
+    lgVolSlider.addEventListener('change', (e) => {
+      if (lgVolumePostDebounceTimer) {
+        clearTimeout(lgVolumePostDebounceTimer);
+        lgVolumePostDebounceTimer = null;
+      }
+      commitLgVolumeToTV(Number(e.target.value));
+    });
     document.getElementById('refreshPlaylistsBtn').addEventListener('click', loadPlaylists);
     document.getElementById('playlistSelect').addEventListener('change', loadPlaylistItems);
+    document.getElementById('helpDocSelect').addEventListener('change', (e) => loadHelpDoc(e.target.value));
+    document.getElementById('helpReloadBtn').addEventListener('click', loadHelpDocs);
     document.getElementById('createPeoplePlaylistBtn').addEventListener('click', createByPeople);
     document.getElementById('createGenrePlaylistBtn').addEventListener('click', createByGenreRating);
     document.getElementById('previewGenrePlaylistBtn').addEventListener('click', previewByGenreRating);
@@ -3396,11 +5087,16 @@
       }
     });
     document.getElementById('discoverMode').addEventListener('change', function () {
-      const isStudio = this.value === 'studio';
-      document.getElementById('discoverPersonWrap').style.display = isStudio ? 'none' : 'contents';
+      const mode = this.value;
+      const isStudio = mode === 'studio';
+      const isBrowse = mode === 'browse';
+      document.getElementById('discoverPersonWrap').style.display = (isStudio || isBrowse) ? 'none' : 'contents';
       document.getElementById('discoverStudioWrap').style.display = isStudio ? 'contents' : 'none';
-      document.getElementById('discoverPersonFilters').style.display = isStudio ? 'none' : 'contents';
-      document.getElementById('runDiscoveryBtn').textContent = isStudio ? 'Browse studio catalog' : 'Analyze filmography';
+      document.getElementById('discoverPersonFilters').style.display = (isStudio || isBrowse) ? 'none' : 'contents';
+      let btn = 'Analyze filmography';
+      if (isStudio) btn = 'Browse studio catalog';
+      else if (isBrowse) btn = 'Browse TMDB (year range)';
+      document.getElementById('runDiscoveryBtn').textContent = btn;
     });
     document.getElementById('selectAllDiscoveryBtn').addEventListener('click', selectAllMissing);
     document.getElementById('addSelectedToRadarrBtn').addEventListener('click', addSelectedToRadarr);
@@ -3415,6 +5111,11 @@
       console.log('[Plex Dashboard] discovery cart cleared');
     });
     document.getElementById('saveSettingsBtn').addEventListener('click', saveSettings);
+    document.getElementById('cfgRadarrEnabled').addEventListener('change', (e) => {
+      currentSettings.RadarrEnabled = !!e.target.checked;
+      applyRadarrVisibility();
+      renderDiscoveryTableReset();
+    });
 
     // ── SNAPSHOTS ────────────────────────────────────────────────────────────
     (function initSnapshots() {

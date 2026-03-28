@@ -36,8 +36,23 @@ RequestExecutionLevel user
 
 Var StartMenuFolder
 
+; Upgrade: same InstallDir + Add/Remove Programs key as previous releases.
+; We overwrite files in place (no silent uninstall first) so data next to the exe is preserved.
+Function .onInit
+  ReadRegStr $0 HKCU "Software\PlexSmashDeck" "InstallDir"
+  StrCmp $0 "" initDone
+  StrCpy $INSTDIR $0
+  IfSilent initDone
+  MessageBox MB_OK|MB_ICONINFORMATION "A previous installation of Plex Smash Deck was found.$\r$\n$\r$\nSetup will upgrade it in place. Settings and data in the install folder are kept."
+initDone:
+FunctionEnd
+
 Section "Install Core Files" SecCore
+  SetOverwrite on
   SetOutPath "$INSTDIR"
+
+  ; Replace bundled web UI cleanly (removes files dropped from a newer layout).
+  RMDir /r "$INSTDIR\web"
 
   ; app + static web assets
   File /r "${SOURCE_DIR}\*.*"

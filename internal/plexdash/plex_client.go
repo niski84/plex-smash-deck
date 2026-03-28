@@ -27,6 +27,7 @@ type Movie struct {
 	RatingKey         string
 	Title             string
 	Year              int
+	TMDBID            int // from Plex guid when available; 0 if unknown
 	DurationMillis    int64
 	LastViewedAtEpoch int64
 	ViewCount         int
@@ -52,6 +53,39 @@ type CreateAndPlayResult struct {
 	PlaylistCount int
 	TargetClient  string
 	PlaybackKey   string
+	// SentTitles is set when playback is pushed to LG webOS as a native queue (direct URLs).
+	SentTitles []string `json:"sentTitles,omitempty"`
+}
+
+// PlaybackSession is one row from GET /status/sessions (Plex-reported playback).
+type PlaybackSession struct {
+	PlayerName       string `json:"playerName"`
+	PlayerProduct    string `json:"playerProduct"`
+	PlayerState      string `json:"playerState"`
+	MachineID        string `json:"machineId"`
+	Title            string `json:"title"`
+	GrandparentTitle string `json:"grandparentTitle,omitempty"`
+	ParentTitle      string `json:"parentTitle,omitempty"`
+	Type             string `json:"type"`
+	Year             string `json:"year,omitempty"`
+	ViewOffsetMs     int64  `json:"viewOffsetMs"`
+	DurationMs       int64  `json:"durationMs"`
+	ProgressPercent  float64 `json:"progressPercent"`
+}
+
+// DisplayTitle returns a human-readable primary title for the session.
+func (p PlaybackSession) DisplayTitle() string {
+	t := strings.TrimSpace(p.Type)
+	if t == "episode" && strings.TrimSpace(p.GrandparentTitle) != "" {
+		if strings.TrimSpace(p.ParentTitle) != "" {
+			return fmt.Sprintf("%s — %s — %s", p.GrandparentTitle, p.ParentTitle, p.Title)
+		}
+		return fmt.Sprintf("%s — %s", p.GrandparentTitle, p.Title)
+	}
+	if strings.TrimSpace(p.Year) != "" {
+		return fmt.Sprintf("%s (%s)", p.Title, p.Year)
+	}
+	return p.Title
 }
 
 type Player struct {
@@ -124,6 +158,7 @@ func movieFromVideo(video video) Movie {
 		RatingKey:         video.RatingKey,
 		Title:             video.Title,
 		Year:              year,
+		TMDBID:            parseTMDBIDFromPlexGuid(video.Guid),
 		DurationMillis:    duration,
 		LastViewedAtEpoch: lastViewedAt,
 		ViewCount:         viewCount,
@@ -544,6 +579,65 @@ func (p *PlexClient) listSessionPlayers(ctx context.Context) ([]Player, error) {
 	return players, nil
 }
 
+// ListPlaybackSessions returns Plex-reported playback rows from GET /status/sessions.
+// Note: LG webOS direct streaming often does not create a Plex session; use server-side
+// "last sent" tracking in that case.
+func (p *PlexClient) ListPlaybackSessions(ctx context.Context) ([]PlaybackSession, error) {
+	body, err := p.get(ctx, p.baseURL+"/status/sessions")
+	if err != nil {
+		return nil, err
+	}
+	var root struct {
+		XMLName xml.Name `xml:"MediaContainer"`
+		Videos  []struct {
+			Type             string `xml:"type,attr"`
+			Title            string `xml:"title,attr"`
+			GrandparentTitle string `xml:"grandparentTitle,attr"`
+			ParentTitle      string `xml:"parentTitle,attr"`
+			Year             string `xml:"year,attr"`
+			ViewOffset       string `xml:"viewOffset,attr"`
+			Duration         string `xml:"duration,attr"`
+			Player           struct {
+				MachineIdentifier string `xml:"machineIdentifier,attr"`
+				Title             string `xml:"title,attr"`
+				Product           string `xml:"product,attr"`
+				State             string `xml:"state,attr"`
+			} `xml:"Player"`
+		} `xml:"Video"`
+	}
+	if err := xml.Unmarshal(body, &root); err != nil {
+		return nil, fmt.Errorf("decode sessions: %w", err)
+	}
+	out := make([]PlaybackSession, 0, len(root.Videos))
+	for _, v := range root.Videos {
+		pl := v.Player
+		if pl.MachineIdentifier == "" {
+			continue
+		}
+		offset, _ := strconv.ParseInt(v.ViewOffset, 10, 64)
+		dur, _ := strconv.ParseInt(v.Duration, 10, 64)
+		var pct float64
+		if dur > 0 {
+			pct = 100 * float64(offset) / float64(dur)
+		}
+		out = append(out, PlaybackSession{
+			PlayerName:       pl.Title,
+			PlayerProduct:    pl.Product,
+			PlayerState:      pl.State,
+			MachineID:        pl.MachineIdentifier,
+			Title:            v.Title,
+			GrandparentTitle: v.GrandparentTitle,
+			ParentTitle:      v.ParentTitle,
+			Type:             v.Type,
+			Year:             v.Year,
+			ViewOffsetMs:     offset,
+			DurationMs:       dur,
+			ProgressPercent:  pct,
+		})
+	}
+	return out, nil
+}
+
 func (p *PlexClient) ListPlaylists(ctx context.Context) ([]Playlist, error) {
 	body, err := p.get(ctx, p.baseURL+"/playlists")
 	if err != nil {
@@ -685,11 +779,16 @@ func (p *PlexClient) PlayPlaylistOnClient(ctx context.Context, playlistTitle, ta
 		if err := PlayPlaylistViaWebOS(ctx, p.lgtvAddr, p.lgtvClientKey, streamItems); err != nil {
 			return CreateAndPlayResult{}, err
 		}
+		sentTitles := make([]string, len(streamItems))
+		for i := range streamItems {
+			sentTitles[i] = strings.TrimSpace(streamItems[i].Title)
+		}
 		return CreateAndPlayResult{
 			PlaylistTitle: playlistTitle,
 			PlaylistCount: len(streamItems),
 			TargetClient:  target.Name,
 			PlaybackKey:   "",
+			SentTitles:    sentTitles,
 		}, nil
 	}
 
@@ -1160,8 +1259,42 @@ type mediaContainerRoot struct {
 	MachineIdentifier string   `xml:"machineIdentifier,attr"`
 }
 
+// parseTMDBIDFromPlexGuid extracts a TMDB movie id from Plex Video guid when the agent exposes it.
+func parseTMDBIDFromPlexGuid(guid string) int {
+	guid = strings.TrimSpace(guid)
+	if guid == "" {
+		return 0
+	}
+	// Examples: tmdb://12345, plex://movie/.../tmdb://12345, com.plexapp.agents.themoviedb://12345?lang=en
+	if strings.HasPrefix(guid, "tmdb://") {
+		return atoiPrefix(guid[len("tmdb://"):])
+	}
+	if i := strings.Index(guid, "tmdb://"); i >= 0 {
+		return atoiPrefix(guid[i+len("tmdb://"):])
+	}
+	if i := strings.Index(guid, "themoviedb://"); i >= 0 {
+		return atoiPrefix(guid[i+len("themoviedb://"):])
+	}
+	return 0
+}
+
+func atoiPrefix(s string) int {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+	s = strings.SplitN(s, "?", 2)[0]
+	s = strings.SplitN(s, "/", 2)[0]
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return n
+}
+
 type video struct {
 	RatingKey    string       `xml:"ratingKey,attr"`
+	Guid         string       `xml:"guid,attr"`
 	Title        string       `xml:"title,attr"`
 	Year         string       `xml:"year,attr"`
 	Duration     string       `xml:"duration,attr"`
