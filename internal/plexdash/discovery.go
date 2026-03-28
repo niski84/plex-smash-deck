@@ -106,10 +106,60 @@ func buildPlexTMDBIndex(plexMovies []Movie) map[int]Movie {
 	return out
 }
 
-// plexLibraryMatch decides if a TMDB credit is in the Plex snapshot: prefer TMDB id from Plex guid, else title/year.
-func plexLibraryMatch(plexMovies []Movie, plexTitleYears map[string][]int, byTMDB map[int]Movie, tmdbMovieID int, title string, year int) (bool, Movie) {
+// buildPlexIMDBIndex maps normalized IMDb id (tt…) → Movie for Plex rows that expose imdb in guid.
+func buildPlexIMDBIndex(plexMovies []Movie) map[string]Movie {
+	out := make(map[string]Movie)
+	for _, m := range plexMovies {
+		id := strings.TrimSpace(strings.ToLower(m.IMDbID))
+		if id == "" || !strings.HasPrefix(id, "tt") {
+			continue
+		}
+		if _, exists := out[id]; !exists {
+			out[id] = m
+		}
+	}
+	return out
+}
+
+// tmdbImdbIDsForDiscoverMovies resolves IMDb ids for discover-list rows (cached) so we can
+// match Plex libraries that only have imdb:// in guid, or reinforce TMDB-id matches.
+func tmdbImdbIDsForDiscoverMovies(ctx context.Context, apiKey string, credits []tmdbDiscoverMovie, cache *diskDiscoveryCache) map[int]string {
+	if strings.TrimSpace(apiKey) == "" || len(credits) == 0 {
+		return nil
+	}
+	seen := make(map[int]struct{}, len(credits))
+	out := make(map[int]string)
+	for _, c := range credits {
+		if c.TMDBID <= 0 {
+			continue
+		}
+		if _, ok := seen[c.TMDBID]; ok {
+			continue
+		}
+		seen[c.TMDBID] = struct{}{}
+		im, err := tmdbMovieExternalIDsCached(ctx, apiKey, c.TMDBID, cache)
+		if err != nil {
+			continue
+		}
+		im = strings.TrimSpace(strings.ToLower(im))
+		if im != "" && strings.HasPrefix(im, "tt") {
+			out[c.TMDBID] = im
+		}
+	}
+	return out
+}
+
+// plexLibraryMatch decides if a TMDB row is in the Plex snapshot: TMDB id from Plex guid,
+// then IMDb id (TMDB external_ids vs Plex imdb guid), then exact title/year, then relaxed title (e.g. "F1" vs "F1: The Movie").
+func plexLibraryMatch(plexMovies []Movie, plexTitleYears map[string][]int, byTMDB map[int]Movie, byIMDB map[string]Movie, tmdbMovieID int, tmdbImdbID string, title string, year int) (bool, Movie) {
 	if tmdbMovieID > 0 {
 		if m, ok := byTMDB[tmdbMovieID]; ok {
+			return true, m
+		}
+	}
+	im := strings.TrimSpace(strings.ToLower(tmdbImdbID))
+	if im != "" && strings.HasPrefix(im, "tt") && len(byIMDB) > 0 {
+		if m, ok := byIMDB[im]; ok {
 			return true, m
 		}
 	}
@@ -117,6 +167,9 @@ func plexLibraryMatch(plexMovies []Movie, plexTitleYears map[string][]int, byTMD
 		if m, ok := findMatchingPlexMovie(plexMovies, title, year); ok {
 			return true, m
 		}
+	}
+	if m, ok := findMatchingPlexMovieRelaxed(plexMovies, title, year); ok {
+		return true, m
 	}
 	return false, Movie{}
 }
@@ -128,6 +181,61 @@ func findMatchingPlexMovie(plexMovies []Movie, title string, tmdbYear int) (Movi
 	var candidates []Movie
 	for _, m := range plexMovies {
 		if normalizeTitle(m.Title) != key {
+			continue
+		}
+		if tmdbYear == 0 {
+			candidates = append(candidates, m)
+			continue
+		}
+		if m.Year == 0 || abs(m.Year-tmdbYear) <= 2 {
+			candidates = append(candidates, m)
+		}
+	}
+	if len(candidates) == 0 {
+		return Movie{}, false
+	}
+	if len(candidates) == 1 {
+		return candidates[0], true
+	}
+	if tmdbYear == 0 {
+		return candidates[0], true
+	}
+	best := candidates[0]
+	bestDist := abs(best.Year - tmdbYear)
+	for _, m := range candidates[1:] {
+		d := abs(m.Year - tmdbYear)
+		if d < bestDist {
+			bestDist = d
+			best = m
+		}
+	}
+	return best, true
+}
+
+// titlesMatchRelaxed treats TMDB vs Plex as the same when one normalized title is the
+// first “word group” of the other (e.g. "f1" vs "f1 the movie"). Min length 2 on the
+// shorter side avoids trivial matches.
+func titlesMatchRelaxed(plexTitle, tmdbTitle string) bool {
+	a := normalizeTitle(plexTitle)
+	b := normalizeTitle(tmdbTitle)
+	if a == b {
+		return true
+	}
+	if len(a) < 2 || len(b) < 2 {
+		return false
+	}
+	short, long := a, b
+	if len(a) > len(b) {
+		short, long = b, a
+	}
+	return strings.HasPrefix(long, short+" ")
+}
+
+// findMatchingPlexMovieRelaxed finds a Plex row by relaxed title + same ±2 year rule.
+func findMatchingPlexMovieRelaxed(plexMovies []Movie, tmdbTitle string, tmdbYear int) (Movie, bool) {
+	var candidates []Movie
+	for _, m := range plexMovies {
+		if !titlesMatchRelaxed(m.Title, tmdbTitle) {
 			continue
 		}
 		if tmdbYear == 0 {
@@ -237,13 +345,17 @@ func tmdbDiscoverWithGenresQuery(ids []int) string {
 }
 
 // browseStudioDiscoverExtraKey builds a cache filename segment for genre + min vote (e.g. "g12-28-r85", "r85").
-func browseStudioDiscoverExtraKey(genreKey string, minVote float64) string {
+// When excludeNonTheatrical is true, discover requests use US theatrical release types — cache key must differ.
+func browseStudioDiscoverExtraKey(genreKey string, minVote float64, excludeNonTheatrical bool) string {
 	var parts []string
 	if genreKey != "" {
 		parts = append(parts, "g"+genreKey)
 	}
 	if v := discoveryEffectiveMinVote(minVote); v > 0 {
 		parts = append(parts, fmt.Sprintf("r%d", int(v*10+0.5)))
+	}
+	if excludeNonTheatrical {
+		parts = append(parts, "theatrical")
 	}
 	return strings.Join(parts, "-")
 }
@@ -277,7 +389,7 @@ func sortDiscoveryItems(items []DiscoveryItem) {
 // AnalyzeFilmography cross-references TMDB credits for a person against the
 // caller-supplied Plex library slice (plexMovies). The caller is responsible for
 // providing an up-to-date (or cached) snapshot — this function never hits Plex.
-func AnalyzeFilmography(ctx context.Context, cfg Config, plex *PlexClient, plexMovies []Movie, personName, role, playlistTitle, directorFilter, coActorFilter string, minYear, maxYear int, minVoteAverage float64, genreFilterIDs []int, stats *DiscoveryCacheStats) ([]DiscoveryItem, error) {
+func AnalyzeFilmography(ctx context.Context, cfg Config, plex *PlexClient, plexMovies []Movie, personName, role, playlistTitle, directorFilter, coActorFilter string, minYear, maxYear int, minVoteAverage float64, genreFilterIDs []int, excludeNonTheatrical bool, stats *DiscoveryCacheStats) ([]DiscoveryItem, error) {
 	if strings.TrimSpace(cfg.TMDBAPIKey) == "" {
 		return nil, fmt.Errorf("TMDB API key not configured")
 	}
@@ -310,6 +422,7 @@ func AnalyzeFilmography(ctx context.Context, cfg Config, plex *PlexClient, plexM
 		plexTitleYears[key] = append(plexTitleYears[key], movie.Year)
 	}
 	plexByTMDB := buildPlexTMDBIndex(plexMovies)
+	plexByIMDB := buildPlexIMDBIndex(plexMovies)
 
 	inPlaylist := map[string]struct{}{}
 	if strings.TrimSpace(playlistTitle) != "" {
@@ -402,7 +515,7 @@ func AnalyzeFilmography(ctx context.Context, cfg Config, plex *PlexClient, plexM
 		if hasDet && det.OK {
 			imdbID = strings.TrimSpace(det.IMDbID)
 		}
-		if cfg.OMDbBlendRatings && strings.TrimSpace(cfg.OMDbAPIKey) != "" && imdbID == "" {
+		if imdbID == "" {
 			if ex, err := tmdbMovieExternalIDsCached(ctx, cfg.TMDBAPIKey, credit.ID, cache); err == nil {
 				imdbID = strings.TrimSpace(ex)
 			}
@@ -416,13 +529,17 @@ func AnalyzeFilmography(ctx context.Context, cfg Config, plex *PlexClient, plexM
 		if excludedFromDiscovery(credit.Title, overview, genres) {
 			continue
 		}
+		// TMDB "video" = direct-to-video / non-theatrical; only filter when details loaded.
+		if excludeNonTheatrical && hasDet && det.OK && det.Video {
+			continue
+		}
 
 		// TMDB vote average (0–10): optional minimum from UI (0 = any rating).
 		if effectiveMin > 0 && vote+1e-9 < effectiveMin {
 			continue
 		}
 
-		hasLibrary, pm := plexLibraryMatch(plexMovies, plexTitleYears, plexByTMDB, credit.ID, credit.Title, credit.Year)
+		hasLibrary, pm := plexLibraryMatch(plexMovies, plexTitleYears, plexByTMDB, plexByIMDB, credit.ID, imdbID, credit.Title, credit.Year)
 		var plexVC *int
 		if hasLibrary {
 			vc := pm.ViewCount
@@ -549,6 +666,7 @@ type fetchedMovieDetails struct {
 	PosterPath       string // raw TMDB poster_path
 	OriginalLanguage string // ISO 639-1, e.g. "en", "fr", "it"
 	IMDbID           string // from TMDB external_ids when present (e.g. tt1234567)
+	Video            bool   // TMDB: direct-to-video / non-theatrical
 }
 
 func uniqueMovieIDs(credits []tmdbCredit) []int {
@@ -613,6 +731,7 @@ func fetchMovieDetailsBatch(ctx context.Context, apiKey string, ids []int, cache
 				PosterPath:       strings.TrimSpace(d.PosterPath),
 				OriginalLanguage: d.OriginalLanguage,
 				IMDbID:           d.IMDbID,
+				Video:            d.Video,
 			}
 			out[movieID] = det
 			cache.putMovieDetails(movieID, det)
@@ -631,6 +750,7 @@ type tmdbMovieDetailsResult struct {
 	PosterPath       string
 	OriginalLanguage string
 	IMDbID           string
+	Video            bool
 }
 
 func tmdbFetchMovieDetails(ctx context.Context, apiKey string, movieID int) (tmdbMovieDetailsResult, error) {
@@ -657,6 +777,7 @@ func tmdbFetchMovieDetails(ctx context.Context, apiKey string, movieID int) (tmd
 		PosterPath       string  `json:"poster_path"`
 		Runtime          int     `json:"runtime"`
 		OriginalLanguage string  `json:"original_language"`
+		Video            bool    `json:"video"`
 		Genres           []struct {
 			Name string `json:"name"`
 		} `json:"genres"`
@@ -685,6 +806,7 @@ func tmdbFetchMovieDetails(ctx context.Context, apiKey string, movieID int) (tmd
 		PosterPath:       rawPath,
 		OriginalLanguage: strings.TrimSpace(body.OriginalLanguage),
 		IMDbID:           strings.TrimSpace(body.ExternalIDs.IMDbID),
+		Video:            body.Video,
 	}, nil
 }
 
@@ -709,6 +831,37 @@ func tmdbFetchMovieExternalIDs(ctx context.Context, apiKey string, movieID int) 
 		return "", err
 	}
 	return strings.TrimSpace(body.IMDbID), nil
+}
+
+// tmdbFetchMovieVoteAverage returns TMDB vote_average (0–10) for a movie id, or 0,false on failure.
+func tmdbFetchMovieVoteAverage(ctx context.Context, apiKey string, movieID int) (float64, bool) {
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" || movieID <= 0 {
+		return 0, false
+	}
+	u := fmt.Sprintf("https://api.themoviedb.org/3/movie/%d?api_key=%s", movieID, url.QueryEscape(apiKey))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return 0, false
+	}
+	resp, err := (&http.Client{Timeout: 12 * time.Second}).Do(req)
+	if err != nil {
+		return 0, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return 0, false
+	}
+	var body struct {
+		VoteAverage float64 `json:"vote_average"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return 0, false
+	}
+	if body.VoteAverage <= 0 {
+		return 0, false
+	}
+	return body.VoteAverage, true
 }
 
 func tmdbMovieExternalIDsCached(ctx context.Context, apiKey string, movieID int, cache *diskDiscoveryCache) (string, error) {
@@ -1236,13 +1389,15 @@ func setToSortedSlice(set map[string]struct{}) []string {
 
 // buildDiscoveryItemsFromTMDBDiscoverList turns TMDB /discover/movie rows into discovery rows vs Plex.
 // knownFor is shown in the "Known for" column (studio name, year range label, etc.).
-func buildDiscoveryItemsFromTMDBDiscoverList(plexMovies []Movie, credits []tmdbDiscoverMovie, knownFor string, minVoteAverage float64) []DiscoveryItem {
+func buildDiscoveryItemsFromTMDBDiscoverList(ctx context.Context, apiKey string, cache *diskDiscoveryCache, plexMovies []Movie, credits []tmdbDiscoverMovie, knownFor string, minVoteAverage float64, excludeNonTheatrical bool) []DiscoveryItem {
 	plexTitleYears := make(map[string][]int, len(plexMovies))
 	for _, m := range plexMovies {
 		key := normalizeTitle(m.Title)
 		plexTitleYears[key] = append(plexTitleYears[key], m.Year)
 	}
 	plexByTMDB := buildPlexTMDBIndex(plexMovies)
+	plexByIMDB := buildPlexIMDBIndex(plexMovies)
+	tmdbImdbByID := tmdbImdbIDsForDiscoverMovies(ctx, apiKey, credits, cache)
 
 	today := time.Now().Truncate(24 * time.Hour)
 	effectiveMin := discoveryEffectiveMinVote(minVoteAverage)
@@ -1268,9 +1423,16 @@ func buildDiscoveryItemsFromTMDBDiscoverList(plexMovies []Movie, credits []tmdbD
 		if excludedFromDiscovery(c.Title, c.Overview, genres) {
 			continue
 		}
+		if excludeNonTheatrical && c.Video {
+			continue
+		}
 
 		posterURL := tmdbPosterURLFromPath(c.PosterPath)
-		hasLibrary, pm := plexLibraryMatch(plexMovies, plexTitleYears, plexByTMDB, c.TMDBID, c.Title, c.Year)
+		tmdbImdb := ""
+		if tmdbImdbByID != nil {
+			tmdbImdb = tmdbImdbByID[c.TMDBID]
+		}
+		hasLibrary, pm := plexLibraryMatch(plexMovies, plexTitleYears, plexByTMDB, plexByIMDB, c.TMDBID, tmdbImdb, c.Title, c.Year)
 		var plexVC *int
 		if hasLibrary {
 			vc := pm.ViewCount
@@ -1300,7 +1462,7 @@ func buildDiscoveryItemsFromTMDBDiscoverList(plexMovies []Movie, credits []tmdbD
 
 // AnalyzeBrowse lists TMDB movies in a release-year window (no actor or studio), optionally filtered by min vote average.
 // At least one of minYear/maxYear must be set; missing bound defaults to 1900 or the current year.
-func AnalyzeBrowse(ctx context.Context, cfg Config, _ *PlexClient, plexMovies []Movie, minYear, maxYear int, minVoteAverage float64, genreFilterIDs []int) ([]DiscoveryItem, string, error) {
+func AnalyzeBrowse(ctx context.Context, cfg Config, _ *PlexClient, plexMovies []Movie, minYear, maxYear int, minVoteAverage float64, genreFilterIDs []int, excludeNonTheatrical bool) ([]DiscoveryItem, string, error) {
 	if strings.TrimSpace(cfg.TMDBAPIKey) == "" {
 		return nil, "", fmt.Errorf("TMDB API key not configured")
 	}
@@ -1320,7 +1482,7 @@ func AnalyzeBrowse(ctx context.Context, cfg Config, _ *PlexClient, plexMovies []
 
 	cache := newDiskDiscoveryCache(defaultDiscoveryCacheDir())
 	genreFilterIDs = normalizeGenreIDs(genreFilterIDs)
-	credits, err := loadBrowseDiscover(ctx, cfg.TMDBAPIKey, minYear, maxYear, genreFilterIDs, minVoteAverage, cache)
+	credits, err := loadBrowseDiscover(ctx, cfg.TMDBAPIKey, minYear, maxYear, genreFilterIDs, minVoteAverage, excludeNonTheatrical, cache)
 	if err != nil {
 		return nil, "", err
 	}
@@ -1331,7 +1493,10 @@ func AnalyzeBrowse(ctx context.Context, cfg Config, _ *PlexClient, plexMovies []
 	if v := discoveryEffectiveMinVote(minVoteAverage); v > 0 {
 		label += fmt.Sprintf(" · ≥%.1f TMDB", v)
 	}
-	items := buildDiscoveryItemsFromTMDBDiscoverList(plexMovies, credits, label, minVoteAverage)
+	if excludeNonTheatrical {
+		label += " · theatrical (US)"
+	}
+	items := buildDiscoveryItemsFromTMDBDiscoverList(ctx, cfg.TMDBAPIKey, cache, plexMovies, credits, label, minVoteAverage, excludeNonTheatrical)
 	items = applyOMDbBlendToDiscoveryItems(ctx, cfg, items, cache)
 	items = filterDiscoveryItemsByMinVote(items, minVoteAverage)
 	return items, label, nil
@@ -1339,7 +1504,7 @@ func AnalyzeBrowse(ctx context.Context, cfg Config, _ *PlexClient, plexMovies []
 
 // AnalyzeStudio finds TMDB movies from a production company and cross-references
 // them against the caller-supplied Plex library slice. This function never hits Plex.
-func AnalyzeStudio(ctx context.Context, cfg Config, _ *PlexClient, plexMovies []Movie, companyName string, minYear, maxYear int, minVoteAverage float64, genreFilterIDs []int) ([]DiscoveryItem, string, error) {
+func AnalyzeStudio(ctx context.Context, cfg Config, _ *PlexClient, plexMovies []Movie, companyName string, minYear, maxYear int, minVoteAverage float64, genreFilterIDs []int, excludeNonTheatrical bool) ([]DiscoveryItem, string, error) {
 	if strings.TrimSpace(cfg.TMDBAPIKey) == "" {
 		return nil, "", fmt.Errorf("TMDB API key not configured")
 	}
@@ -1358,12 +1523,12 @@ func AnalyzeStudio(ctx context.Context, cfg Config, _ *PlexClient, plexMovies []
 
 	genreFilterIDs = normalizeGenreIDs(genreFilterIDs)
 	// 2. Discover list for company + year range (disk cache; avoids paging TMDB every run).
-	credits, err := loadStudioDiscover(ctx, cfg.TMDBAPIKey, companyID, minYear, maxYear, genreFilterIDs, minVoteAverage, cache)
+	credits, err := loadStudioDiscover(ctx, cfg.TMDBAPIKey, companyID, minYear, maxYear, genreFilterIDs, minVoteAverage, excludeNonTheatrical, cache)
 	if err != nil {
 		return nil, resolvedName, err
 	}
 
-	items := buildDiscoveryItemsFromTMDBDiscoverList(plexMovies, credits, resolvedName, minVoteAverage)
+	items := buildDiscoveryItemsFromTMDBDiscoverList(ctx, cfg.TMDBAPIKey, cache, plexMovies, credits, resolvedName, minVoteAverage, excludeNonTheatrical)
 	items = applyOMDbBlendToDiscoveryItems(ctx, cfg, items, cache)
 	items = filterDiscoveryItemsByMinVote(items, minVoteAverage)
 	return items, resolvedName, nil
@@ -1381,6 +1546,8 @@ type tmdbDiscoverMovie struct {
 	OriginalLanguage string   `json:"original_language"`
 	Runtime          int      `json:"runtime,omitempty"`
 	Genres           []string `json:"genres"` // genre names resolved from genre_ids
+	// Video is TMDB’s direct-to-video flag (true = not a theatrical feature).
+	Video bool `json:"video"`
 }
 
 // tmdbFindCompanyID searches for a production company by name and returns its TMDB ID and canonical name.
@@ -1472,9 +1639,9 @@ func tmdbGenreMapWithCache(ctx context.Context, apiKey string, cache *diskDiscov
 	return m, nil
 }
 
-func loadBrowseDiscover(ctx context.Context, apiKey string, minYear, maxYear int, genreFilterIDs []int, minVoteAverage float64, cache *diskDiscoveryCache) ([]tmdbDiscoverMovie, error) {
+func loadBrowseDiscover(ctx context.Context, apiKey string, minYear, maxYear int, genreFilterIDs []int, minVoteAverage float64, excludeNonTheatrical bool, cache *diskDiscoveryCache) ([]tmdbDiscoverMovie, error) {
 	gk := genreKeyFromIDs(genreFilterIDs)
-	extra := browseStudioDiscoverExtraKey(gk, minVoteAverage)
+	extra := browseStudioDiscoverExtraKey(gk, minVoteAverage, excludeNonTheatrical)
 	if credits, ok := cache.getBrowseDiscover(minYear, maxYear, extra); ok {
 		return credits, nil
 	}
@@ -1482,7 +1649,7 @@ func loadBrowseDiscover(ctx context.Context, apiKey string, minYear, maxYear int
 	if err != nil {
 		genreMap = map[int]string{}
 	}
-	credits, err := tmdbDiscoverBrowseWithGenreMap(ctx, apiKey, minYear, maxYear, genreFilterIDs, minVoteAverage, genreMap)
+	credits, err := tmdbDiscoverBrowseWithGenreMap(ctx, apiKey, minYear, maxYear, genreFilterIDs, minVoteAverage, excludeNonTheatrical, genreMap)
 	if err != nil {
 		return nil, err
 	}
@@ -1490,9 +1657,9 @@ func loadBrowseDiscover(ctx context.Context, apiKey string, minYear, maxYear int
 	return credits, nil
 }
 
-func loadStudioDiscover(ctx context.Context, apiKey string, companyID, minYear, maxYear int, genreFilterIDs []int, minVoteAverage float64, cache *diskDiscoveryCache) ([]tmdbDiscoverMovie, error) {
+func loadStudioDiscover(ctx context.Context, apiKey string, companyID, minYear, maxYear int, genreFilterIDs []int, minVoteAverage float64, excludeNonTheatrical bool, cache *diskDiscoveryCache) ([]tmdbDiscoverMovie, error) {
 	gk := genreKeyFromIDs(genreFilterIDs)
-	extra := browseStudioDiscoverExtraKey(gk, minVoteAverage)
+	extra := browseStudioDiscoverExtraKey(gk, minVoteAverage, excludeNonTheatrical)
 	if credits, ok := cache.getStudioDiscover(companyID, minYear, maxYear, extra); ok {
 		return credits, nil
 	}
@@ -1500,7 +1667,7 @@ func loadStudioDiscover(ctx context.Context, apiKey string, companyID, minYear, 
 	if err != nil {
 		genreMap = map[int]string{}
 	}
-	credits, err := tmdbDiscoverByCompanyWithGenreMap(ctx, apiKey, companyID, minYear, maxYear, genreFilterIDs, minVoteAverage, genreMap)
+	credits, err := tmdbDiscoverByCompanyWithGenreMap(ctx, apiKey, companyID, minYear, maxYear, genreFilterIDs, minVoteAverage, excludeNonTheatrical, genreMap)
 	if err != nil {
 		return nil, err
 	}
@@ -1511,7 +1678,7 @@ func loadStudioDiscover(ctx context.Context, apiKey string, companyID, minYear, 
 // tmdbDiscoverBrowseWithGenreMap pages through /discover/movie for a release-year window only (no studio filter).
 // with_original_language=en matches our post-filters. When minVoteAverage > 0, vote_average.gte and sort_by=vote_average.desc
 // are sent so TMDB returns high-rated rows (popularity-sorted pages would nearly all fail a strict min-rating filter).
-func tmdbDiscoverBrowseWithGenreMap(ctx context.Context, apiKey string, minYear, maxYear int, genreFilterIDs []int, minVoteAverage float64, genreMap map[int]string) ([]tmdbDiscoverMovie, error) {
+func tmdbDiscoverBrowseWithGenreMap(ctx context.Context, apiKey string, minYear, maxYear int, genreFilterIDs []int, minVoteAverage float64, excludeNonTheatrical bool, genreMap map[int]string) ([]tmdbDiscoverMovie, error) {
 	if genreMap == nil {
 		genreMap = map[int]string{}
 	}
@@ -1528,6 +1695,7 @@ func tmdbDiscoverBrowseWithGenreMap(ctx context.Context, apiKey string, minYear,
 			PosterPath       string  `json:"poster_path"`
 			OriginalLanguage string  `json:"original_language"`
 			GenreIDs         []int   `json:"genre_ids"`
+			Video            bool    `json:"video"`
 		} `json:"results"`
 		TotalPages int `json:"total_pages"`
 	}
@@ -1546,6 +1714,10 @@ func tmdbDiscoverBrowseWithGenreMap(ctx context.Context, apiKey string, minYear,
 		u += fmt.Sprintf("&primary_release_date.lte=%d-12-31", maxYear)
 		u += tmdbDiscoverWithGenresQuery(genreFilterIDs)
 		u += tmdbDiscoverVoteAverageGteQuery(minVoteAverage)
+		if excludeNonTheatrical {
+			// Limited (2) + wide theatrical (3) in US — requires region per TMDB discover API.
+			u += "&region=" + url.QueryEscape("US") + "&with_release_type=" + url.QueryEscape("2|3")
+		}
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 		if err != nil {
@@ -1587,6 +1759,7 @@ func tmdbDiscoverBrowseWithGenreMap(ctx context.Context, apiKey string, minYear,
 				PosterPath:       r.PosterPath,
 				OriginalLanguage: r.OriginalLanguage,
 				Genres:           genres,
+				Video:            r.Video,
 			})
 		}
 
@@ -1600,7 +1773,7 @@ func tmdbDiscoverBrowseWithGenreMap(ctx context.Context, apiKey string, minYear,
 
 // tmdbDiscoverByCompanyWithGenreMap pages through /discover/movie for a given company ID.
 // Up to 10 pages (~200 movies). Uses vote_average.desc + vote_average.gte when a min rating is set.
-func tmdbDiscoverByCompanyWithGenreMap(ctx context.Context, apiKey string, companyID, minYear, maxYear int, genreFilterIDs []int, minVoteAverage float64, genreMap map[int]string) ([]tmdbDiscoverMovie, error) {
+func tmdbDiscoverByCompanyWithGenreMap(ctx context.Context, apiKey string, companyID, minYear, maxYear int, genreFilterIDs []int, minVoteAverage float64, excludeNonTheatrical bool, genreMap map[int]string) ([]tmdbDiscoverMovie, error) {
 	if genreMap == nil {
 		genreMap = map[int]string{}
 	}
@@ -1617,6 +1790,7 @@ func tmdbDiscoverByCompanyWithGenreMap(ctx context.Context, apiKey string, compa
 			PosterPath       string  `json:"poster_path"`
 			OriginalLanguage string  `json:"original_language"`
 			GenreIDs         []int   `json:"genre_ids"`
+			Video            bool    `json:"video"`
 		} `json:"results"`
 		TotalPages int `json:"total_pages"`
 	}
@@ -1639,6 +1813,9 @@ func tmdbDiscoverByCompanyWithGenreMap(ctx context.Context, apiKey string, compa
 		}
 		u += tmdbDiscoverWithGenresQuery(genreFilterIDs)
 		u += tmdbDiscoverVoteAverageGteQuery(minVoteAverage)
+		if excludeNonTheatrical {
+			u += "&region=" + url.QueryEscape("US") + "&with_release_type=" + url.QueryEscape("2|3")
+		}
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 		if err != nil {
@@ -1680,6 +1857,7 @@ func tmdbDiscoverByCompanyWithGenreMap(ctx context.Context, apiKey string, compa
 				PosterPath:       r.PosterPath,
 				OriginalLanguage: r.OriginalLanguage,
 				Genres:           genres,
+				Video:            r.Video,
 			})
 		}
 

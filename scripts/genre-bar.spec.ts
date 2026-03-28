@@ -11,7 +11,11 @@ test.describe('Genre bar preferences', () => {
     await page.addInitScript(() => {
       localStorage.setItem(
         'plexdash.genreBar.prefs.v1',
-        JSON.stringify({ pinned: ['horror', 'drama'], hidden: ['comedy'] })
+        JSON.stringify({
+          pinned: ['horror', 'drama'],
+          hidden: ['comedy'],
+          excluded: ['documentary', 'romance'],
+        })
       );
     });
 
@@ -19,5 +23,6 @@ test.describe('Genre bar preferences', () => {
     await page.locator('.tab-btn[data-tab="settings"]').click();
     await expect(page.locator('#settingsGenrePinned')).toHaveValue('Horror\nDrama');
     await expect(page.locator('#settingsGenreHidden')).toHaveValue('Comedy');
+    await expect(page.locator('#settingsGenreExcluded')).toHaveValue('Documentary\nRomance');
   });
 });
