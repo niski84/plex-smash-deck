@@ -28,6 +28,7 @@ type Movie struct {
 	Title             string
 	Year              int
 	TMDBID            int // from Plex guid when available; 0 if unknown
+	IMDbID            string // from Plex guid when agent exposes imdb:// (normalized tt…)
 	DurationMillis    int64
 	LastViewedAtEpoch int64
 	ViewCount         int
@@ -131,12 +132,40 @@ func (p *PlexClient) IsConfigured() bool {
 	return strings.TrimSpace(p.baseURL) != "" && strings.TrimSpace(p.token) != ""
 }
 
+// plexExternalIDsFromVideo returns TMDB / IMDb ids from the Video guid attribute
+// and from child <Guid id="tmdb://…"/> / <Guid id="imdb://…"/> (present when Plex
+// was queried with includeGuids=1). Modern Plex uses plex://movie/… on the attribute
+// and puts provider ids only in those children.
+func plexExternalIDsFromVideo(v video) (tmdbID int, imdbID string) {
+	sources := []string{strings.TrimSpace(v.Guid)}
+	for _, g := range v.GuidElems {
+		sources = append(sources, strings.TrimSpace(g.ID))
+	}
+	for _, s := range sources {
+		if s == "" {
+			continue
+		}
+		if tmdbID == 0 {
+			if x := parseTMDBIDFromPlexGuid(s); x > 0 {
+				tmdbID = x
+			}
+		}
+		if imdbID == "" {
+			if x := parseIMDbIDFromPlexGuid(s); x != "" {
+				imdbID = x
+			}
+		}
+	}
+	return tmdbID, imdbID
+}
+
 func movieFromVideo(video video) Movie {
 	year, _ := strconv.Atoi(video.Year)
 	duration, _ := strconv.ParseInt(video.Duration, 10, 64)
 	lastViewedAt, _ := strconv.ParseInt(video.LastViewedAt, 10, 64)
 	rating, _ := strconv.ParseFloat(video.Rating, 64)
 	viewCount, _ := strconv.Atoi(video.ViewCount)
+	tmdbID, imdbID := plexExternalIDsFromVideo(video)
 
 	// Pick the media version with the largest file — Plex can store
 	// multiple quality versions (e.g. 4K + 1080p) under one entry.
@@ -158,7 +187,8 @@ func movieFromVideo(video video) Movie {
 		RatingKey:         video.RatingKey,
 		Title:             video.Title,
 		Year:              year,
-		TMDBID:            parseTMDBIDFromPlexGuid(video.Guid),
+		TMDBID:            tmdbID,
+		IMDbID:            imdbID,
 		DurationMillis:    duration,
 		LastViewedAtEpoch: lastViewedAt,
 		ViewCount:         viewCount,
@@ -175,7 +205,9 @@ func movieFromVideo(video video) Movie {
 }
 
 func (p *PlexClient) ListMovies(ctx context.Context, libraryKey string) ([]Movie, error) {
-	endpoint := fmt.Sprintf("%s/library/sections/%s/all", p.baseURL, libraryKey)
+	// includeGuids=1 adds <Guid id="tmdb://…"/> children; without it guid is often only
+	// plex://movie/… and Discovery cannot match by TMDB id.
+	endpoint := fmt.Sprintf("%s/library/sections/%s/all?includeGuids=1", p.baseURL, libraryKey)
 	body, err := p.get(ctx, endpoint)
 	if err != nil {
 		return nil, err
@@ -196,13 +228,9 @@ func (p *PlexClient) ListMovies(ctx context.Context, libraryKey string) ([]Movie
 	return movies, nil
 }
 
-// minHighRatingForDashboardTop is the Plex aggregate rating (0–10) used to pin
-// "highly rated" titles ahead of the rest on the dashboard grid.
-const minHighRatingForDashboardTop = 8.0
-
-// SortMoviesDefaultView orders movies for the main dashboard: rating ≥
-// minHighRatingForDashboardTop first, then newer release years, then higher
-// rating; ties are shuffled so the grid is not strictly alphabetical.
+// SortMoviesDefaultView orders movies for the main dashboard: newest release year
+// first (scrolling goes back in time), then higher Plex rating, then a random
+// tiebreak so ties are not strictly alphabetical.
 func SortMoviesDefaultView(movies []Movie) {
 	SortMoviesDefaultViewWithRand(movies, rand.New(rand.NewSource(time.Now().UnixNano())))
 }
@@ -218,11 +246,6 @@ func SortMoviesDefaultViewWithRand(movies []Movie, rng *rand.Rand) {
 	}
 	sort.SliceStable(movies, func(i, j int) bool {
 		ai, bi := movies[i], movies[j]
-		hi := dashboardRatingTier(ai)
-		hj := dashboardRatingTier(bi)
-		if hi != hj {
-			return hi < hj
-		}
 		if ai.Year != bi.Year {
 			return ai.Year > bi.Year
 		}
@@ -231,14 +254,6 @@ func SortMoviesDefaultViewWithRand(movies []Movie, rng *rand.Rand) {
 		}
 		return tie[i] < tie[j]
 	})
-}
-
-// dashboardRatingTier returns 0 for “priority” rows (high aggregate rating), 1 otherwise.
-func dashboardRatingTier(m Movie) int {
-	if m.Rating >= minHighRatingForDashboardTop {
-		return 0
-	}
-	return 1
 }
 
 // FetchNewMoviesFromRecentlyAdded walks /library/sections/{key}/recentlyAdded in
@@ -253,7 +268,7 @@ func (p *PlexClient) FetchNewMoviesFromRecentlyAdded(ctx context.Context, librar
 	var collected []Movie
 	start := 0
 	for page := 0; page < 50; page++ {
-		endpoint := fmt.Sprintf("%s/library/sections/%s/recentlyAdded?X-Plex-Container-Start=%d&X-Plex-Container-Size=%d", p.baseURL, libraryKey, start, pageSize)
+		endpoint := fmt.Sprintf("%s/library/sections/%s/recentlyAdded?X-Plex-Container-Start=%d&X-Plex-Container-Size=%d&includeGuids=1", p.baseURL, libraryKey, start, pageSize)
 		body, err := p.get(ctx, endpoint)
 		if err != nil {
 			return collected, err
@@ -1052,6 +1067,108 @@ func (p *PlexClient) playMovieOnClient(ctx context.Context, player Player, ratin
 	return nil
 }
 
+// PlayerUsesSSAP reports whether commands must go through LG SSAP (not Plex companion HTTP).
+func PlayerUsesSSAP(p Player) bool {
+	return strings.HasPrefix(strings.TrimSpace(p.URI), "ssap://")
+}
+
+// SelectPlayerForCompanion resolves a target name to a player with a Plex companion-capable
+// URI (https://… or http://…). When both an SSAP row and a session/relay row exist for the
+// same TV name, the non-SSAP entry is preferred.
+func SelectPlayerForCompanion(players []Player, targetClientName string) (Player, error) {
+	target := strings.TrimSpace(strings.ToLower(targetClientName))
+	if target == "" {
+		return Player{}, fmt.Errorf("target client name is required")
+	}
+	var matched []Player
+	for _, pl := range players {
+		if strings.Contains(strings.ToLower(pl.Name), target) {
+			matched = append(matched, pl)
+		}
+	}
+	for _, pl := range matched {
+		if !PlayerUsesSSAP(pl) {
+			return pl, nil
+		}
+	}
+	if len(matched) > 0 {
+		return Player{}, fmt.Errorf("only SSAP targets match %q; Plex companion needs a player with an HTTP URI — start playback on the TV once so it appears in server sessions, or pick another client", targetClientName)
+	}
+	pl, err := selectPlayer(players, targetClientName)
+	if err != nil {
+		return Player{}, err
+	}
+	if PlayerUsesSSAP(pl) {
+		return Player{}, fmt.Errorf("player %q is SSAP-only; companion commands require a Plex player URL (not webOS direct)", pl.Name)
+	}
+	return pl, nil
+}
+
+// SendPlaybackControl sends a GET to the Plex companion playback API (same style as playMedia).
+// action is the path segment after /player/playback/ (e.g. pause, play, skipNext, seekTo).
+// For seekTo, seekOffsetMs is the offset in milliseconds; for other actions it is ignored.
+func (p *PlexClient) SendPlaybackControl(ctx context.Context, player Player, action string, seekOffsetMs int64) error {
+	if PlayerUsesSSAP(player) {
+		return fmt.Errorf("companion playback control does not apply to SSAP player %q", player.Name)
+	}
+	action = strings.TrimSpace(strings.TrimPrefix(action, "/"))
+	if action == "" {
+		return fmt.Errorf("playback action is required")
+	}
+	allowed := map[string]struct{}{
+		"pause":         {},
+		"play":          {},
+		"stop":          {},
+		"skipNext":      {},
+		"skipPrevious":  {},
+		"stepForward":   {},
+		"stepBack":      {},
+		"seekTo":        {},
+	}
+	if _, ok := allowed[action]; !ok {
+		return fmt.Errorf("unsupported playback action %q", action)
+	}
+	if action == "seekTo" && seekOffsetMs < 0 {
+		return fmt.Errorf("seekTo requires offsetMs >= 0")
+	}
+
+	playerURL, err := url.Parse(player.URI)
+	if err != nil {
+		return fmt.Errorf("parse player URI: %w", err)
+	}
+
+	q := url.Values{}
+	q.Set("X-Plex-Token", p.token)
+	q.Set("type", "video")
+	q.Set("commandID", "0")
+	if action == "seekTo" {
+		q.Set("offset", strconv.FormatInt(seekOffsetMs, 10))
+	}
+
+	playerURL.Path = "/player/playback/" + action
+	playerURL.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, playerURL.String(), nil)
+	if err != nil {
+		return fmt.Errorf("build control request: %w", err)
+	}
+	req.Header.Set("X-Plex-Client-Identifier", "plex-dashboard")
+	req.Header.Set("X-Plex-Target-Client-Identifier", player.ClientIdentifier)
+	req.Header.Set("X-Plex-Product", "plex-dashboard")
+	req.Header.Set("X-Plex-Version", "0.1.0")
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("send playback control: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("%s failed for %q: status=%d body=%s", action, player.Name, resp.StatusCode, string(body))
+	}
+	return nil
+}
+
 func selectPlayer(players []Player, targetClientName string) (Player, error) {
 	target := strings.TrimSpace(strings.ToLower(targetClientName))
 	if target == "" {
@@ -1278,6 +1395,44 @@ func parseTMDBIDFromPlexGuid(guid string) int {
 	return 0
 }
 
+// parseIMDbIDFromPlexGuid extracts a normalized IMDb id (tt…) from Plex Video guid
+// when the library uses the IMDb (or hybrid) agent, e.g. imdb://tt1234567.
+func parseIMDbIDFromPlexGuid(guid string) string {
+	guid = strings.TrimSpace(guid)
+	if guid == "" {
+		return ""
+	}
+	lower := strings.ToLower(guid)
+	prefix := "imdb://"
+	var tail string
+	if strings.HasPrefix(lower, prefix) {
+		tail = guid[len(prefix):]
+	} else if i := strings.Index(lower, prefix); i >= 0 {
+		tail = guid[i+len(prefix):]
+	} else {
+		return ""
+	}
+	return normalizeIMDbIDString(tail)
+}
+
+// normalizeIMDbIDString returns lowercase tt + digits, or "" if invalid.
+func normalizeIMDbIDString(s string) string {
+	s = strings.TrimSpace(strings.ToLower(s))
+	s = strings.SplitN(s, "?", 2)[0]
+	s = strings.TrimSuffix(s, "/")
+	if !strings.HasPrefix(s, "tt") {
+		return ""
+	}
+	j := 2
+	for j < len(s) && s[j] >= '0' && s[j] <= '9' {
+		j++
+	}
+	if j <= 2 {
+		return ""
+	}
+	return s[:j]
+}
+
 func atoiPrefix(s string) int {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -1292,10 +1447,15 @@ func atoiPrefix(s string) int {
 	return n
 }
 
+type plexVideoGuid struct {
+	ID string `xml:"id,attr"`
+}
+
 type video struct {
-	RatingKey    string       `xml:"ratingKey,attr"`
-	Guid         string       `xml:"guid,attr"`
-	Title        string       `xml:"title,attr"`
+	RatingKey    string          `xml:"ratingKey,attr"`
+	Guid         string          `xml:"guid,attr"`
+	GuidElems    []plexVideoGuid `xml:"Guid"`
+	Title        string          `xml:"title,attr"`
 	Year         string       `xml:"year,attr"`
 	Duration     string       `xml:"duration,attr"`
 	LastViewedAt string       `xml:"lastViewedAt,attr"`

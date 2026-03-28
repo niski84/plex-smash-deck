@@ -296,6 +296,7 @@ type cachedMovieDetails struct {
 	PosterPath       string   `json:"posterPath"` // raw TMDB poster_path (e.g. /x.jpg)
 	OriginalLanguage string   `json:"originalLanguage,omitempty"`
 	IMDbID           string   `json:"imdbId,omitempty"`
+	Video            bool     `json:"video,omitempty"`
 }
 
 func movieDetailsCacheFile(movieID int) string {
@@ -327,6 +328,7 @@ func (d *diskDiscoveryCache) getMovieDetails(movieID int) (fetchedMovieDetails, 
 		PosterPath:       strings.TrimSpace(c.PosterPath),
 		OriginalLanguage: c.OriginalLanguage,
 		IMDbID:           strings.TrimSpace(c.IMDbID),
+		Video:            c.Video,
 	}, true
 }
 
@@ -350,6 +352,7 @@ func (d *diskDiscoveryCache) putMovieDetails(movieID int, det fetchedMovieDetail
 		PosterPath:       det.PosterPath,
 		OriginalLanguage: det.OriginalLanguage,
 		IMDbID:           det.IMDbID,
+		Video:            det.Video,
 	}
 	_ = writeJSONAtomic(path, c)
 }

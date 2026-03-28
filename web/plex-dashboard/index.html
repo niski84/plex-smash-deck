@@ -97,20 +97,6 @@
       border-color: rgba(250, 204, 21, 0.55);
       background: rgba(36, 30, 8, 0.45);
     }
-    .conn-pills {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-    .conn-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      white-space: nowrap;
-      color: #cbd5e1;
-      font-weight: 600;
-    }
     .conn-dot {
       width: 10px;
       height: 10px;
@@ -121,14 +107,63 @@
     .conn-dot.warn { background: #facc15; }
     .conn-dot.error { background: #f87171; box-shadow: 0 0 6px rgba(248, 113, 113, 0.4); }
     .conn-dot.skip { background: #64748b; opacity: 0.88; }
-    .conn-summary-line {
-      color: #e2e8f0;
-      flex: 1 1 140px;
-      min-width: 120px;
-      font-size: 11px;
+    /* Header-only: phone-style signal strength (Settings tab keeps full text tables). */
+    .conn-signals-row {
+      display: flex;
+      align-items: flex-end;
+      justify-content: flex-end;
+      gap: 10px;
+      flex-wrap: wrap;
     }
-    .connectivity-summary.connectivity-summary--problem .conn-summary-line { color: #fecaca; font-weight: 700; }
-    .connectivity-summary.connectivity-summary--warn .conn-summary-line { color: #fef08a; font-weight: 700; }
+    .conn-signal-wrap {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      cursor: default;
+    }
+    .conn-signal-bars {
+      display: inline-flex;
+      align-items: flex-end;
+      justify-content: center;
+      gap: 2px;
+      height: 12px;
+    }
+    .conn-signal-bar {
+      width: 3px;
+      border-radius: 1px;
+      background: rgba(71, 85, 105, 0.45);
+      align-self: flex-end;
+    }
+    .conn-signal-bar.is-on.tone-ok {
+      background: #4ade80;
+      box-shadow: 0 0 5px rgba(74, 222, 128, 0.35);
+    }
+    .conn-signal-bar.is-on.tone-warn {
+      background: #eab308;
+      box-shadow: 0 0 4px rgba(234, 179, 8, 0.3);
+    }
+    .conn-signal-bar.is-on.tone-err {
+      background: #f87171;
+      box-shadow: 0 0 5px rgba(248, 113, 113, 0.35);
+    }
+    .conn-signal-lbl {
+      font-size: 9px;
+      font-weight: 700;
+      color: #64748b;
+      line-height: 1;
+      letter-spacing: 0.02em;
+    }
+    .conn-signal-placeholder {
+      font-size: 18px;
+      line-height: 1;
+      padding: 0 4px;
+    }
+    .conn-signal-api-err {
+      font-size: 13px;
+      font-weight: 800;
+      color: #f87171;
+    }
     .connectivity-detail .conn-table { width: 100%; border-collapse: collapse; margin-top: 4px; }
     .connectivity-detail .conn-table td { border-bottom: 1px solid #2a2a2a; padding: 8px 10px; vertical-align: top; font-size: 13px; }
     .connectivity-detail .conn-table td:first-child { width: 22px; }
@@ -392,40 +427,63 @@
       pointer-events: none;
       display: none;
       background: #0d101a;
-      border: 2px solid #3b4a78;
-      border-radius: 8px;
-      box-shadow: 0 12px 40px rgba(0,0,0,0.85);
-      padding: 8px 10px 10px;
+      border: 4px solid #3b4a78;
+      border-radius: 16px;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.85);
+      padding: 16px 20px 20px;
       opacity: 0;
       transition: opacity 0.15s ease;
-      max-width: min(520px, 92vw);
+      max-width: min(1040px, 92vw);
     }
     #discPosterPopup.pp-visible {
       opacity: 1;
       pointer-events: auto;
     }
+    #discPosterPopup .disc-popup-poster-col {
+      position: relative;
+      max-width: min(1000px, 88vw);
+    }
+    #discPosterPopup .disc-popup-poster-col.disc-popup-poster-pending {
+      min-height: 400px;
+      min-width: 266px;
+    }
+    #discPosterPopup .disc-popup-poster-loading {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      color: #8898cc;
+      background: #080a12;
+      border-radius: 8px;
+    }
+    #discPosterPopup .disc-popup-poster-loading[hidden] {
+      display: none !important;
+    }
     #discPosterPopup .disc-popup-img {
       display: block;
-      max-width: min(500px, 88vw);
-      max-height: min(360px, 50vh);
-      border-radius: 4px;
+      max-width: min(1000px, 88vw);
+      max-height: min(720px, 50vh);
+      border-radius: 8px;
       object-fit: contain;
       cursor: zoom-in;
       background: #080a12;
     }
     #discPosterPopup .disc-popup-text {
-      margin-top: 8px;
-      max-height: 38vh;
+      margin-top: 16px;
+      max-height: 76vh;
       overflow-y: auto;
-      font-size: 12px;
+      font-size: 24px;
       line-height: 1.45;
       color: #b8bdd4;
     }
     #discPosterPopup .disc-popup-title {
       font-weight: 600;
-      font-size: 13px;
+      font-size: 26px;
       color: #eceef8;
-      margin-bottom: 6px;
+      margin-bottom: 12px;
     }
     #discPosterPopup .disc-popup-plot {
       margin: 0;
@@ -465,8 +523,65 @@
       flex: 1;
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 8px;
       min-width: 0;
+    }
+    .movie-genre-filter-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      gap: 8px 10px;
+    }
+    .movie-genre-exclude-block {
+      padding: 6px 0 2px 0;
+      border-top: 1px dashed #3d2a2a;
+    }
+    .movie-genre-tags-label--exclude {
+      color: #b45353;
+    }
+    .movie-genre-tag.movie-genre-tag--exclude {
+      border-color: #7f1d1d;
+      background: linear-gradient(180deg, #2a1818 0%, #1a1214 100%);
+      color: #fca5a5;
+      cursor: default;
+    }
+    .movie-genre-tag.movie-genre-tag--exclude:hover {
+      border-color: #991b1b;
+      color: #fecaca;
+      filter: brightness(1.04);
+    }
+    .movie-genre-tag-exclude-add {
+      flex-shrink: 0;
+      width: 18px;
+      height: 18px;
+      padding: 0;
+      margin: 0 0 0 1px;
+      border-radius: 4px;
+      font-size: 11px;
+      line-height: 1;
+      font-weight: 800;
+      cursor: pointer;
+      border: 1px solid #6b2a2a;
+      background: #1f1416;
+      color: #f87171;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-transform: none;
+      letter-spacing: 0;
+      box-shadow: none;
+      position: relative;
+    }
+    .movie-genre-tag-exclude-add:hover {
+      border-color: #b91c1c;
+      color: #fecaca;
+      background: #2a1518;
+    }
+    .movie-genre-tag-exclude-add::after {
+      display: none;
+    }
+    .movie-genre-more-item .movie-genre-tag-exclude-add {
+      margin-left: 0;
     }
     .movie-genre-tags {
       display: flex;
@@ -754,80 +869,114 @@
       color: #f87171;
       font-weight: 700;
     }
-    /* ── Movie Info Popup ───────────────────────────────── */
+    /* ── Movie Info Popup (Dashboard) — scale aligned with Discovery hover panel ── */
     #movieInfoPopup {
       position: fixed;
       z-index: 9998;
       pointer-events: none;
       display: none;
-      background: #0b0e1a;
-      border: 1px solid #2a3660;
-      border-radius: 10px;
-      box-shadow: 0 18px 52px rgba(0,0,0,0.9);
-      padding: 12px;
-      width: 340px;
+      background: #0d101a;
+      border: 4px solid #3b4a78;
+      border-radius: 16px;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.85);
+      padding: 16px 20px 20px;
+      width: min(960px, 92vw);
+      max-width: min(960px, 92vw);
       opacity: 0;
-      transition: opacity 0.14s ease;
+      transition: opacity 0.15s ease;
     }
     #movieInfoPopup.mip-visible {
       opacity: 1;
       pointer-events: auto;
     }
-    .mip-layout { display: flex; gap: 11px; align-items: flex-start; }
+    .mip-layout { display: flex; gap: 18px; align-items: flex-start; }
     .mip-poster {
-      width: 86px;
-      min-width: 86px;
-      border-radius: 5px;
+      width: clamp(120px, 22vw, 220px);
+      min-width: clamp(120px, 22vw, 220px);
+      height: auto;
+      max-height: min(330px, 48vh);
+      object-fit: cover;
+      border-radius: 8px;
       border: 1px solid #1e2840;
       background: #111;
       cursor: zoom-in;
     }
-    .mip-body { flex: 1; min-width: 0; }
-    .mip-title {
-      font-size: 13px;
-      font-weight: 600;
-      color: #e0e6ff;
-      line-height: 1.3;
-      margin-bottom: 5px;
+    .mip-body {
+      flex: 1;
+      min-width: 0;
+      max-height: min(76vh, 640px);
+      overflow-y: auto;
     }
-    .mip-attrs {
-      font-size: 11px;
-      color: #6a82c0;
-      margin-bottom: 4px;
+    .mip-title-block { margin-bottom: 8px; }
+    .mip-title {
+      font-size: clamp(18px, 2.1vw, 26px);
+      font-weight: 600;
+      color: #eceef8;
+      line-height: 1.3;
+    }
+    .mip-title-rating {
+      font-size: clamp(15px, 1.6vw, 20px);
+      font-weight: 600;
+      color: #9dadc4;
+      margin-top: 8px;
+      line-height: 1.35;
+    }
+    .mip-title-rating[hidden] { display: none !important; }
+    .mip-ratings-row {
       display: flex;
       flex-wrap: wrap;
-      gap: 4px;
+      gap: 8px;
+      margin-bottom: 10px;
+      align-items: center;
+    }
+    .mip-ratings-row:empty { display: none; }
+    .mip-pill-avg {
+      border-color: #3d5a9e !important;
+      color: #c8d7ff !important;
+      background: rgba(79, 124, 255, 0.12) !important;
+    }
+    .mip-pill-plex { border-color: #2d4a7a !important; }
+    .mip-attrs {
+      font-size: clamp(14px, 1.35vw, 17px);
+      color: #8a9bc4;
+      margin-bottom: 8px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
     }
     .mip-attr-pill {
       background: #141b30;
       border: 1px solid #202c4e;
-      border-radius: 4px;
-      padding: 1px 6px;
+      border-radius: 6px;
+      padding: 3px 10px;
       white-space: nowrap;
+      font-size: clamp(13px, 1.2vw, 16px);
     }
     .mip-genres {
-      font-size: 11px;
-      color: #424f72;
-      margin-bottom: 5px;
+      font-size: clamp(14px, 1.3vw, 17px);
+      color: #6b7aac;
+      margin-bottom: 8px;
     }
     .mip-actors {
-      font-size: 11px;
-      color: #6a7aac;
+      font-size: clamp(14px, 1.3vw, 17px);
+      color: #8a9bc8;
       line-height: 1.45;
-      margin-bottom: 6px;
+      margin-bottom: 8px;
     }
-    .mip-actors-label { color: #4d5c8a; margin-right: 4px; }
+    .mip-actors-label { color: #6b7ab0; margin-right: 6px; }
     .mip-plot-wrap {
-      margin-top: 6px;
+      margin-top: 14px;
       border-top: 1px solid #1a2240;
-      padding-top: 6px;
+      padding-top: 14px;
+      max-height: min(40vh, 420px);
+      overflow-y: auto;
     }
     .mip-plot {
-      font-size: 11.5px;
-      color: #8898cc;
-      line-height: 1.55;
+      font-size: clamp(16px, 1.5vw, 22px);
+      color: #b8bdd4;
+      line-height: 1.5;
       display: -webkit-box;
-      -webkit-line-clamp: 5;
+      -webkit-line-clamp: 7;
       -webkit-box-orient: vertical;
       overflow: hidden;
     }
@@ -838,12 +987,12 @@
     }
     .mip-plot-more {
       display: inline-block;
-      margin-top: 5px;
+      margin-top: 8px;
       padding: 0;
       border: none;
       background: none;
       color: #6b8cff;
-      font-size: 11px;
+      font-size: clamp(14px, 1.25vw, 18px);
       cursor: pointer;
       text-decoration: underline;
     }
@@ -1057,14 +1206,21 @@
   <div id="posterLightboxHint">Right-click image for Save image as...</div>
 </div>
   <div id="discPosterPopup" aria-live="polite">
-    <img class="disc-popup-img" src="" alt="" />
+    <div class="disc-popup-poster-col">
+      <div class="disc-popup-poster-loading" hidden>Loading poster…</div>
+      <img class="disc-popup-img" src="" alt="" />
+    </div>
     <div class="disc-popup-text"></div>
   </div>
   <div id="movieInfoPopup">
     <div class="mip-layout">
       <img class="mip-poster" src="" alt="" />
       <div class="mip-body">
-        <div class="mip-title"></div>
+        <div class="mip-title-block">
+          <div class="mip-title"></div>
+          <div class="mip-title-rating" hidden></div>
+        </div>
+        <div class="mip-ratings-row" aria-live="polite"></div>
         <div class="mip-attrs"></div>
         <div class="mip-genres"></div>
         <div class="mip-actors"></div>
@@ -1113,6 +1269,20 @@
           <span id="lgVolumeLabel" class="muted" data-testid="lg-volume-label" style="min-width:4.5em;">—</span>
         </div>
         <p id="playbackHintLine" class="muted small" style="flex-basis:100%;margin:8px 0 0 0;line-height:1.45;" aria-live="polite"></p>
+        <div id="plexCompanionRow" class="row" data-testid="plex-companion-row" style="flex-basis:100%;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px;">
+          <span class="muted" style="font-size:12px;line-height:1.4;">Plex companion controls (pause/skip/seek) use the Plex remote API. They are hidden when the selected target is <strong>LG TV (SSAP)</strong> — use the TV remote for that player.</span>
+          <button type="button" id="ccPauseBtn" data-testid="cc-pause">Pause</button>
+          <button type="button" id="ccPlayBtn">Play</button>
+          <button type="button" id="ccStopBtn">Stop</button>
+          <button type="button" id="ccSkipPrevBtn">Prev</button>
+          <button type="button" id="ccSkipNextBtn">Next</button>
+          <button type="button" id="ccStepBackBtn">Step back</button>
+          <button type="button" id="ccStepFwdBtn">Step forward</button>
+          <label class="muted" style="font-size:12px;">Seek to (s)</label>
+          <input type="number" id="ccSeekSeconds" min="0" step="1" value="0" style="width:5em;" title="Position from start" />
+          <button type="button" id="ccSeekBtn">Seek</button>
+          <span id="companionControlStatus" class="muted" data-testid="companion-control-status" style="flex-basis:100%;margin-top:4px;"></span>
+        </div>
       </div>
     </div>
 
@@ -1124,7 +1294,7 @@
         <span id="movieStatus" class="muted" data-testid="movie-status" style="margin-left:8px;">Idle</span>
       </div>
       <p id="libraryCacheLine" class="muted small" style="margin:0 0 8px 0;line-height:1.45;min-height:1.2em;" aria-live="polite"></p>
-      <p class="muted small" style="margin:0 0 10px 0;line-height:1.4;"><strong>Tip:</strong> Hover a movie card for about <strong>0.75s</strong> for details. Scroll or move onto the next card to dismiss. Click the poster in the hover panel for native-size image. <strong>File size</strong> turns <span style="color:#eab308;">yellow</span> or <span style="color:#f87171;">red</span> if that movie probably needs more bandwidth than your latest <strong>Plex speed</strong> check (Settings → Connectivity); your TV’s Wi‑Fi can differ.</p>
+      <p class="muted small" style="margin:0 0 10px 0;line-height:1.4;"><strong>Tip:</strong> Hover a movie card for about <strong>0.75s</strong> for details. Scroll or move onto the next card to dismiss. Click the poster in the hover panel for native-size image. <strong>File size</strong> turns <span style="color:#eab308;">yellow</span> or <span style="color:#f87171;">red</span> if that movie probably needs more bandwidth than your latest <strong>Plex sample</strong> (header <strong>P</strong> bars, or full numbers under Settings → Connectivity); your TV’s Wi‑Fi can differ.</p>
       <div class="movies-filter-stack">
         <div class="movies-toolbar">
           <input type="search" id="movieSearch" class="movies-search" placeholder="Search by title, actor, or director…" data-testid="movie-search" />
@@ -1140,22 +1310,53 @@
           </select>
           <span id="movieCount" class="movies-count-badge" data-testid="movie-count">0 movies</span>
           <button id="movieSelectAllBtn" style="font-size:12px;">Select All</button>
+          <label for="moviePlayTransport" class="muted" style="font-size:12px;white-space:nowrap;">Playback path</label>
+          <select id="moviePlayTransport" class="movies-rating-filter" title="WebOS direct: native TV player with a Plex URL queue. Plex app: one title at a time via server remote (hidden when only SSAP is selected)." data-testid="movie-play-transport">
+            <option value="webos">WebOS direct (multi)</option>
+            <option value="companion" data-companion-only="1">Plex app companion (1 title)</option>
+          </select>
           <button id="moviePlaySelectedBtn" class="movies-play-selected-btn" disabled data-testid="movie-play-selected">▶ Play Selected (0)</button>
+        </div>
+        <div class="movies-toolbar" style="flex-wrap:wrap;gap:8px 12px;align-items:center;margin-top:8px;">
+          <label for="movieSortSelect" class="muted" style="font-size:12px;white-space:nowrap;">Sort</label>
+          <select id="movieSortSelect" class="movies-rating-filter" title="Order of cards in the grid (applies after Load Movies)." data-testid="movie-sort-select">
+            <option value="yearDesc">Newest year first</option>
+            <option value="yearAsc">Oldest year first</option>
+            <option value="ratingDesc">Highest rating</option>
+            <option value="ratingAsc">Lowest rating</option>
+            <option value="playsDesc">Most played</option>
+            <option value="playsAsc">Least played</option>
+            <option value="sizeDesc">Largest file (quality)</option>
+            <option value="sizeAsc">Smallest file</option>
+            <option value="random" title="Shuffled order is kept for 24 hours or until you reload the movie list; switching sort and back does not reshuffle.">Random</option>
+          </select>
+          <label for="movieDecadeSelect" class="muted" style="font-size:12px;white-space:nowrap;">Decade</label>
+          <select id="movieDecadeSelect" class="movies-rating-filter" title="Show only titles whose release year falls in this decade (1970s–2030s+)." data-testid="movie-decade-select">
+            <option value="">All decades</option>
+          </select>
         </div>
         <div
           class="movie-genre-tags-bar"
-          title="Click a genre to filter the grid (OR). Open More genres to remove (−) or pin (+) tags. Pinned genres stay on the bar. Saved in this browser."
+          title="Include: pick one or more genres (OR). Exclude: hide titles that also have that genre (e.g. Comedy but not Documentary). Open More for + pin, ⊘ exclude, and −. Saved in this browser."
         >
-          <span class="movie-genre-tags-label">Genres</span>
+          <span class="movie-genre-tags-label" style="align-self:flex-start;margin-top:3px;">Genres</span>
           <div class="movie-genre-tags-stack">
-            <div id="movieGenreTags" class="movie-genre-tags" role="group" aria-label="Filter by genre. Any selected genre matches." data-testid="movie-genre-tags"></div>
+            <div class="movie-genre-filter-row">
+              <span class="movie-genre-tags-label" style="margin-top:3px;">Include any</span>
+              <div id="movieGenreTags" class="movie-genre-tags" role="group" aria-label="Include titles that have any of the selected genres." data-testid="movie-genre-tags"></div>
+            </div>
+            <div id="movieGenreExcludeSection" class="movie-genre-filter-row movie-genre-exclude-block" hidden data-testid="movie-genre-exclude-section">
+              <span class="movie-genre-tags-label movie-genre-tags-label--exclude" style="margin-top:3px;">Exclude if any</span>
+              <div id="movieGenreExcludeTags" class="movie-genre-tags movie-genre-tags--exclude" role="group" aria-label="Hide titles that have any of these genres." data-testid="movie-genre-exclude-tags"></div>
+              <button type="button" id="movieGenreClearExcludeBtn" class="movie-genre-clear-btn" hidden data-testid="movie-genre-clear-exclude">Clear exclusions</button>
+            </div>
             <div id="movieGenreMoreRow" class="movie-genre-more-row" hidden data-testid="movie-genre-more-row">
               <span class="movie-genre-more-label">More</span>
               <div id="movieGenreTagsMore" class="movie-genre-tags" data-testid="movie-genre-tags-more"></div>
             </div>
           </div>
           <button type="button" id="movieGenreMoreToggle" class="movie-genre-more-btn" aria-expanded="false" hidden data-testid="movie-genre-more-toggle">More genres</button>
-          <button type="button" id="movieGenreClearBtn" class="movie-genre-clear-btn" hidden data-testid="movie-genre-clear">Clear tags</button>
+          <button type="button" id="movieGenreClearBtn" class="movie-genre-clear-btn" hidden data-testid="movie-genre-clear">Clear include</button>
         </div>
       </div>
       <div id="movieGrid" class="movies-grid" data-testid="movie-list"></div>
@@ -1235,7 +1436,7 @@
   <section id="tab-discovery" class="tab-panel">
     <div class="card">
       <h3>Discovery — filmography gaps</h3>
-      <p class="muted"><strong>Tip:</strong> Plot and poster preview appear after you hold the pointer on the <strong>title or poster</strong> for <strong>about 0.75 seconds</strong>. Then you can move onto the floating panel; click the image there for a larger poster. — <strong>By year &amp; TMDB rating</strong> uses TMDB’s discover list (no actor/studio): set min and/or max year and optional min rating. Other modes find credits vs your library. Min rating uses TMDB vote average (0–10). <strong>Filtered out:</strong> documentaries (TMDB genre or “documentary” in text), TV movies / news, and typical “making of” / behind-the-scenes extras. <strong>Cache:</strong> TMDB responses stay on disk under <code>data/tmdb-discovery-cache/</code> until you use <strong>Clear TMDB cache</strong> below. The Plex library list is the same in-memory snapshot as the Dashboard tab (refreshed when you click <strong>Refresh Movies</strong> there, or when a scheduled snapshot runs). <strong>Poster/debug:</strong> server appends diagnostics to <code>data/plexdash-discovery.log</code>.</p>
+      <p class="muted"><strong>Tip:</strong> Plot and poster preview appear after you hold the pointer on the <strong>title or poster</strong> for <strong>about 0.75 seconds</strong>. Then you can move onto the floating panel; click the image there for a larger poster. — <strong>By year &amp; TMDB rating</strong> uses TMDB’s discover list (no actor/studio): set min and/or max year and optional min rating. Other modes find credits vs your library. Min rating uses TMDB vote average (0–10). <strong>Filtered out:</strong> documentaries (TMDB genre or “documentary” in text), TV movies / news, and typical “making of” / behind-the-scenes extras. Optional <strong>Exclude non-theatrical</strong> tightens results to US limited/wide theatrical (browse/studio) and drops TMDB-marked direct-to-video titles (all modes when details are known). <strong>Cache:</strong> TMDB responses stay on disk under <code>data/tmdb-discovery-cache/</code> until you use <strong>Clear TMDB cache</strong> below. The Plex library list is the same in-memory snapshot as the Dashboard tab (refreshed when you click <strong>Refresh Movies</strong> there, or when a scheduled snapshot runs). <strong>Poster/debug:</strong> server appends diagnostics to <code>data/plexdash-discovery.log</code>.</p>
       <div class="row">
         <select id="discoverMode" data-testid="discover-mode" style="min-width:170px;">
           <option value="person">By Actor / Director</option>
@@ -1278,6 +1479,10 @@
           </select>
           <input id="discoverPlaylistTitle" placeholder="Compare against playlist title (optional)" />
         </span>
+        <label class="discover-theatrical-opt" style="display:flex;align-items:center;gap:6px;cursor:pointer;flex-wrap:wrap;max-width:100%;" title="Browse/Studio: TMDB discover limited to US theatrical (types 2–3). Person: also remove titles TMDB flags as direct-to-video when movie details are loaded.">
+          <input type="checkbox" id="discoverExcludeNonTheatrical" data-testid="discover-exclude-non-theatrical" />
+          <span class="small" style="line-height:1.35;">Exclude non-theatrical (US theatrical for browse/studio; drop direct-to-video in person mode when known)</span>
+        </label>
         <button id="runDiscoveryBtn" type="button" data-testid="run-discovery-btn">Analyze filmography</button>
         <button id="clearTmdbDiscoveryCacheBtn" type="button" title="Delete data/tmdb-discovery-cache so the next analysis refetches TMDB">Clear TMDB cache</button>
       </div>
@@ -1499,7 +1704,7 @@
       <div class="settings-group">
         <h4>OMDb (optional ratings)</h4>
         <p class="muted small" style="margin:0 0 10px 0;max-width:52rem;line-height:1.45;">
-          When enabled, Discovery uses the <strong>average of TMDB vote average and OMDb IMDb score</strong> (both on a 0–10 style scale) for sorting, filtering, and table display. That blends two communities’ ratings and can track closer to how you personally weight critic vs crowd scores. Requires a free API key from <a href="https://www.omdbapi.com/apikey.aspx" target="_blank" rel="noopener noreferrer">OMDb</a>. Responses are cached on disk under <code>data/omdb-cache/</code> (cleared with <strong>Clear TMDB cache</strong> on the Discovery tab).
+          When enabled, Discovery uses the <strong>average of TMDB vote average and OMDb IMDb score</strong> (both on a 0–10 style scale) for sorting, filtering, and table display. That blends two communities’ ratings and can track closer to how you personally weight critic vs crowd scores. Requires a free API key from <a href="https://www.omdbapi.com/apikey.aspx" target="_blank" rel="noopener noreferrer">OMDb</a>. Responses are cached on disk under <code>data/omdb-cache/</code> (cleared with <strong>Clear TMDB cache</strong> on the Discovery tab). On the <strong>Dashboard</strong>, hovering a movie (after the usual delay) loads <strong>IMDb, Rotten Tomatoes, and Metacritic</strong> from OMDb when the title has a TMDB id from Plex, merges <strong>TMDB vote average</strong>, and updates the line under the title to show a combined <strong>Avg ★</strong> plus per-source pills.
         </p>
         <div class="row">
           <div>
@@ -1562,7 +1767,7 @@
       <div class="settings-group">
         <h4>Dashboard genre bar</h4>
         <p class="muted small" style="margin:0 0 10px 0;max-width:52rem;line-height:1.45;">
-          Quick filter chips above the movie grid default to <strong>Action</strong>, <strong>Comedy</strong>, <strong>Thriller</strong>, <strong>Adventure</strong>, and <strong>Science Fiction</strong> (including Sci‑Fi) when those genres exist in your library. Use <strong>−</strong> / <strong>+</strong> on the Dashboard to hide or pin tags. Lists below are stored in this browser only.
+          Quick filter chips above the movie grid default to <strong>Action</strong>, <strong>Comedy</strong>, <strong>Thriller</strong>, <strong>Adventure</strong>, and <strong>Science Fiction</strong> (including Sci‑Fi) when those genres exist in your library. Use <strong>Include any</strong> for OR-matching; <strong>Exclude if any</strong> hides titles that also have those genres (e.g. comedy but not documentary). Open <strong>More genres</strong> for <strong>+</strong> pin, <strong>⊘</strong> exclude, and <strong>−</strong>. Lists below are stored in this browser only.
         </p>
         <div class="row" style="align-items:flex-start;">
           <div>
@@ -1574,6 +1779,13 @@
             <label for="settingsGenreHidden">Hidden default genres (one per line)</label><br />
             <textarea id="settingsGenreHidden" rows="5" style="min-width:280px;max-width:100%;font-family:inherit;font-size:13px;" placeholder="Comedy"></textarea>
             <div class="small">Default slots removed with −.</div>
+          </div>
+        </div>
+        <div class="row" style="align-items:flex-start;margin-top:10px;">
+          <div>
+            <label for="settingsGenreExcluded">Excluded from results (one per line)</label><br />
+            <textarea id="settingsGenreExcluded" rows="4" style="min-width:280px;max-width:100%;font-family:inherit;font-size:13px;" placeholder="Documentary&#10;Romance"></textarea>
+            <div class="small">While any exclusions are set, movies with any of these genres are hidden (even if they match Include).</div>
           </div>
         </div>
         <div class="row" style="margin-top:4px;">
@@ -1670,6 +1882,12 @@
     let libraryCachePollTimer = null;
     const LIBRARY_CACHE_POLL_MS = 10 * 60 * 1000;
     const moviesCacheKey = 'plexdash.movies.cache.v4';
+    const MOVIE_SORT_PREFS_KEY = 'plexdash.movieSort.v1';
+    /** Stable shuffle for Sort → Random: same order until TTL or library membership changes. */
+    const MOVIE_RANDOM_ORDER_KEY = 'plexdash.movieRandomOrder.v1';
+    const RANDOM_ORDER_TTL_MS = 24 * 60 * 60 * 1000;
+    /** Full library from last API/cache load; sort/decade only change the displayed slice `moviesAll`. */
+    let moviesLibraryFull = [];
     let moviesAll = [];
     let allCardData = []; // [{movie, el, searchText}] — grows as the grid scrolls
     let moviesMaterializedCount = 0;
@@ -1680,6 +1898,36 @@
     /** True when #movieGrid DOM order was reordered for an active search (restore library order when cleared). */
     let movieGridOrderIsSearchSorted = false;
     let discoveredPlayers = [];
+
+    /** True when the TV / Client dropdown matches a player whose URI is ssap:// (webOS direct, not Plex HTTP companion). */
+    function selectedPlayerUsesSSAP() {
+      const sel = document.getElementById('clientName');
+      if (!sel) return false;
+      const name = String(sel.value || '');
+      const p = (discoveredPlayers || []).find((x) => String(x.Name || x.name) === name);
+      if (!p) return false;
+      return String(p.URI || p.uri || '').startsWith('ssap://');
+    }
+
+    /** Hide Plex companion buttons and the companion playback option when the selected target is SSAP-only. */
+    function updatePlexCompanionUI() {
+      const ssap = selectedPlayerUsesSSAP();
+      const row = document.getElementById('plexCompanionRow');
+      if (row) row.style.display = ssap ? 'none' : '';
+      const transport = document.getElementById('moviePlayTransport');
+      if (transport) {
+        const opt = transport.querySelector('option[value="companion"]');
+        if (opt) opt.hidden = ssap;
+        if (ssap && transport.value === 'companion') transport.value = 'webos';
+      }
+      if (ssap) {
+        const st = document.getElementById('companionControlStatus');
+        if (st) {
+          st.textContent = '';
+          st.className = 'muted';
+        }
+      }
+    }
     const MOVIE_GRID_INITIAL = 100;
     const MOVIE_GRID_CHUNK = 120;
     let searchDebounceTimer = null;
@@ -1738,7 +1986,8 @@
       }
       let src = (currentSettings.HeroBannerURL || '').trim();
       if (!src) {
-        const fallbackMovie = pickBannerFallbackMovie(moviesAll);
+        const lib = moviesLibraryFull.length ? moviesLibraryFull : moviesAll;
+        const fallbackMovie = pickBannerFallbackMovie(lib);
         if (fallbackMovie && fallbackMovie.RatingKey) {
           src = `/api/plex/thumb?ratingKey=${encodeURIComponent(fallbackMovie.RatingKey)}`;
         }
@@ -1962,18 +2211,55 @@
 
     async function playMovieItems(items, shuffle) {
       const clientName = document.getElementById('clientName').value || '';
+      const transportEl = document.getElementById('moviePlayTransport');
+      const transport = transportEl ? String(transportEl.value || 'webos') : 'webos';
+      if (transport === 'companion' && selectedPlayerUsesSSAP()) {
+        setStatus('moviePlayStatus', 'Plex app (companion) needs a non-SSAP player. Choose another target after Refresh Players, or use WebOS direct.', false);
+        return;
+      }
+      if (transport === 'companion' && items.length !== 1) {
+        setStatus(
+          'moviePlayStatus',
+          'Plex app (companion) plays one title per request. Switch to WebOS direct for multiple movies, or select a single card.',
+          false
+        );
+        return;
+      }
       setStatus('moviePlayStatus', `Sending ${items.length} movie(s) to TV…`);
-      console.log('[Plex Dashboard] playMovieItems', { count: items.length, shuffle, clientName });
+      console.log('[Plex Dashboard] playMovieItems', { count: items.length, shuffle, clientName, transport });
       try {
         const data = await apiJson('/api/movies/play', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items, clientName, shuffle: !!shuffle }),
+          body: JSON.stringify({ items, clientName, shuffle: !!shuffle, transport }),
         });
-        setStatus('moviePlayStatus', `Playing ${data.count} movie(s) on ${data.target}`, true);
+        const via = data.transport === 'companion' ? ' via Plex app' : '';
+        setStatus('moviePlayStatus', `Playing ${data.count} movie(s) on ${data.target}${via}`, true);
         setTimeout(loadPlaybackStatus, 2500);
       } catch (err) {
         setStatus('moviePlayStatus', `Failed: ${err.message}`, false);
+      }
+    }
+
+    async function sendCompanionControl(action, seekMs) {
+      if (selectedPlayerUsesSSAP()) {
+        setStatus('companionControlStatus', 'Companion controls do not apply to the SSAP (webOS direct) target.', false);
+        return;
+      }
+      const clientName = document.getElementById('clientName').value || '';
+      setStatus('companionControlStatus', `Sending ${action}…`);
+      try {
+        const body = { clientName, action };
+        if (seekMs != null && seekMs >= 0) body.seekMs = seekMs;
+        const data = await apiJson('/api/plex/companion/control', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const tgt = data.target ? ` → ${data.target}` : '';
+        setStatus('companionControlStatus', `${data.action || action} ok${tgt}`, true);
+      } catch (err) {
+        setStatus('companionControlStatus', `Failed: ${err.message}`, false);
       }
     }
 
@@ -2065,16 +2351,285 @@
       return card;
     }
 
-    function resetMovieGridState(movies) {
+    function resetMovieGridState(movies, opts) {
+      opts = opts || {};
       moviesAll = movies || [];
       allCardData = [];
       moviesMaterializedCount = 0;
       moviesMaterializePromise = null;
       movieGridOrderIsSearchSorted = false;
-      selectedDashboardGenres.clear();
-      document.querySelectorAll('#movieGenreTags .movie-genre-tag').forEach((el) => el.classList.remove('is-active'));
-      updateDashboardGenreClearBtn();
+      if (!opts.keepGenreFilter) {
+        selectedDashboardGenres.clear();
+        document.querySelectorAll('#movieGenreTags .movie-genre-tag').forEach((el) => el.classList.remove('is-active'));
+        updateDashboardGenreClearBtn();
+      }
       document.getElementById('movieGrid').innerHTML = '';
+    }
+
+    function loadMovieSortPrefs() {
+      try {
+        const raw = localStorage.getItem(MOVIE_SORT_PREFS_KEY);
+        if (!raw) return { sort: 'yearDesc', decade: '' };
+        const o = JSON.parse(raw);
+        return {
+          sort: typeof o.sort === 'string' && o.sort ? o.sort : 'yearDesc',
+          decade: typeof o.decade === 'string' ? o.decade : '',
+        };
+      } catch (_) {
+        return { sort: 'yearDesc', decade: '' };
+      }
+    }
+
+    function saveMovieSortPrefs() {
+      const sortEl = document.getElementById('movieSortSelect');
+      const decEl = document.getElementById('movieDecadeSelect');
+      localStorage.setItem(
+        MOVIE_SORT_PREFS_KEY,
+        JSON.stringify({
+          sort: (sortEl && sortEl.value) || 'yearDesc',
+          decade: (decEl && decEl.value) || '',
+        })
+      );
+    }
+
+    function movieYearN(m) {
+      return Math.max(0, Number(m && m.Year) || 0);
+    }
+    function movieRatingN(m) {
+      const r = Number(m && m.Rating);
+      return Number.isFinite(r) ? r : 0;
+    }
+    function moviePlaysN(m) {
+      return Math.max(0, Number(m && m.ViewCount) || 0);
+    }
+    function movieSizeN(m) {
+      return Math.max(0, Number(m && m.PartSize) || 0);
+    }
+
+    function cmpTitle(a, b) {
+      return String(a.Title || '').localeCompare(String(b.Title || ''), undefined, { sensitivity: 'base' });
+    }
+
+    function libraryRatingKeysSignature(movies) {
+      if (!movies || !movies.length) return '';
+      return movies
+        .map((m) => String(m && m.RatingKey))
+        .sort()
+        .join('\u0001');
+    }
+
+    function shuffleRatingKeysInPlace(keys) {
+      for (let i = keys.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const t = keys[i];
+        keys[i] = keys[j];
+        keys[j] = t;
+      }
+      return keys;
+    }
+
+    function loadRandomOrderState() {
+      try {
+        const raw = localStorage.getItem(MOVIE_RANDOM_ORDER_KEY);
+        if (!raw) return null;
+        const o = JSON.parse(raw);
+        if (
+          !o ||
+          typeof o.epoch !== 'number' ||
+          !Array.isArray(o.order) ||
+          typeof o.libSig !== 'string'
+        ) {
+          return null;
+        }
+        return o;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function saveRandomOrderState(epoch, order, libSig) {
+      localStorage.setItem(
+        MOVIE_RANDOM_ORDER_KEY,
+        JSON.stringify({ epoch, order, libSig })
+      );
+    }
+
+    /** Map RatingKey string → shuffle index for current full library (`moviesLibraryFull`). */
+    function ensureRandomOrderMap() {
+      const full = moviesLibraryFull;
+      const sig = libraryRatingKeysSignature(full);
+      const map = new Map();
+      if (!sig) return map;
+      const now = Date.now();
+      let st = loadRandomOrderState();
+      const stale =
+        !st ||
+        st.libSig !== sig ||
+        now - st.epoch > RANDOM_ORDER_TTL_MS;
+      if (stale) {
+        const keys = full.map((m) => String(m.RatingKey));
+        shuffleRatingKeysInPlace(keys);
+        st = { epoch: now, order: keys, libSig: sig };
+        saveRandomOrderState(now, keys, sig);
+      }
+      st.order.forEach((k, i) => map.set(String(k), i));
+      return map;
+    }
+
+    function sortMoviesList(list, mode) {
+      const m = mode || 'yearDesc';
+      if (m === 'random') {
+        const idx = ensureRandomOrderMap();
+        list.sort((a, b) => {
+          const ia = idx.get(String(a.RatingKey));
+          const ib = idx.get(String(b.RatingKey));
+          const ha = ia !== undefined;
+          const hb = ib !== undefined;
+          if (ha && hb) return ia - ib;
+          if (ha !== hb) return ha ? -1 : 1;
+          return cmpTitle(a, b);
+        });
+        return;
+      }
+      list.sort((a, b) => {
+        switch (m) {
+          case 'yearAsc': {
+            const ya = movieYearN(a);
+            const yb = movieYearN(b);
+            if (ya !== yb) return ya - yb;
+            const ra = movieRatingN(a);
+            const rb = movieRatingN(b);
+            if (ra !== rb) return rb - ra;
+            return cmpTitle(a, b);
+          }
+          case 'ratingDesc': {
+            const ra = movieRatingN(a);
+            const rb = movieRatingN(b);
+            if (ra !== rb) return rb - ra;
+            if (movieYearN(a) !== movieYearN(b)) return movieYearN(b) - movieYearN(a);
+            return cmpTitle(a, b);
+          }
+          case 'ratingAsc': {
+            const ra = movieRatingN(a);
+            const rb = movieRatingN(b);
+            if (ra !== rb) return ra - rb;
+            if (movieYearN(a) !== movieYearN(b)) return movieYearN(b) - movieYearN(a);
+            return cmpTitle(a, b);
+          }
+          case 'playsDesc': {
+            const pa = moviePlaysN(a);
+            const pb = moviePlaysN(b);
+            if (pa !== pb) return pb - pa;
+            if (movieYearN(a) !== movieYearN(b)) return movieYearN(b) - movieYearN(a);
+            return cmpTitle(a, b);
+          }
+          case 'playsAsc': {
+            const pa = moviePlaysN(a);
+            const pb = moviePlaysN(b);
+            if (pa !== pb) return pa - pb;
+            if (movieYearN(a) !== movieYearN(b)) return movieYearN(b) - movieYearN(a);
+            return cmpTitle(a, b);
+          }
+          case 'sizeDesc': {
+            const sa = movieSizeN(a);
+            const sb = movieSizeN(b);
+            if (sa !== sb) return sb - sa;
+            if (movieYearN(a) !== movieYearN(b)) return movieYearN(b) - movieYearN(a);
+            return cmpTitle(a, b);
+          }
+          case 'sizeAsc': {
+            const sa = movieSizeN(a);
+            const sb = movieSizeN(b);
+            if (sa !== sb) return sa - sb;
+            if (movieYearN(a) !== movieYearN(b)) return movieYearN(b) - movieYearN(a);
+            return cmpTitle(a, b);
+          }
+          case 'yearDesc':
+          default: {
+            const ya = movieYearN(a);
+            const yb = movieYearN(b);
+            if (ya !== yb) return yb - ya;
+            const ra = movieRatingN(a);
+            const rb = movieRatingN(b);
+            if (ra !== rb) return rb - ra;
+            return cmpTitle(a, b);
+          }
+        }
+      });
+    }
+
+    function parseDecadeRange() {
+      const v = (document.getElementById('movieDecadeSelect') && document.getElementById('movieDecadeSelect').value) || '';
+      if (!v.trim()) return null;
+      const start = parseInt(v, 10);
+      if (!Number.isFinite(start)) return null;
+      return { start, end: start + 9 };
+    }
+
+    function decadeFilterActive() {
+      return parseDecadeRange() != null;
+    }
+
+    function filterMoviesByDecade(list) {
+      const d = parseDecadeRange();
+      if (!d || !Array.isArray(list)) return (list || []).slice();
+      return list.filter((m) => {
+        const y = movieYearN(m);
+        return y >= d.start && y <= d.end;
+      });
+    }
+
+    function moviesForGenreDerivation() {
+      return moviesLibraryFull.length ? moviesLibraryFull : moviesAll;
+    }
+
+    function rebuildDecadeSelectOptions() {
+      const sel = document.getElementById('movieDecadeSelect');
+      if (!sel) return;
+      const prefs = loadMovieSortPrefs();
+      const prev = sel.value || prefs.decade || '';
+      const yNow = new Date().getFullYear();
+      const maxY = moviesLibraryFull.reduce((mx, m) => Math.max(mx, movieYearN(m)), 0);
+      let maxDec = Math.max(2030, Math.floor(yNow / 10) * 10);
+      if (maxY > 0) maxDec = Math.max(maxDec, Math.floor(maxY / 10) * 10);
+      sel.innerHTML = '';
+      const opt0 = document.createElement('option');
+      opt0.value = '';
+      opt0.textContent = 'All decades';
+      sel.appendChild(opt0);
+      for (let d = 1970; d <= maxDec; d += 10) {
+        const o = document.createElement('option');
+        o.value = String(d);
+        o.textContent = `${d}s`;
+        sel.appendChild(o);
+      }
+      const want = prev;
+      if (want && [...sel.options].some((o) => o.value === want)) sel.value = want;
+      else sel.value = '';
+      if (want && sel.value !== want) saveMovieSortPrefs();
+    }
+
+    function applyMovieSortDecadeSelectsFromPrefs() {
+      const p = loadMovieSortPrefs();
+      const sortEl = document.getElementById('movieSortSelect');
+      const decEl = document.getElementById('movieDecadeSelect');
+      if (sortEl && p.sort && [...sortEl.options].some((o) => o.value === p.sort)) sortEl.value = p.sort;
+      rebuildDecadeSelectOptions();
+      if (decEl && p.decade && [...decEl.options].some((o) => o.value === p.decade)) decEl.value = p.decade;
+    }
+
+    async function rebuildDisplayedMovieGrid(opts) {
+      opts = opts || {};
+      if (!moviesLibraryFull.length) return;
+      let list = filterMoviesByDecade(moviesLibraryFull);
+      const sortEl = document.getElementById('movieSortSelect');
+      const mode = (sortEl && sortEl.value) || loadMovieSortPrefs().sort;
+      sortMoviesList(list, mode);
+      resetMovieGridState(list, { keepGenreFilter: !!opts.keepGenreFilter });
+      await materializeMoreMovies(MOVIE_GRID_INITIAL);
+      filterMovieCardsSync();
+      refreshAllMovieStreamHints();
+      refreshDashboardGenreTagsFromLibrary();
     }
 
     function materializeMovieRange(start, end) {
@@ -2147,13 +2702,34 @@
       return raw.map((g) => String(g).trim()).filter(Boolean);
     }
 
-    function movieMatchesGenreBubbles(movie) {
+    function movieGenreKeysSet(movie) {
+      return new Set(movieGenresList(movie).map((g) => genrePrefKey(g)));
+    }
+
+    /** Include: OR of selected chips (none selected = no include filter). Exclude: drop titles that have any excluded genre. */
+    function moviePassesGenreFilters(movie) {
+      const mKeys = movieGenreKeysSet(movie);
+      const prefs = loadGenreBarPrefs();
+      const blocked = new Set(prefs.excluded || []);
+      for (const pk of blocked) {
+        if (pk && mKeys.has(pk)) return false;
+      }
       if (selectedDashboardGenres.size === 0) return true;
-      const want = new Set([...selectedDashboardGenres].map((g) => String(g).trim().toLowerCase()));
-      for (const g of movieGenresList(movie)) {
-        if (want.has(g.toLowerCase())) return true;
+      for (const g of selectedDashboardGenres) {
+        if (mKeys.has(genrePrefKey(g))) return true;
       }
       return false;
+    }
+
+    function genreFilterActive() {
+      const ex = loadGenreBarPrefs().excluded || [];
+      return selectedDashboardGenres.size > 0 || ex.length > 0;
+    }
+
+    function removeSelectedGenresForPrefKey(pk) {
+      for (const g of [...selectedDashboardGenres]) {
+        if (genrePrefKey(g) === pk) selectedDashboardGenres.delete(g);
+      }
     }
 
     function dashboardMinRatingFilter() {
@@ -2174,12 +2750,13 @@
     function filterMovieCardsSync() {
       const grid = document.getElementById('movieGrid');
       const q = (document.getElementById('movieSearch')?.value || '').trim().toLowerCase();
-      const genreOn = selectedDashboardGenres.size > 0;
+      const genreOn = genreFilterActive();
+      const decadeOn = decadeFilterActive();
       const ratingMin = dashboardMinRatingFilter();
       const ratingOn = ratingMin > 0;
       let shown = 0;
       for (const entry of allCardData) {
-        const genreOk = movieMatchesGenreBubbles(entry.movie);
+        const genreOk = moviePassesGenreFilters(entry.movie);
         const textOk = !q || entry.searchText.includes(q);
         const ratingOk = movieMeetsRatingFilter(entry.movie);
         const matches = genreOk && textOk && ratingOk;
@@ -2205,14 +2782,14 @@
         movieGridOrderIsSearchSorted = false;
         grid.scrollTop = 0;
       }
-      updateMovieCountDisplay(q, shown, genreOn, ratingOn);
+      updateMovieCountDisplay(q, shown, genreOn, ratingOn, decadeOn);
     }
 
     // Show/hide materialized cards. When there is a search query, the full library
     // is materialized first so matches are not limited to the first scroll chunk.
     function filterMovieCards() {
       const q = (document.getElementById('movieSearch')?.value || '').trim().toLowerCase();
-      const needFullLibrary = !!(q || selectedDashboardGenres.size > 0 || dashboardMinRatingFilter() > 0);
+      const needFullLibrary = !!(q || genreFilterActive() || dashboardMinRatingFilter() > 0);
       const run = async () => {
         if (needFullLibrary) await ensureAllMoviesMaterialized();
         requestAnimationFrame(() => filterMovieCardsSync());
@@ -2221,9 +2798,9 @@
       else requestAnimationFrame(() => filterMovieCardsSync());
     }
 
-    function updateMovieCountDisplay(q, shown, genreOn, ratingOn) {
+    function updateMovieCountDisplay(q, shown, genreOn, ratingOn, decadeOn) {
       const total = moviesAll.length;
-      const filtering = !!(q || genreOn || ratingOn);
+      const filtering = !!(q || genreOn || ratingOn || decadeOn);
       if (!filtering) {
         const mat = moviesMaterializedCount;
         if (mat < total && mat > 0) {
@@ -2255,11 +2832,17 @@
     }
 
     function refreshDashboardGenreTagsFromLibrary() {
-      buildDashboardGenreTags(deriveGenreListFromMovies(moviesAll));
+      buildDashboardGenreTags(deriveGenreListFromMovies(moviesForGenreDerivation()));
     }
 
     async function renderMovies(movies) {
-      resetMovieGridState(movies || []);
+      moviesLibraryFull = (movies || []).slice();
+      applyMovieSortDecadeSelectsFromPrefs();
+      let list = filterMoviesByDecade(moviesLibraryFull);
+      const sortEl = document.getElementById('movieSortSelect');
+      const mode = (sortEl && sortEl.value) || loadMovieSortPrefs().sort;
+      sortMoviesList(list, mode);
+      resetMovieGridState(list, { keepGenreFilter: false });
       await materializeMoreMovies(MOVIE_GRID_INITIAL);
       filterMovieCardsSync();
       refreshAllMovieStreamHints();
@@ -2559,6 +3142,48 @@
       b.setAttribute('aria-hidden', n === 0 ? 'true' : 'false');
     }
 
+    function updateDashboardGenreExcludeClearBtn() {
+      const b = document.getElementById('movieGenreClearExcludeBtn');
+      if (!b) return;
+      const n = (loadGenreBarPrefs().excluded || []).length;
+      b.hidden = n === 0;
+      b.setAttribute('aria-hidden', n === 0 ? 'true' : 'false');
+    }
+
+    function renderExcludedGenreChips(allGenres, byKey) {
+      const section = document.getElementById('movieGenreExcludeSection');
+      const exWrap = document.getElementById('movieGenreExcludeTags');
+      if (!section || !exWrap) return;
+      const prefs = loadGenreBarPrefs();
+      const excluded = [...(prefs.excluded || [])].sort((a, b) => a.localeCompare(b));
+      exWrap.innerHTML = '';
+      for (const pk of excluded) {
+        const displayName = (byKey && byKey.get(pk)) || prettyPrefKeyLabel(pk);
+        const row = document.createElement('span');
+        row.className = 'movie-genre-tag-wrap';
+        const lab = document.createElement('span');
+        lab.className = 'movie-genre-tag movie-genre-tag--exclude';
+        lab.textContent = displayName;
+        lab.title = 'Excluded: titles with this genre are hidden';
+        const rem = document.createElement('button');
+        rem.type = 'button';
+        rem.className = 'movie-genre-tag-remove';
+        rem.textContent = '−';
+        rem.setAttribute('aria-label', `Remove ${displayName} from exclusions`);
+        rem.title = 'Remove exclusion';
+        rem.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          removeExcludedGenrePrefKey(pk);
+        });
+        row.appendChild(lab);
+        row.appendChild(rem);
+        exWrap.appendChild(row);
+      }
+      section.hidden = excluded.length === 0;
+      updateDashboardGenreExcludeClearBtn();
+    }
+
     function genrePrefKey(name) {
       let k = String(name || '').trim().toLowerCase().replace(/\s+/g, ' ');
       if (k === 'sci-fi' || k === 'sci fi' || k === 'scifi') k = 'science fiction';
@@ -2574,18 +3199,30 @@
     function loadGenreBarPrefs() {
       try {
         const raw = localStorage.getItem(GENRE_BAR_PREFS_KEY);
-        if (!raw) return { pinned: [], hidden: [] };
+        if (!raw) return { pinned: [], hidden: [], excluded: [] };
         const o = JSON.parse(raw);
         const pinned = Array.isArray(o.pinned) ? o.pinned.map(genrePrefKey).filter(Boolean) : [];
         const hidden = Array.isArray(o.hidden) ? o.hidden.map(genrePrefKey).filter(Boolean) : [];
-        return { pinned: [...new Set(pinned)], hidden: [...new Set(hidden)] };
+        const excluded = Array.isArray(o.excluded) ? o.excluded.map(genrePrefKey).filter(Boolean) : [];
+        return {
+          pinned: [...new Set(pinned)],
+          hidden: [...new Set(hidden)],
+          excluded: [...new Set(excluded)],
+        };
       } catch {
-        return { pinned: [], hidden: [] };
+        return { pinned: [], hidden: [], excluded: [] };
       }
     }
 
     function saveGenreBarPrefs(prefs) {
-      localStorage.setItem(GENRE_BAR_PREFS_KEY, JSON.stringify({ pinned: prefs.pinned, hidden: prefs.hidden }));
+      localStorage.setItem(
+        GENRE_BAR_PREFS_KEY,
+        JSON.stringify({
+          pinned: prefs.pinned || [],
+          hidden: prefs.hidden || [],
+          excluded: prefs.excluded || [],
+        })
+      );
     }
 
     function computeOrderedMainGenres(allGenres, prefs) {
@@ -2627,10 +3264,12 @@
     function syncSettingsGenreBarFields() {
       const pinEl = document.getElementById('settingsGenrePinned');
       const hidEl = document.getElementById('settingsGenreHidden');
+      const exEl = document.getElementById('settingsGenreExcluded');
       if (!pinEl || !hidEl) return;
       const p = loadGenreBarPrefs();
       pinEl.value = (p.pinned || []).map(prettyPrefKeyLabel).join('\n');
       hidEl.value = (p.hidden || []).map(prettyPrefKeyLabel).join('\n');
+      if (exEl) exEl.value = (p.excluded || []).map(prettyPrefKeyLabel).join('\n');
     }
 
     function parseGenreBarTextarea(text) {
@@ -2649,15 +3288,20 @@
       const prefs = {
         pinned: parseGenreBarTextarea(document.getElementById('settingsGenrePinned')?.value),
         hidden: parseGenreBarTextarea(document.getElementById('settingsGenreHidden')?.value),
+        excluded: parseGenreBarTextarea(document.getElementById('settingsGenreExcluded')?.value),
       };
       saveGenreBarPrefs(prefs);
+      const exSet = new Set(prefs.excluded || []);
+      for (const g of [...selectedDashboardGenres]) {
+        if (exSet.has(genrePrefKey(g))) selectedDashboardGenres.delete(g);
+      }
       syncSettingsGenreBarFields();
       refreshDashboardGenreTagsFromLibrary();
       filterMovieCards();
     }
 
     function resetGenreBarPrefsToDefaults() {
-      saveGenreBarPrefs({ pinned: [], hidden: [] });
+      saveGenreBarPrefs({ pinned: [], hidden: [], excluded: [] });
       genreMoreRowExpanded = false;
       syncSettingsGenreBarFields();
       refreshDashboardGenreTagsFromLibrary();
@@ -2673,6 +3317,27 @@
         prefs.hidden = [...(prefs.hidden || []), pk];
       }
       selectedDashboardGenres.delete(displayName);
+      saveGenreBarPrefs(prefs);
+      refreshDashboardGenreTagsFromLibrary();
+      filterMovieCards();
+    }
+
+    function onGenreBarExcludeFromResults(displayName) {
+      const pk = genrePrefKey(displayName);
+      const prefs = loadGenreBarPrefs();
+      const ex = new Set(prefs.excluded || []);
+      if (ex.has(pk)) return;
+      ex.add(pk);
+      prefs.excluded = [...ex];
+      removeSelectedGenresForPrefKey(pk);
+      saveGenreBarPrefs(prefs);
+      refreshDashboardGenreTagsFromLibrary();
+      filterMovieCards();
+    }
+
+    function removeExcludedGenrePrefKey(pk) {
+      const prefs = loadGenreBarPrefs();
+      prefs.excluded = (prefs.excluded || []).filter((k) => k !== pk);
       saveGenreBarPrefs(prefs);
       refreshDashboardGenreTagsFromLibrary();
       filterMovieCards();
@@ -2694,7 +3359,7 @@
 
     function toggleGenreMoreRow() {
       genreMoreRowExpanded = !genreMoreRowExpanded;
-      const list = deriveGenreListFromMovies(moviesAll);
+      const list = deriveGenreListFromMovies(moviesForGenreDerivation());
       const { more } = computeOrderedMainGenres(list, loadGenreBarPrefs());
       const row = document.getElementById('movieGenreMoreRow');
       const btn = document.getElementById('movieGenreMoreToggle');
@@ -2713,9 +3378,16 @@
       const toggleBtn = document.getElementById('movieGenreMoreToggle');
       if (!wrap || !moreWrap || !moreRow) return;
 
-      const allGenres = Array.isArray(genres) && genres.length ? genres : deriveGenreListFromMovies(moviesAll);
+      const allGenres = Array.isArray(genres) && genres.length ? genres : deriveGenreListFromMovies(moviesForGenreDerivation());
       const prefs = loadGenreBarPrefs();
       const { main, more } = computeOrderedMainGenres(allGenres, prefs);
+
+      const byKey = new Map();
+      for (const g of allGenres || []) {
+        const k = genrePrefKey(g);
+        if (!k || byKey.has(k)) continue;
+        byKey.set(k, String(g).trim());
+      }
 
       const validKeys = new Set(allGenres.map((g) => genrePrefKey(g)));
       for (const sel of [...selectedDashboardGenres]) {
@@ -2732,6 +3404,13 @@
         btn.textContent = name;
         btn.dataset.genre = name;
         btn.addEventListener('click', () => {
+          const pk = genrePrefKey(name);
+          let p = loadGenreBarPrefs();
+          const wasExcluded = (p.excluded || []).includes(pk);
+          if (wasExcluded) {
+            p = { ...p, excluded: (p.excluded || []).filter((k) => k !== pk) };
+            saveGenreBarPrefs(p);
+          }
           if (selectedDashboardGenres.has(name)) {
             selectedDashboardGenres.delete(name);
             btn.classList.remove('is-active');
@@ -2740,6 +3419,7 @@
             btn.classList.add('is-active');
           }
           updateDashboardGenreClearBtn();
+          if (wasExcluded) renderExcludedGenreChips(allGenres, byKey);
           filterMovieCards();
         });
         const rem = document.createElement('button');
@@ -2777,10 +3457,22 @@
           e.stopPropagation();
           onGenreBarPin(name);
         });
+        const excl = document.createElement('button');
+        excl.type = 'button';
+        excl.className = 'movie-genre-tag-exclude-add';
+        excl.textContent = '⊘';
+        excl.setAttribute('aria-label', `Exclude ${name} from results`);
+        excl.title = 'Exclude from results';
+        excl.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onGenreBarExcludeFromResults(name);
+        });
         const lab = document.createElement('span');
         lab.className = 'movie-genre-more-name';
         lab.textContent = name;
         item.appendChild(add);
+        item.appendChild(excl);
         item.appendChild(lab);
         moreWrap.appendChild(item);
       }
@@ -2792,6 +3484,7 @@
       }
       moreRow.hidden = !genreMoreRowExpanded || more.length === 0;
 
+      renderExcludedGenreChips(allGenres, byKey);
       syncGenreBarEditOpenClass();
       updateDashboardGenreClearBtn();
     }
@@ -3124,7 +3817,7 @@
       return 750;
     }
 
-    /** Return the full-size URL for a poster thumbnail src.
+    /** Return a large poster URL for the discovery hover popup (TMDB w780 / proxy).
      *  Handles Plex thumb proxies, TMDB discovery proxies, and direct TMDB URLs. */
     function discPosterBigSrc(src) {
       if (!src) return '';
@@ -3133,18 +3826,18 @@
         // Plex thumb proxy — already full-size, return as-is
         if (u.pathname.startsWith('/api/plex/thumb')) return u.toString();
         if (u.pathname.startsWith('/api/discovery/poster')) {
-          u.searchParams.set('size', 'w500');
+          u.searchParams.set('size', 'w780');
           return u.toString();
         }
         // Direct TMDB URL: swap the size token in the path
-        u.pathname = u.pathname.replace(/\/t\/p\/w\d+\//, '/t/p/w500/');
+        u.pathname = u.pathname.replace(/\/t\/p\/w\d+\//, '/t/p/w780/');
         return u.toString();
       } catch (e) {
         if (src.includes('/api/discovery/poster')) {
           const noSize = src.replace(/[?&]size=[^&]*/g, '');
-          return noSize + (noSize.includes('?') ? '&' : '?') + 'size=w500';
+          return noSize + (noSize.includes('?') ? '&' : '?') + 'size=w780';
         }
-        return src.replace(/\/t\/p\/w\d+\//, '/t/p/w500/');
+        return src.replace(/\/t\/p\/w\d+\//, '/t/p/w780/');
       }
     }
 
@@ -3171,15 +3864,27 @@
 
     (function () {
       const popup = document.getElementById('discPosterPopup');
+      const posterCol = popup.querySelector('.disc-popup-poster-col');
+      const posterLoading = posterCol ? posterCol.querySelector('.disc-popup-poster-loading') : null;
       const popupImg = popup.querySelector('.disc-popup-img');
       const popupText = popup.querySelector('.disc-popup-text');
       const HOVER_MS = plexdashHoverPopupDelayMs();
       let hideTimer = null;
       let showTimer = null;
 
+      function setPosterPending(on) {
+        if (!posterCol) return;
+        posterCol.classList.toggle('disc-popup-poster-pending', on);
+      }
+
+      function showPosterLoading(visible) {
+        if (!posterLoading) return;
+        posterLoading.hidden = !visible;
+      }
+
       function positionPopup(anchorRect) {
-        const margin = 12;
-        const gap = 16;
+        const margin = 24;
+        const gap = 32;
         const vw = window.innerWidth;
         const vh = window.innerHeight;
         const pw = popup.offsetWidth;
@@ -3216,6 +3921,9 @@
             popupImg.src = '';
             popupImg.onload = null;
             popupImg.onerror = null;
+            popupImg.style.display = '';
+            showPosterLoading(false);
+            setPosterPending(false);
             popupText.innerHTML = '';
           }, 160);
         }, 320);
@@ -3254,6 +3962,13 @@
         const ttl = (title != null ? String(title) : '').trim();
         if (!bigSrc && !plot && !ttl) return;
 
+        if (bigSrc) {
+          try {
+            const pre = new Image();
+            pre.src = bigSrc;
+          } catch (e) { /* ignore */ }
+        }
+
         showTimer = setTimeout(() => {
           showTimer = null;
           popupText.innerHTML = '';
@@ -3287,17 +4002,36 @@
           if (bigSrc) {
             popupImg.style.display = '';
             popupImg.alt = ttl || 'Poster';
-            popupImg.onload = () => { reveal(); };
+            showPosterLoading(true);
+            setPosterPending(true);
+            popupImg.onload = () => {
+              showPosterLoading(false);
+              setPosterPending(false);
+              reveal();
+            };
             popupImg.onerror = () => {
               popupImg.style.display = 'none';
+              showPosterLoading(false);
+              setPosterPending(false);
               reveal();
             };
             popupImg.src = bigSrc;
+            if (popupImg.complete) {
+              if (popupImg.naturalWidth > 0) {
+                showPosterLoading(false);
+                setPosterPending(false);
+              } else {
+                popupImg.onerror();
+              }
+            }
+            reveal();
           } else {
             popupImg.style.display = 'none';
             popupImg.src = '';
             popupImg.onload = null;
             popupImg.onerror = null;
+            showPosterLoading(false);
+            setPosterPending(false);
             reveal();
           }
         }, HOVER_MS);
@@ -3317,6 +4051,8 @@
       const popup       = document.getElementById('movieInfoPopup');
       const mipPoster   = popup.querySelector('.mip-poster');
       const mipTitle    = popup.querySelector('.mip-title');
+      const mipTitleRating = popup.querySelector('.mip-title-rating');
+      const mipRatingsRow = popup.querySelector('.mip-ratings-row');
       const mipAttrs    = popup.querySelector('.mip-attrs');
       const mipGenres   = popup.querySelector('.mip-genres');
       const mipActors   = popup.querySelector('.mip-actors');
@@ -3330,6 +4066,83 @@
       let anchorCard = null;
       let moveRaf = null;
       let suspendedForLightbox = false;
+      let mipRatingsAbort = null;
+
+      function abortMipRatingsFetch() {
+        if (mipRatingsAbort) {
+          try { mipRatingsAbort.abort(); } catch (_) {}
+          mipRatingsAbort = null;
+        }
+      }
+
+      function combinedRatingsAverage10(plexR, entries) {
+        const parts = [];
+        const pr = Number(plexR);
+        if (Number.isFinite(pr) && pr > 0) parts.push(pr);
+        for (const e of entries || []) {
+          const s = Number(e && e.score10);
+          if (Number.isFinite(s) && s > 0) parts.push(s);
+        }
+        if (!parts.length) return 0;
+        return parts.reduce((a, b) => a + b, 0) / parts.length;
+      }
+
+      function sourceSortKey(src) {
+        const order = { imdb: 1, rottenTomatoes: 2, metacritic: 3, tmdb: 4 };
+        return order[src] || 99;
+      }
+
+      function applyMipRatingsSubtitle(plexR, entries) {
+        if (!mipTitleRating) return;
+        const plex = Number(plexR);
+        const hasPlex = Number.isFinite(plex) && plex > 0;
+        const list = entries || [];
+        const nSources = (hasPlex ? 1 : 0) + list.length;
+        if (nSources === 0) {
+          mipTitleRating.textContent = '';
+          mipTitleRating.hidden = true;
+          return;
+        }
+        mipTitleRating.hidden = false;
+        if (nSources === 1) {
+          if (hasPlex) {
+            mipTitleRating.textContent = `Plex ★ ${plex.toFixed(1)}`;
+          } else {
+            const e = list[0];
+            mipTitleRating.textContent = `${e.label} ${e.display}`;
+          }
+          return;
+        }
+        const avg = combinedRatingsAverage10(plexR, list);
+        mipTitleRating.textContent = avg > 0 ? `Avg ★ ${avg.toFixed(1)}` : '';
+      }
+
+      function fillMipRatingsPills(plexR, entries) {
+        if (!mipRatingsRow) return;
+        mipRatingsRow.innerHTML = '';
+        const plex = Number(plexR);
+        const hasPlex = Number.isFinite(plex) && plex > 0;
+        const list = (entries || []).slice().sort((a, b) => sourceSortKey(a.source) - sourceSortKey(b.source));
+        const nSources = (hasPlex ? 1 : 0) + list.length;
+        if (nSources < 2) return;
+
+        const avg = combinedRatingsAverage10(plexR, list);
+        if (avg > 0) {
+          const avgEl = pill(`Avg ★ ${avg.toFixed(1)}`);
+          avgEl.classList.add('mip-pill-avg');
+          mipRatingsRow.appendChild(avgEl);
+        }
+        if (hasPlex) {
+          const p = pill(`Plex ★ ${plex.toFixed(1)}`);
+          p.classList.add('mip-pill-plex');
+          mipRatingsRow.appendChild(p);
+        }
+        for (const e of list) {
+          const el = pill(`${e.label} ${e.display}`);
+          el.title = e.source === 'rottenTomatoes' ? 'Tomatometer (all critics)' : '';
+          mipRatingsRow.appendChild(el);
+        }
+      }
 
       function fmtRuntime(ms) {
         if (!ms || ms <= 0) return '';
@@ -3347,8 +4160,8 @@
       }
 
       function positionPopup(cardRect) {
-        const margin = 12;
-        const gap = 16;
+        const margin = 24;
+        const gap = 32;
         const vw = window.innerWidth;
         const vh = window.innerHeight;
         popup.style.display = 'block';
@@ -3356,18 +4169,47 @@
         const pw = popup.offsetWidth;
         const ph = popup.offsetHeight;
         popup.style.visibility = '';
-        let left;
-        if (cardRect.left - gap - pw >= margin) {
-          left = cardRect.left - gap - pw;
-        } else if (cardRect.right + gap + pw <= vw - margin) {
-          left = cardRect.right + gap;
-        } else {
-          left = Math.max(margin, Math.round((vw - pw) / 2));
+
+        function clampLeft(l) {
+          return Math.max(margin, Math.min(l, vw - pw - margin));
         }
-        let top = Math.round(cardRect.top + (cardRect.height - ph) / 2);
-        top = Math.max(margin, Math.min(top, vh - ph - margin));
-        popup.style.left = left + 'px';
-        popup.style.top  = top + 'px';
+        function clampTop(t) {
+          return Math.max(margin, Math.min(t, vh - ph - margin));
+        }
+
+        const hUnder = clampLeft(cardRect.left + (cardRect.width - pw) / 2);
+
+        // Prefer below the card so the poster + play overlay stay clickable (avoid centered-on-card overlap).
+        let top = cardRect.bottom + gap;
+        if (top + ph <= vh - margin) {
+          popup.style.left = hUnder + 'px';
+          popup.style.top = top + 'px';
+          return;
+        }
+
+        top = cardRect.top - gap - ph;
+        if (top >= margin) {
+          popup.style.left = hUnder + 'px';
+          popup.style.top = top + 'px';
+          return;
+        }
+
+        let left = cardRect.right + gap;
+        if (left + pw <= vw - margin) {
+          popup.style.left = left + 'px';
+          popup.style.top = clampTop(cardRect.top + (cardRect.height - ph) / 2) + 'px';
+          return;
+        }
+
+        left = cardRect.left - gap - pw;
+        if (left >= margin) {
+          popup.style.left = left + 'px';
+          popup.style.top = clampTop(cardRect.top + (cardRect.height - ph) / 2) + 'px';
+          return;
+        }
+
+        popup.style.left = hUnder + 'px';
+        popup.style.top = clampTop(cardRect.bottom + gap) + 'px';
       }
 
       function clearHideTimer() {
@@ -3386,7 +4228,13 @@
       function hideMovieInfoImmediate() {
         if (showTimer) { clearTimeout(showTimer); showTimer = null; }
         clearHideTimer();
+        abortMipRatingsFetch();
         resetMipExtras();
+        if (mipTitleRating) {
+          mipTitleRating.textContent = '';
+          mipTitleRating.hidden = true;
+        }
+        if (mipRatingsRow) mipRatingsRow.innerHTML = '';
         popup.classList.remove('mip-visible');
         popup.style.display = 'none';
         anchorCard = null;
@@ -3396,6 +4244,7 @@
       function scheduleHideMovieInfo() {
         clearHideTimer();
         hideTimer = setTimeout(() => {
+          abortMipRatingsFetch();
           resetMipExtras();
           popup.classList.remove('mip-visible');
           hideTimer = setTimeout(() => {
@@ -3482,6 +4331,20 @@
       popup.addEventListener('mouseenter', () => { clearHideTimer(); });
       popup.addEventListener('mouseleave', () => { scheduleHideMovieInfo(); });
 
+      /** Click anywhere on the panel except the poster closes it (poster still opens lightbox). Capture phase so inner controls do not run. */
+      popup.addEventListener(
+        'click',
+        (e) => {
+          if (!popup.classList.contains('mip-visible')) return;
+          const t = e.target;
+          if (t === mipPoster || (mipPoster && mipPoster.contains(t))) return;
+          e.stopPropagation();
+          e.preventDefault();
+          hideMovieInfoImmediate();
+        },
+        true
+      );
+
       mipPoster.addEventListener('click', (e) => {
         e.stopPropagation();
         const src = (mipPoster.src || '').trim();
@@ -3494,6 +4357,7 @@
         if (showTimer) { clearTimeout(showTimer); showTimer = null; }
         showTimer = setTimeout(() => {
           showTimer = null;
+          abortMipRatingsFetch();
           anchorCard = cardEl;
           resetMipExtras();
 
@@ -3505,10 +4369,11 @@
             ? `${movie.Title} (${movie.Year})`
             : movie.Title;
 
+          if (mipRatingsRow) mipRatingsRow.innerHTML = '';
+          applyMipRatingsSubtitle(movie.Rating, []);
+          fillMipRatingsPills(movie.Rating, []);
+
           mipAttrs.innerHTML = '';
-          if (movie.Rating && movie.Rating > 0) {
-            mipAttrs.appendChild(pill(`★ ${Number(movie.Rating).toFixed(1)}`));
-          }
           const rt = fmtRuntime(movie.DurationMillis);
           if (rt) mipAttrs.appendChild(pill(rt));
           if (movie.ViewCount > 0) {
@@ -3558,6 +4423,23 @@
             mipPoster.onload = () => { reveal(); };
             mipPoster.onerror = () => { reveal(); };
             if (mipPoster.complete) reveal();
+          }
+
+          const tmdbId = Number(movie.TMDBID != null ? movie.TMDBID : movie.tmdbId);
+          if (Number.isFinite(tmdbId) && tmdbId > 0) {
+            mipRatingsAbort = new AbortController();
+            const sig = mipRatingsAbort.signal;
+            const rkWant = String(rk);
+            apiJson('/api/omdb-ratings?tmdbId=' + encodeURIComponent(String(tmdbId)), { signal })
+              .then((d) => {
+                if (!popup.classList.contains('mip-visible') || !anchorCard || String(anchorCard.dataset.ratingKey) !== rkWant) return;
+                if (!d || !d.ok || !Array.isArray(d.entries) || d.entries.length === 0) return;
+                applyMipRatingsSubtitle(movie.Rating, d.entries);
+                fillMipRatingsPills(movie.Rating, d.entries);
+              })
+              .catch((err) => {
+                if (err && err.name === 'AbortError') return;
+              });
           }
         }, SHOW_MS);
       };
@@ -3833,6 +4715,7 @@
           img.className = 'disc-poster';
           img.src = displaySrc;
           img.alt = `Poster: ${item.title || 'movie'}`;
+          img.loading = 'eager';
           img.decoding = 'async';
           img.style.cursor = 'zoom-in';
           img.addEventListener('mouseenter', () => window._showPosterPopup(img, displaySrc, item.title, item.overview));
@@ -4107,11 +4990,12 @@
       const minRating = document.getElementById('discoverMinRating').value || '0';
       const genreIds = selectedDiscoveryGenreIds();
 
+      const excludeNonTheatrical = !!(document.getElementById('discoverExcludeNonTheatrical') && document.getElementById('discoverExcludeNonTheatrical').checked);
       let body;
       if (mode === 'studio') {
         const company = document.getElementById('discoverStudio').value.trim();
         if (!company) { setStatus('discoveryStatus', 'Enter a studio / production company name.', false); return; }
-        body = { mode: 'studio', company, minYear: Number(minYear) || 0, maxYear: Number(maxYear) || 0, minRating: Number(minRating), genreIds };
+        body = { mode: 'studio', company, minYear: Number(minYear) || 0, maxYear: Number(maxYear) || 0, minRating: Number(minRating), genreIds, excludeNonTheatrical };
       } else if (mode === 'browse') {
         const minY = Number(minYear) || 0;
         const maxY = Number(maxYear) || 0;
@@ -4119,7 +5003,7 @@
           setStatus('discoveryStatus', 'Set at least one year (min or max) for TMDB browse.', false);
           return;
         }
-        body = { mode: 'browse', minYear: minY, maxYear: maxY, minRating: Number(minRating), genreIds };
+        body = { mode: 'browse', minYear: minY, maxYear: maxY, minRating: Number(minRating), genreIds, excludeNonTheatrical };
       } else {
         const person = document.getElementById('discoverPerson').value.trim();
         const role = document.getElementById('discoverRole').value;
@@ -4127,7 +5011,7 @@
         const coActor = document.getElementById('discoverCoActorFilter').value.trim();
         const playlistTitle = document.getElementById('discoverPlaylistTitle').value.trim();
         body = { mode: 'filmography', person, role, playlistTitle, director, coActor,
-                 minYear: Number(minYear) || 0, maxYear: Number(maxYear) || 0, minRating: Number(minRating), genreIds };
+                 minYear: Number(minYear) || 0, maxYear: Number(maxYear) || 0, minRating: Number(minRating), genreIds, excludeNonTheatrical };
       }
 
       let jobId;
@@ -4365,6 +5249,7 @@
           option.textContent = `${targetClient} (default, not discovered)`;
           select.appendChild(option);
           setStatus('playersStatus', 'No players discovered; using default target.', false);
+          updatePlexCompanionUI();
           return;
         }
 
@@ -4386,6 +5271,7 @@
           select.value = preferredDetected.Name || preferredDetected.name;
         }
         setStatus('playersStatus', `Loaded ${players.length} player(s).`, true);
+        updatePlexCompanionUI();
       } catch (err) {
         discoveredPlayers = [];
         renderTargetClientSelect((cfgTargetSelect && cfgTargetSelect.value) || 'Living Room');
@@ -4394,6 +5280,7 @@
         fallback.textContent = `Living Room (players unavailable)`;
         select.appendChild(fallback);
         setStatus('playersStatus', `Player refresh failed: ${err.message}`, false);
+        updatePlexCompanionUI();
       }
     }
 
@@ -4707,6 +5594,112 @@
       return 'skip';
     }
 
+    /** Match server: connectivity.go streamProbeSlowMbps — at/above = 3 bars. */
+    const PLEX_SPEED_BAR_FULL_MBPS = 12;
+    /** Mid tier (e.g. ~4 Mb/s) = 2 of 3 bars — usable but not fast. */
+    const PLEX_SPEED_BAR_MID_MBPS = 4;
+
+    function checkLevelToSignalBars(level) {
+      if (level === 'ok') return { n: 3, tone: 'ok' };
+      if (level === 'warn') return { n: 2, tone: 'warn' };
+      if (level === 'error') return { n: 1, tone: 'err' };
+      return { n: 0, tone: 'off' };
+    }
+
+    /** Plex column: prefer measured Mb/s (3-bar “cell”); else fall back to reachability check. */
+    function plexColumnSignalBars(plexCheck, ps) {
+      const c = plexCheck || { label: 'Plex', level: 'skip', message: '' };
+      const mbps = ps && ps.mbps != null ? Number(ps.mbps) : NaN;
+      let tip = `${c.label}: ${c.message}`;
+      if (c.latencyMs != null) tip += ` (${c.latencyMs} ms)`;
+      if (Number.isFinite(mbps) && mbps > 0) {
+        let n;
+        let tone;
+        if (mbps >= PLEX_SPEED_BAR_FULL_MBPS) {
+          n = 3;
+          tone = 'ok';
+        } else if (mbps >= PLEX_SPEED_BAR_MID_MBPS) {
+          n = 2;
+          tone = 'warn';
+        } else {
+          n = 1;
+          tone = 'warn';
+        }
+        tip = `Plex sample ~${mbps.toFixed(1)} Mb/s (${n}/3) — this PC to server, not the TV. ${ps.message || ''}`.trim();
+        return { n, tone, tip };
+      }
+      const r = checkLevelToSignalBars(c.level);
+      if (ps && ps.message && ps.level && ps.level !== 'skip') tip += ` · ${ps.message}`;
+      return { n: r.n, tone: r.tone, tip };
+    }
+
+    function connectivitySignalBarsHTML(n, tone) {
+      const heights = [4, 7, 10];
+      const parts = [];
+      for (let i = 0; i < 3; i++) {
+        const on = i < n;
+        let cls = 'conn-signal-bar';
+        if (on) {
+          cls += ' is-on';
+          if (tone === 'ok') cls += ' tone-ok';
+          else if (tone === 'warn') cls += ' tone-warn';
+          else if (tone === 'err') cls += ' tone-err';
+        }
+        parts.push(`<span class="${cls}" style="height:${heights[i]}px"></span>`);
+      }
+      return `<span class="conn-signal-bars">${parts.join('')}</span>`;
+    }
+
+    function connectivityHeaderSignalGroup(letter, n, tone, tip) {
+      return `<div class="conn-signal-wrap" title="${escapeHTML(tip)}" role="img" aria-label="${escapeHTML(tip)}">${connectivitySignalBarsHTML(
+        n,
+        tone
+      )}<span class="conn-signal-lbl">${escapeHTML(letter)}</span></div>`;
+    }
+
+    /** Compact header strip (Settings → Connectivity keeps full tables). */
+    function renderConnectivityHeaderHTML(data) {
+      const checks = Array.isArray(data.checks) ? data.checks : [];
+      if (!checks.length) {
+        const hint = data.summary || 'Waiting for connectivity data…';
+        return `<span class="conn-signal-placeholder muted small" title="${escapeHTML(hint)}" aria-label="${escapeHTML(hint)}" role="status">⋯</span>`;
+      }
+      const byId = {};
+      checks.forEach((c) => {
+        byId[c.id] = c;
+      });
+      const ps = data.plexStream || {};
+      const order = [
+        { id: 'internet', letter: 'I' },
+        { id: 'plex', letter: 'P' },
+        { id: 'tmdb', letter: 'T' },
+        { id: 'omdb', letter: 'O' },
+        { id: 'lgtv', letter: 'L' },
+      ];
+      const chunks = [];
+      for (const { id, letter } of order) {
+        const c = byId[id];
+        if (!c) continue;
+        let n;
+        let tone;
+        let tip;
+        if (id === 'plex') {
+          const r = plexColumnSignalBars(c, ps);
+          n = r.n;
+          tone = r.tone;
+          tip = r.tip;
+        } else {
+          const r = checkLevelToSignalBars(c.level);
+          n = r.n;
+          tone = r.tone;
+          tip = `${c.label}: ${c.message}`;
+          if (c.latencyMs != null) tip += ` (${c.latencyMs} ms)`;
+        }
+        chunks.push(connectivityHeaderSignalGroup(letter, n, tone, tip));
+      }
+      return `<div class="conn-signals-row">${chunks.join('')}</div>`;
+    }
+
     function renderConnectivityUI(data) {
       const sumEl = document.getElementById('connectivitySummary');
       const detailEl = document.getElementById('connectivityDetail');
@@ -4722,16 +5715,7 @@
       else if (overall === 'warn') sumEl.classList.add('connectivity-summary--warn');
 
       const checks = Array.isArray(data.checks) ? data.checks : [];
-      const abbr = { internet: 'Net', plex: 'Plex', tmdb: 'TMDB', omdb: 'OMDb', lgtv: 'LG' };
-      const pills = checks.map((c) => {
-        const cls = levelToDotClass(c.level);
-        const tip = `${c.label}: ${c.message}`;
-        const short = abbr[c.id] || c.id;
-        return `<span class="conn-pill" title="${escapeHTML(tip)}"><span class="conn-dot ${cls}" aria-hidden="true"></span>${escapeHTML(short)}</span>`;
-      }).join('');
-
-      const sumText = data.summary || (overall === 'ok' ? 'All OK' : '—');
-      sumEl.innerHTML = `<span class="conn-pills">${pills}</span><span class="conn-summary-line">${escapeHTML(sumText)}</span>`;
+      sumEl.innerHTML = renderConnectivityHeaderHTML(data);
 
       if (updEl) {
         if (data.updatedAt) {
@@ -4789,7 +5773,9 @@
         if (sumEl) {
           sumEl.classList.remove('connectivity-summary--warn');
           sumEl.classList.add('connectivity-summary--problem');
-          sumEl.innerHTML = `<span class="conn-summary-line">${escapeHTML('Connectivity API unavailable: ' + (err && err.message ? err.message : String(err)))}</span>`;
+          const msg = err && err.message ? String(err.message) : String(err);
+          const full = 'Connectivity API unavailable: ' + msg;
+          sumEl.innerHTML = `<span class="conn-signal-api-err" title="${escapeHTML(full)}" aria-label="${escapeHTML(full)}">!</span>`;
         }
       }
     }
@@ -5003,6 +5989,7 @@
     });
     applyRadarrVisibility();
     syncSettingsGenreBarFields();
+    applyMovieSortDecadeSelectsFromPrefs();
     hydrateMoviesFromCache();
     startLibraryCachePoll();
     loadGenres();
@@ -5047,6 +6034,24 @@
     if (movieRatingFilterEl) {
       movieRatingFilterEl.addEventListener('change', () => filterMovieCards());
     }
+    const movieSortSelectEl = document.getElementById('movieSortSelect');
+    if (movieSortSelectEl) {
+      movieSortSelectEl.addEventListener('change', () => {
+        saveMovieSortPrefs();
+        rebuildDisplayedMovieGrid({ keepGenreFilter: true }).catch((err) =>
+          console.error('[Plex Dashboard] rebuildDisplayedMovieGrid', err)
+        );
+      });
+    }
+    const movieDecadeSelectEl = document.getElementById('movieDecadeSelect');
+    if (movieDecadeSelectEl) {
+      movieDecadeSelectEl.addEventListener('change', () => {
+        saveMovieSortPrefs();
+        rebuildDisplayedMovieGrid({ keepGenreFilter: true }).catch((err) =>
+          console.error('[Plex Dashboard] rebuildDisplayedMovieGrid', err)
+        );
+      });
+    }
 
     document.getElementById('movieGenreClearBtn').addEventListener('click', () => {
       selectedDashboardGenres.clear();
@@ -5054,6 +6059,16 @@
       updateDashboardGenreClearBtn();
       filterMovieCards();
     });
+    const movieGenreClearExcludeBtn = document.getElementById('movieGenreClearExcludeBtn');
+    if (movieGenreClearExcludeBtn) {
+      movieGenreClearExcludeBtn.addEventListener('click', () => {
+        const prefs = loadGenreBarPrefs();
+        prefs.excluded = [];
+        saveGenreBarPrefs(prefs);
+        refreshDashboardGenreTagsFromLibrary();
+        filterMovieCards();
+      });
+    }
     const movieGenreMoreToggle = document.getElementById('movieGenreMoreToggle');
     if (movieGenreMoreToggle) movieGenreMoreToggle.addEventListener('click', toggleGenreMoreRow);
     const settingsGenreBarApplyBtn = document.getElementById('settingsGenreBarApplyBtn');
@@ -5091,6 +6106,24 @@
 
     document.getElementById('playSelectedPlaylistBtn').addEventListener('click', playSelectedPlaylist);
     document.getElementById('refreshPlayersBtn').addEventListener('click', loadPlayers);
+    document.getElementById('clientName').addEventListener('change', updatePlexCompanionUI);
+
+    document.getElementById('ccPauseBtn').addEventListener('click', () => sendCompanionControl('pause'));
+    document.getElementById('ccPlayBtn').addEventListener('click', () => sendCompanionControl('play'));
+    document.getElementById('ccStopBtn').addEventListener('click', () => sendCompanionControl('stop'));
+    document.getElementById('ccSkipPrevBtn').addEventListener('click', () => sendCompanionControl('skipPrevious'));
+    document.getElementById('ccSkipNextBtn').addEventListener('click', () => sendCompanionControl('skipNext'));
+    document.getElementById('ccStepBackBtn').addEventListener('click', () => sendCompanionControl('stepBack'));
+    document.getElementById('ccStepFwdBtn').addEventListener('click', () => sendCompanionControl('stepForward'));
+    document.getElementById('ccSeekBtn').addEventListener('click', () => {
+      const sec = Number(document.getElementById('ccSeekSeconds').value);
+      if (!Number.isFinite(sec) || sec < 0) {
+        setStatus('companionControlStatus', 'Enter a non-negative seek time in seconds.', false);
+        return;
+      }
+      sendCompanionControl('seekTo', Math.round(sec * 1000));
+    });
+
     async function commitLgVolumeToTV(level) {
       if (!Number.isFinite(level)) return;
       level = Math.max(0, Math.min(100, Math.round(level)));

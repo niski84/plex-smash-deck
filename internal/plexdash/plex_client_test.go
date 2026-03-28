@@ -2,6 +2,7 @@ package plexdash
 
 import (
 	"context"
+	"encoding/xml"
 	"errors"
 	"math/rand"
 	"net/http"
@@ -9,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestSortMoviesDefaultViewWithRand_tiersAndRecency(t *testing.T) {
+func TestSortMoviesDefaultViewWithRand_yearThenRating(t *testing.T) {
 	rng := rand.New(rand.NewSource(42))
 	movies := []Movie{
 		{RatingKey: "a", Title: "Old Classic", Year: 1960, Rating: 8.5},
@@ -18,8 +19,9 @@ func TestSortMoviesDefaultViewWithRand_tiersAndRecency(t *testing.T) {
 		{RatingKey: "d", Title: "Recent Ok", Year: 2024, Rating: 6.0},
 	}
 	SortMoviesDefaultViewWithRand(movies, rng)
-	if got := movies[0].RatingKey + movies[1].RatingKey + movies[2].RatingKey + movies[3].RatingKey; got != "cadb" {
-		t.Fatalf("order want cadb, got %q (%+v)", got, movies)
+	// Newest year first; within 2024 higher rating first; then 2022; then 1960.
+	if got := movies[0].RatingKey + movies[1].RatingKey + movies[2].RatingKey + movies[3].RatingKey; got != "cdba" {
+		t.Fatalf("order want cdba, got %q (%+v)", got, movies)
 	}
 }
 
@@ -152,6 +154,45 @@ func TestParseTMDBIDFromPlexGuid(t *testing.T) {
 	for _, tc := range tests {
 		if got := parseTMDBIDFromPlexGuid(tc.guid); got != tc.want {
 			t.Errorf("parseTMDBIDFromPlexGuid(%q) = %d want %d", tc.guid, got, tc.want)
+		}
+	}
+}
+
+func TestMovieFromVideo_includeGuidsChildren(t *testing.T) {
+	const xmlData = `<MediaContainer><Video ratingKey="99" guid="plex://movie/deadbeef" title="Ant-Man" year="2015">
+		<Guid id="tmdb://102899" />
+		<Guid id="imdb://tt0478970" />
+		<Media container="mp4"><Part key="/library/parts/1/file.mkv" size="1000"/></Media>
+	</Video></MediaContainer>`
+	var root mediaContainer
+	if err := xml.Unmarshal([]byte(xmlData), &root); err != nil {
+		t.Fatal(err)
+	}
+	if len(root.Videos) != 1 {
+		t.Fatalf("videos: %d", len(root.Videos))
+	}
+	m := movieFromVideo(root.Videos[0])
+	if m.TMDBID != 102899 {
+		t.Fatalf("TMDBID=%d want 102899", m.TMDBID)
+	}
+	if m.IMDbID != "tt0478970" {
+		t.Fatalf("IMDbID=%q", m.IMDbID)
+	}
+}
+
+func TestParseIMDbIDFromPlexGuid(t *testing.T) {
+	tests := []struct {
+		guid string
+		want string
+	}{
+		{"", ""},
+		{"imdb://tt1234567", "tt1234567"},
+		{"plex://movie/guid/imdb://tt9876543", "tt9876543"},
+		{"IMDb://TT0111161?lang=en", "tt0111161"},
+	}
+	for _, tc := range tests {
+		if got := parseIMDbIDFromPlexGuid(tc.guid); got != tc.want {
+			t.Errorf("parseIMDbIDFromPlexGuid(%q) = %q want %q", tc.guid, got, tc.want)
 		}
 	}
 }
