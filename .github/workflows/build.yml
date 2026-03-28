@@ -8,6 +8,14 @@ on:
     branches: [master, main]
 
 jobs:
+  readme-gallery:
+    name: README gallery in sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify README Screenshots section matches images/manifest.json
+        run: python3 scripts/generate_readme_images.py --check
+
   build:
     name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
     runs-on: ubuntu-latest

@@ -1,6 +1,6 @@
 {
   "name": "plex-dashboard",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Standalone Go web app for browsing a Plex movie library, TMDB discovery / gap analysis, Radarr add, and movie snapshots.",
   "main": "index.js",
   "directories": {
@@ -11,7 +11,9 @@
     "test:players": "playwright test scripts/players.spec.ts --config=playwright.config.ts",
     "test:discovery-popup": "playwright test scripts/discovery-popup.spec.ts --config=playwright.config.ts",
     "test:lightbox-clipboard": "playwright test scripts/lightbox-clipboard.spec.ts --config=playwright.config.ts",
-    "demo:gif": "bash scripts/make-demo-gif.sh"
+    "demo:gif": "bash scripts/make-demo-gif.sh",
+    "gen:readme": "python3 scripts/generate_readme_images.py",
+    "gen:readme:check": "python3 scripts/generate_readme_images.py --check"
   },
   "repository": {
     "type": "git",

@@ -985,6 +985,208 @@ func SuggestPeople(ctx context.Context, cfg Config, query string) ([]string, err
 	return out, nil
 }
 
+// SuggestCompanies returns TMDB production-company names for the studio field (search/company).
+func SuggestCompanies(ctx context.Context, cfg Config, query string) ([]string, error) {
+	if strings.TrimSpace(cfg.TMDBAPIKey) == "" {
+		return nil, fmt.Errorf("TMDB API key not configured")
+	}
+	query = strings.TrimSpace(query)
+	if len(query) < 2 {
+		return []string{}, nil
+	}
+	endpoint := "https://api.themoviedb.org/3/search/company"
+	params := url.Values{}
+	params.Set("api_key", cfg.TMDBAPIKey)
+	params.Set("query", query)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?"+params.Encode(), nil)
+	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Results []struct {
+			Name string `json:"name"`
+		} `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, err
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(body.Results))
+	for _, result := range body.Results {
+		name := strings.TrimSpace(result.Name)
+		if name == "" {
+			continue
+		}
+		key := strings.ToLower(name)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, name)
+		if len(out) >= 10 {
+			break
+		}
+	}
+	return out, nil
+}
+
+func suggestPeopleNamesFromMovies(movies []Movie, query string, limit int) []string {
+	q := strings.TrimSpace(strings.ToLower(query))
+	if q == "" || limit <= 0 {
+		return nil
+	}
+	canon := make(map[string]string)
+	add := func(name string) {
+		n := strings.TrimSpace(name)
+		if n == "" {
+			return
+		}
+		ln := strings.ToLower(n)
+		if !strings.Contains(ln, q) {
+			return
+		}
+		if _, ok := canon[ln]; !ok {
+			canon[ln] = n
+		}
+	}
+	for _, m := range movies {
+		for _, a := range m.Actors {
+			add(a)
+		}
+		for _, d := range m.Directors {
+			add(d)
+		}
+	}
+	out := make([]string, 0, len(canon))
+	for _, v := range canon {
+		out = append(out, v)
+	}
+	sort.Strings(out)
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out
+}
+
+func suggestStudioNamesFromMovies(movies []Movie, query string, limit int) []string {
+	q := strings.TrimSpace(strings.ToLower(query))
+	if q == "" || limit <= 0 {
+		return nil
+	}
+	canon := make(map[string]string)
+	for _, m := range movies {
+		studioName := strings.TrimSpace(m.Studio)
+		if studioName == "" {
+			continue
+		}
+		ln := strings.ToLower(studioName)
+		if !strings.Contains(ln, q) {
+			continue
+		}
+		if _, ok := canon[ln]; !ok {
+			canon[ln] = studioName
+		}
+	}
+	out := make([]string, 0, len(canon))
+	for _, v := range canon {
+		out = append(out, v)
+	}
+	sort.Strings(out)
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out
+}
+
+func mergeDiscoverPersonSuggestions(ctx context.Context, cfg Config, movies []Movie, query string) []string {
+	q := strings.TrimSpace(query)
+	if q == "" {
+		return nil
+	}
+	libLimit := 15
+	lib := suggestPeopleNamesFromMovies(movies, q, libLimit)
+	seen := make(map[string]struct{}, len(lib)+20)
+	out := make([]string, 0, len(lib)+12)
+	for _, n := range lib {
+		n = strings.TrimSpace(n)
+		if n == "" {
+			continue
+		}
+		k := strings.ToLower(n)
+		if _, ok := seen[k]; ok {
+			continue
+		}
+		seen[k] = struct{}{}
+		out = append(out, n)
+	}
+	if strings.TrimSpace(cfg.TMDBAPIKey) != "" && len(strings.TrimSpace(q)) >= 2 {
+		tmdbNames, err := SuggestPeople(ctx, cfg, q)
+		if err == nil {
+			for _, n := range tmdbNames {
+				n = strings.TrimSpace(n)
+				if n == "" {
+					continue
+				}
+				k := strings.ToLower(n)
+				if _, ok := seen[k]; ok {
+					continue
+				}
+				seen[k] = struct{}{}
+				out = append(out, n)
+				if len(out) >= 22 {
+					break
+				}
+			}
+		}
+	}
+	return out
+}
+
+func mergeDiscoverStudioSuggestions(ctx context.Context, cfg Config, movies []Movie, query string) []string {
+	q := strings.TrimSpace(query)
+	if q == "" {
+		return nil
+	}
+	lib := suggestStudioNamesFromMovies(movies, q, 12)
+	seen := make(map[string]struct{}, len(lib)+16)
+	out := make([]string, 0, len(lib)+10)
+	for _, n := range lib {
+		n = strings.TrimSpace(n)
+		if n == "" {
+			continue
+		}
+		k := strings.ToLower(n)
+		if _, ok := seen[k]; ok {
+			continue
+		}
+		seen[k] = struct{}{}
+		out = append(out, n)
+	}
+	if strings.TrimSpace(cfg.TMDBAPIKey) != "" && len(strings.TrimSpace(q)) >= 2 {
+		extra, err := SuggestCompanies(ctx, cfg, q)
+		if err == nil {
+			for _, n := range extra {
+				n = strings.TrimSpace(n)
+				if n == "" {
+					continue
+				}
+				k := strings.ToLower(n)
+				if _, ok := seen[k]; ok {
+					continue
+				}
+				seen[k] = struct{}{}
+				out = append(out, n)
+				if len(out) >= 18 {
+					break
+				}
+			}
+		}
+	}
+	return out
+}
+
 func AddMoviesToRadarr(ctx context.Context, cfg Config, items []RadarrAddItem) (RadarrAddResult, error) {
 	if strings.TrimSpace(cfg.RadarrURL) == "" || strings.TrimSpace(cfg.RadarrAPIKey) == "" {
 		return RadarrAddResult{}, fmt.Errorf("radarr settings missing URL or API key")
