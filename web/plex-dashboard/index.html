@@ -195,6 +195,39 @@
       font-size: 13px;
       min-width: 140px;
     }
+    .conn-hist-date-field {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .conn-hist-date-field input[type="date"] {
+      flex: 1 1 auto;
+      min-width: 11.5rem;
+      max-width: 100%;
+      color-scheme: dark;
+    }
+    .conn-hist-date-field input[type="date"]::-webkit-calendar-picker-indicator {
+      cursor: pointer;
+      filter: invert(0.82) brightness(1.15);
+      opacity: 0.95;
+    }
+    .conn-hist-date-calendar-btn {
+      flex-shrink: 0;
+      padding: 6px 12px;
+      font-size: 12px;
+      border-radius: 6px;
+      border: 1px solid #4b5568;
+      background: linear-gradient(180deg, #2f3548 0%, #232836 100%);
+      color: #c7d2fe;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .conn-hist-date-calendar-btn:hover {
+      filter: brightness(1.08);
+      border-color: #5b6578;
+      color: #e0e7ff;
+    }
     .conn-hist-chart-wrap {
       background: #12151c;
       border: 1px solid #2a2f3d;
@@ -350,6 +383,41 @@
       100% { transform: translate(-50%, -50%) scale(5.8); opacity: 0; }
     }
     .card { background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 14px; margin-bottom: 14px; }
+    .card h4 { margin: 0 0 8px 0; font-size: 14px; font-weight: 600; color: #c9d2f0; letter-spacing: 0.02em; }
+    .dash-playlist-subcard + .dash-playlist-subcard { margin-top: 14px; padding-top: 12px; border-top: 1px solid #2a3248; }
+    details.dash-playlist-build { margin-top: 4px; }
+    details.dash-playlist-build > summary {
+      cursor: pointer;
+      color: #93b4ff;
+      font-size: 13px;
+      user-select: none;
+      list-style: none;
+      padding: 6px 0;
+    }
+    details.dash-playlist-build > summary::-webkit-details-marker { display: none; }
+    details.dash-playlist-build > summary::before { content: '▸ '; opacity: 0.75; }
+    details.dash-playlist-build[open] > summary::before { content: '▾ '; }
+    details.dash-playlist-build > summary:hover { color: #b8cfff; }
+    .dashboard-tip-box {
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid #2d3a5c;
+      background: rgba(20, 28, 48, 0.55);
+      line-height: 1.45;
+    }
+    .dashboard-tip-actions { margin-top: 10px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .btn-text {
+      background: none;
+      border: none;
+      color: #8ab4ff;
+      cursor: pointer;
+      font-size: 12px;
+      padding: 0;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      font-family: inherit;
+    }
+    .btn-text:hover { color: #c4d7ff; }
     .muted { color: #aaa; font-size: 13px; }
     .ok { color: #7CFC95; }
     .err { color: #ff7777; }
@@ -363,8 +431,21 @@
     .help-doc h1, .help-doc h2, .help-doc h3 { margin: 10px 0 6px 0; color: #f0f0f0; }
     .help-doc p { margin: 8px 0; }
     .help-doc ul { max-height: none; overflow: visible; margin: 8px 0; }
-    .help-doc code { background: #222; padding: 1px 4px; border-radius: 4px; }
+    .help-doc code { background: #222; padding: 1px 5px; border-radius: 4px; font-size: 0.92em; }
     .help-doc pre { background: #111; border: 1px solid #2a2a2a; border-radius: 6px; padding: 10px; overflow-x: auto; }
+    .help-doc a.help-doc-link { color: #8ab4ff; text-decoration: underline; cursor: pointer; }
+    .help-doc a.help-doc-link:hover { color: #b8cfff; }
+    .help-doc-table-wrap { overflow-x: auto; margin: 12px 0; max-width: 100%; -webkit-overflow-scrolling: touch; }
+    .help-doc .help-doc-table { width: 100%; border-collapse: collapse; margin: 0; font-size: 13px; }
+    .help-doc .help-doc-table th,
+    .help-doc .help-doc-table td {
+      border: 1px solid #3d4558;
+      padding: 8px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .help-doc .help-doc-table th { background: #1e2433; color: #e8ecff; font-weight: 600; }
+    .help-doc .help-doc-table tbody tr:nth-child(even) td { background: rgba(255,255,255,0.03); }
     .help-tip {
       display: inline-flex; align-items: center; justify-content: center;
       width: 18px; height: 18px; border-radius: 999px; border: 1px solid #666;
@@ -869,34 +950,38 @@
       color: #f87171;
       font-weight: 700;
     }
-    /* ── Movie Info Popup (Dashboard) — scale aligned with Discovery hover panel ── */
+    /* ── Movie Info Popup (Dashboard) — abuts hovered card; roomy text/poster ── */
     #movieInfoPopup {
       position: fixed;
       z-index: 9998;
       pointer-events: none;
       display: none;
       background: #0d101a;
-      border: 4px solid #3b4a78;
-      border-radius: 16px;
-      box-shadow: 0 24px 80px rgba(0,0,0,0.85);
-      padding: 16px 20px 20px;
-      width: min(960px, 92vw);
-      max-width: min(960px, 92vw);
+      border: 2px solid #3b4a78;
+      border-radius: 12px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.72);
+      padding: 14px 16px 16px;
+      width: min(540px, calc(100vw - 20px));
+      max-width: min(540px, calc(100vw - 20px));
+      max-height: min(86vh, 640px);
+      overflow: hidden;
+      flex-direction: column;
       opacity: 0;
       transition: opacity 0.15s ease;
     }
     #movieInfoPopup.mip-visible {
       opacity: 1;
       pointer-events: auto;
+      display: flex;
     }
-    .mip-layout { display: flex; gap: 18px; align-items: flex-start; }
+    .mip-layout { display: flex; gap: 14px; align-items: flex-start; flex: 1 1 auto; min-height: 0; }
     .mip-poster {
-      width: clamp(120px, 22vw, 220px);
-      min-width: clamp(120px, 22vw, 220px);
+      width: clamp(88px, 16vw, 148px);
+      min-width: clamp(88px, 16vw, 148px);
       height: auto;
-      max-height: min(330px, 48vh);
+      max-height: min(220px, 38vh);
       object-fit: cover;
-      border-radius: 8px;
+      border-radius: 6px;
       border: 1px solid #1e2840;
       background: #111;
       cursor: zoom-in;
@@ -904,18 +989,19 @@
     .mip-body {
       flex: 1;
       min-width: 0;
-      max-height: min(76vh, 640px);
+      max-height: min(48vh, 340px);
       overflow-y: auto;
+      overscroll-behavior: contain;
     }
     .mip-title-block { margin-bottom: 8px; }
     .mip-title {
-      font-size: clamp(18px, 2.1vw, 26px);
+      font-size: clamp(16px, 1.75vw, 21px);
       font-weight: 600;
       color: #eceef8;
       line-height: 1.3;
     }
     .mip-title-rating {
-      font-size: clamp(15px, 1.6vw, 20px);
+      font-size: clamp(14px, 1.45vw, 17px);
       font-weight: 600;
       color: #9dadc4;
       margin-top: 8px;
@@ -936,10 +1022,15 @@
       background: rgba(79, 124, 255, 0.12) !important;
     }
     .mip-pill-plex { border-color: #2d4a7a !important; }
+    .mip-pill-rated {
+      border-color: #4a5568 !important;
+      color: #cbd5e8 !important;
+      background: rgba(148, 163, 184, 0.12) !important;
+    }
     .mip-attrs {
-      font-size: clamp(14px, 1.35vw, 17px);
+      font-size: clamp(12px, 1.15vw, 14px);
       color: #8a9bc4;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
@@ -947,36 +1038,53 @@
     .mip-attr-pill {
       background: #141b30;
       border: 1px solid #202c4e;
-      border-radius: 6px;
-      padding: 3px 10px;
+      border-radius: 5px;
+      padding: 2px 8px;
       white-space: nowrap;
-      font-size: clamp(13px, 1.2vw, 16px);
+      font-size: clamp(11px, 1.05vw, 13px);
     }
     .mip-genres {
-      font-size: clamp(14px, 1.3vw, 17px);
+      font-size: clamp(12px, 1.15vw, 14px);
       color: #6b7aac;
       margin-bottom: 8px;
     }
     .mip-actors {
-      font-size: clamp(14px, 1.3vw, 17px);
+      font-size: clamp(12px, 1.15vw, 14px);
       color: #8a9bc8;
       line-height: 1.45;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
     .mip-actors-label { color: #6b7ab0; margin-right: 6px; }
+    .mip-search-credit {
+      display: inline;
+      margin: 0;
+      padding: 0;
+      border: none;
+      background: none;
+      color: #8ab4ff;
+      font: inherit;
+      cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .mip-search-credit:hover { color: #b8cfff; }
+    .mip-credit-pill { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 0 2px; }
     .mip-plot-wrap {
-      margin-top: 14px;
+      margin-top: 10px;
       border-top: 1px solid #1a2240;
-      padding-top: 14px;
-      max-height: min(40vh, 420px);
+      padding-top: 10px;
+      flex: 0 1 auto;
+      min-height: 0;
+      max-height: min(36vh, 260px);
       overflow-y: auto;
+      overscroll-behavior: contain;
     }
     .mip-plot {
-      font-size: clamp(16px, 1.5vw, 22px);
+      font-size: clamp(14px, 1.3vw, 16px);
       color: #b8bdd4;
-      line-height: 1.5;
+      line-height: 1.45;
       display: -webkit-box;
-      -webkit-line-clamp: 7;
+      -webkit-line-clamp: 5;
       -webkit-box-orient: vertical;
       overflow: hidden;
     }
@@ -1294,10 +1402,35 @@
         <span id="movieStatus" class="muted" data-testid="movie-status" style="margin-left:8px;">Idle</span>
       </div>
       <p id="libraryCacheLine" class="muted small" style="margin:0 0 8px 0;line-height:1.45;min-height:1.2em;" aria-live="polite"></p>
-      <p class="muted small" style="margin:0 0 10px 0;line-height:1.4;"><strong>Tip:</strong> Hover a movie card for about <strong>0.75s</strong> for details. Scroll or move onto the next card to dismiss. Click the poster in the hover panel for native-size image. <strong>File size</strong> turns <span style="color:#eab308;">yellow</span> or <span style="color:#f87171;">red</span> if that movie probably needs more bandwidth than your latest <strong>Plex sample</strong> (header <strong>P</strong> bars, or full numbers under Settings → Connectivity); your TV’s Wi‑Fi can differ.</p>
+      <div class="dashboard-tip-wrap" style="margin:0 0 12px 0;">
+        <div id="libraryTipBox" class="dashboard-tip-box muted small">
+          <p style="margin:0;"><strong>Tip:</strong> Hover a movie card for about <strong>0.75s</strong> for details. <strong>Click an actor or director name</strong> in the panel to fill the search bar and set <strong>Match → Actor</strong> or <strong>Director</strong>. Click the poster for native-size image. <strong>File size</strong> turns <span style="color:#eab308;">yellow</span> or <span style="color:#f87171;">red</span> if that movie probably needs more bandwidth than your latest <strong>Plex sample</strong> (header <strong>P</strong> bars, or full numbers under Settings → Connectivity); your TV’s Wi‑Fi can differ.</p>
+          <div class="dashboard-tip-actions">
+            <button type="button" class="btn-text" id="libraryTipDismissBtn" data-testid="library-tip-dismiss">Hide this tip</button>
+            <span class="muted" style="font-size:11px;">You can show it again anytime from here.</span>
+          </div>
+        </div>
+        <button type="button" class="btn-text" id="libraryTipRestoreBtn" data-testid="library-tip-restore" hidden style="margin-top:2px;">Show library tips</button>
+      </div>
       <div class="movies-filter-stack">
         <div class="movies-toolbar">
-          <input type="search" id="movieSearch" class="movies-search" placeholder="Search by title, actor, or director…" data-testid="movie-search" />
+          <input type="search" id="movieSearch" class="movies-search" placeholder="Search by title, actor, or director…" data-testid="movie-search" list="dashboardSearchSuggestions" autocomplete="off" />
+          <div
+            class="movie-search-scope-group muted"
+            style="display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;font-size:12px;"
+            title="When Actor or Director is selected, only that credit line is matched (not title)."
+          >
+            <span>Match</span>
+            <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap;">
+              <input type="radio" name="movieSearchScope" value="all" checked data-testid="movie-search-scope-all" /> All
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap;">
+              <input type="radio" name="movieSearchScope" value="actor" data-testid="movie-search-scope-actor" /> Actor
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap;">
+              <input type="radio" name="movieSearchScope" value="director" data-testid="movie-search-scope-director" /> Director
+            </label>
+          </div>
           <label for="movieRatingFilter" class="muted" style="font-size:12px;white-space:nowrap;align-self:center;">Min rating</label>
           <select id="movieRatingFilter" class="movies-rating-filter" title="Plex aggregate rating (0–10). Titles without a rating are hidden when a minimum is set." data-testid="movie-rating-filter">
             <option value="">Any</option>
@@ -1321,6 +1454,7 @@
           <label for="movieSortSelect" class="muted" style="font-size:12px;white-space:nowrap;">Sort</label>
           <select id="movieSortSelect" class="movies-rating-filter" title="Order of cards in the grid (applies after Load Movies)." data-testid="movie-sort-select">
             <option value="yearDesc">Newest year first</option>
+            <option value="plexAddedDesc" title="By Plex library added time (XML addedAt). Newest additions first; titles without a timestamp sort last.">Recently added to Plex</option>
             <option value="yearAsc">Oldest year first</option>
             <option value="ratingDesc">Highest rating</option>
             <option value="ratingAsc">Lowest rating</option>
@@ -1328,6 +1462,8 @@
             <option value="playsAsc">Least played</option>
             <option value="sizeDesc">Largest file (quality)</option>
             <option value="sizeAsc">Smallest file</option>
+            <option value="contentRatingDesc" title="Plex content rating (MPAA / TV). Strictest first: TV-MA, R, PG-13, PG, G… Unrated last.">Content rating: strictest first</option>
+            <option value="contentRatingAsc" title="Plex content rating (MPAA / TV). Mildest first: G, PG, PG-13, R… Unrated last.">Content rating: mildest first</option>
             <option value="random" title="Shuffled order is kept for 24 hours or until you reload the movie list; switching sort and back does not reshuffle.">Random</option>
           </select>
           <label for="movieDecadeSelect" class="muted" style="font-size:12px;white-space:nowrap;">Decade</label>
@@ -1363,66 +1499,79 @@
       <p id="moviePlayStatus" class="muted" style="margin-top:8px;"></p>
     </div>
 
-    <div class="card">
-      <h3>Play Playlist</h3>
-      <div class="row">
-        <label for="playlistSelect">Playlist</label>
-        <span
-          class="help-tip"
-          title="LG webOS Plex does not expose a reliable playlist-control API. We fetch media paths from Plex and launch playback on webOS using direct Plex-backed media URLs. See Help tab for details."
-        >?</span>
-        <select id="playlistSelect" data-testid="playlist-title"></select>
-        <button id="refreshPlaylistsBtn" type="button">Refresh Playlists</button>
-        <button id="playSelectedPlaylistBtn" data-testid="create-and-play-btn">Play Selected</button>
-      </div>
-      <div class="row" style="margin-top: 8px;">
-        <span class="muted">Playlist items preview:</span>
-      </div>
-      <ul id="playlistItemsList" style="max-height: 180px; overflow-y: auto;"></ul>
-      <p id="playlistResult" class="muted" data-testid="playlist-result">No playlist action yet.</p>
-    </div>
+    <div class="card" id="dashboardPlaylistsCard">
+      <h3>Playlists</h3>
+      <p class="muted small" style="margin:0 0 12px 0;line-height:1.45;max-width:56rem;">
+        <strong>Play</strong> uses your loaded library and Plex playlists. <strong>Discovery</strong> (other tab) is for TMDB filmography gaps — titles you don’t have yet. Use the section below to start playback from an existing Plex playlist or to <strong>build</strong> new playlists from movies already in your library.
+      </p>
 
-    <div class="card">
-      <h3>Create Playlist by Actor/Director</h3>
-      <div class="row">
-        <input id="peopleTitle" data-testid="people-title" value="People Picks" />
-        <input id="peopleCount" data-testid="people-count" value="8" />
+      <div class="dash-playlist-subcard">
+        <h4>Play from Plex</h4>
+        <div class="row">
+          <label for="playlistSelect">Playlist</label>
+          <span
+            class="help-tip"
+            title="LG webOS Plex does not expose a reliable playlist-control API. We fetch media paths from Plex and launch playback on webOS using direct Plex-backed media URLs. See Help tab for details."
+          >?</span>
+          <select id="playlistSelect" data-testid="playlist-title"></select>
+          <button id="refreshPlaylistsBtn" type="button">Refresh Playlists</button>
+          <button id="playSelectedPlaylistBtn" data-testid="create-and-play-btn">Play Selected</button>
+        </div>
+        <div class="row" style="margin-top: 8px;">
+          <span class="muted">Playlist items preview:</span>
+        </div>
+        <ul id="playlistItemsList" style="max-height: 180px; overflow-y: auto;"></ul>
+        <p id="playlistResult" class="muted" data-testid="playlist-result">No playlist action yet.</p>
       </div>
-      <div class="row" style="margin-top: 8px;">
-        <input id="actorName" data-testid="actor-name" placeholder="Actor (optional)" list="personSuggestions" />
-        <input id="directorName" data-testid="director-name" placeholder="Director (optional)" list="personSuggestions" />
-        <button id="createPeoplePlaylistBtn" data-testid="create-people-playlist-btn">Create by Person</button>
-      </div>
-      <p id="peopleResult" class="muted" data-testid="people-result">No person-filtered playlist action yet.</p>
-    </div>
 
-    <div class="card">
-      <h3>Create Genre/Rated Playlist (1982-2016)</h3>
-      <div class="row">
-        <label for="genreSelect">Genre</label>
-        <select id="genreSelect" data-testid="genre-select"></select>
-        <label for="ratingSelect">Min Rating</label>
-        <select id="ratingSelect" data-testid="rating-select">
-          <option value="0">Any</option>
-          <option value="1.0">1.0+</option><option value="1.5">1.5+</option><option value="2.0">2.0+</option><option value="2.5">2.5+</option>
-          <option value="3.0">3.0+</option><option value="3.5">3.5+</option><option value="4.0">4.0+</option><option value="4.5">4.5+</option>
-          <option value="5.0">5.0+</option><option value="5.5">5.5+</option><option value="6.0">6.0+</option><option value="6.5">6.5+</option>
-          <option value="7.0">7.0+</option><option value="7.5">7.5+</option><option value="8.0">8.0+</option><option value="8.5">8.5+</option>
-          <option value="9.0">9.0+</option><option value="9.5">9.5+</option>
-        </select>
-        <button id="createGenrePlaylistBtn" data-testid="create-genre-playlist-btn">Create Genre Playlist</button>
-        <button id="previewGenrePlaylistBtn">Preview Only</button>
-      </div>
-      <p class="muted">Rule: includes all matching movies with year from 1982 through 2016.</p>
-      <p id="genreResult" class="muted" data-testid="genre-result">No genre/rating playlist action yet.</p>
-      <p id="previewResult" class="muted">No preview yet.</p>
-      <ul id="previewList"></ul>
+      <details class="dash-playlist-build">
+        <summary>Build playlists from your library (actor / director / genre)</summary>
+        <div class="dash-playlist-subcard">
+          <h4>By actor / director</h4>
+          <p class="muted small" style="margin:0 0 8px 0;">Creates a Plex playlist from titles in your library that match the people you enter.</p>
+          <div class="row">
+            <input id="peopleTitle" data-testid="people-title" value="People Picks" />
+            <input id="peopleCount" data-testid="people-count" value="8" />
+          </div>
+          <div class="row" style="margin-top: 8px;">
+            <input id="actorName" data-testid="actor-name" placeholder="Actor (optional)" list="personSuggestions" />
+            <input id="directorName" data-testid="director-name" placeholder="Director (optional)" list="personSuggestions" />
+            <button id="createPeoplePlaylistBtn" data-testid="create-people-playlist-btn">Create by Person</button>
+          </div>
+          <p id="peopleResult" class="muted" data-testid="people-result">No person-filtered playlist action yet.</p>
+        </div>
+        <div class="dash-playlist-subcard">
+          <h4>By genre &amp; rating (1982–2016)</h4>
+          <p class="muted small" style="margin:0 0 8px 0;">Rule: includes all matching movies with year from 1982 through 2016.</p>
+          <div class="row">
+            <label for="genreSelect">Genre</label>
+            <select id="genreSelect" data-testid="genre-select"></select>
+            <label for="ratingSelect">Min Rating</label>
+            <select id="ratingSelect" data-testid="rating-select">
+              <option value="0">Any</option>
+              <option value="1.0">1.0+</option><option value="1.5">1.5+</option><option value="2.0">2.0+</option><option value="2.5">2.5+</option>
+              <option value="3.0">3.0+</option><option value="3.5">3.5+</option><option value="4.0">4.0+</option><option value="4.5">4.5+</option>
+              <option value="5.0">5.0+</option><option value="5.5">5.5+</option><option value="6.0">6.0+</option><option value="6.5">6.5+</option>
+              <option value="7.0">7.0+</option><option value="7.5">7.5+</option><option value="8.0">8.0+</option><option value="8.5">8.5+</option>
+              <option value="9.0">9.0+</option><option value="9.5">9.5+</option>
+            </select>
+            <button id="createGenrePlaylistBtn" data-testid="create-genre-playlist-btn">Create Genre Playlist</button>
+            <button id="previewGenrePlaylistBtn">Preview Only</button>
+          </div>
+          <p id="genreResult" class="muted" data-testid="genre-result">No genre/rating playlist action yet.</p>
+          <p id="previewResult" class="muted">No preview yet.</p>
+          <ul id="previewList"></ul>
+        </div>
+      </details>
     </div>
   </section>
 
   <section id="tab-help" class="tab-panel">
     <div class="card">
       <h3>Help</h3>
+      <p class="muted small" style="margin:0 0 12px 0;max-width:52rem;line-height:1.45;">
+        Guides are Markdown files in the repo <code>docs/</code> folder. Start with <strong>Getting started</strong>, then <strong>Connecting your TV</strong> if you use an LG set. Links like <code>help:00-getting-started.md</code> in a doc jump to another guide in the menu below.
+      </p>
       <div class="row">
         <label for="helpDocSelect">Document</label>
         <select id="helpDocSelect" style="min-width: 320px;"></select>
@@ -1452,7 +1601,7 @@
           </select>
         </span>
         <span id="discoverStudioWrap" style="display:none;">
-          <input id="discoverStudio" placeholder="Studio / Production Company (e.g. A24, Pixar)" style="min-width:280px;" data-testid="discover-studio" />
+          <input id="discoverStudio" placeholder="Studio / Production Company (e.g. A24, Pixar)" style="min-width:280px;" data-testid="discover-studio" list="studioSuggestions" autocomplete="off" />
         </span>
         <input id="discoverMinYear" placeholder="Min Year (optional)" style="width: 170px;" />
         <input id="discoverMaxYear" placeholder="Max Year (optional)" style="width: 170px;" />
@@ -1751,7 +1900,24 @@
               </select>
             </label>
             <label>Date
-              <input type="date" id="connHistDate" data-testid="conn-hist-date" />
+              <div class="conn-hist-date-field">
+                <input
+                  type="date"
+                  id="connHistDate"
+                  data-testid="conn-hist-date"
+                  title="Day to chart (your browser local timezone)"
+                  aria-label="Date for connectivity history chart"
+                />
+                <button
+                  type="button"
+                  id="connHistOpenCalendarBtn"
+                  class="conn-hist-date-calendar-btn"
+                  data-testid="conn-hist-open-calendar"
+                  title="Open calendar picker"
+                >
+                  Open calendar
+                </button>
+              </div>
             </label>
             <button type="button" id="connHistRedrawBtn" class="snap-refresh-btn">Redraw chart</button>
             <button type="button" id="connHistClearBtn">Clear local history</button>
@@ -1854,6 +2020,11 @@
     </div>
   </section>
 
+  <!-- Datalists before the main script so they exist when listeners attach (browser-native autocomplete). -->
+  <datalist id="personSuggestions"></datalist>
+  <datalist id="studioSuggestions"></datalist>
+  <datalist id="dashboardSearchSuggestions"></datalist>
+
   <script>
     // Populate snapshot hour select (0–23 UTC).
     (function() {
@@ -1879,9 +2050,11 @@
     let discoveryScrollBusy = false;
     const DISCOVERY_CART_KEY = 'plexdash.discovery.cart.v1';
     let suggestTimer = null;
+    let studioSuggestTimer = null;
+    let dashboardSuggestTimer = null;
     let libraryCachePollTimer = null;
     const LIBRARY_CACHE_POLL_MS = 10 * 60 * 1000;
-    const moviesCacheKey = 'plexdash.movies.cache.v4';
+    const moviesCacheKey = 'plexdash.movies.cache.v6';
     const MOVIE_SORT_PREFS_KEY = 'plexdash.movieSort.v1';
     /** Stable shuffle for Sort → Random: same order until TTL or library membership changes. */
     const MOVIE_RANDOM_ORDER_KEY = 'plexdash.movieRandomOrder.v1';
@@ -2150,8 +2323,20 @@
     function movieStreamHint(movie) {
       const measured = effectivePlexSampleMbps();
       const avg = movieAvgBitrateMbps(movie);
-      if (measured == null || avg == null) {
+      if (measured == null && avg == null) {
         return { level: 'unknown', detail: '' };
+      }
+      if (measured != null && avg == null) {
+        return {
+          level: 'unknown',
+          detail: `Plex sample ~${measured.toFixed(1)} Mb/s (this PC → server). Title bitrate unknown (no file size/duration).`,
+        };
+      }
+      if (measured == null && avg != null) {
+        return {
+          level: 'unknown',
+          detail: `Title ~${avg.toFixed(1)} Mb/s avg — no Plex throughput sample yet (load library / wait for probe).`,
+        };
       }
       const ratio = avg / measured;
       // Red: average bitrate exceeds measured sample. Yellow: between ~72% and 100% of sample (tight headroom).
@@ -2405,6 +2590,56 @@
     function movieSizeN(m) {
       return Math.max(0, Number(m && m.PartSize) || 0);
     }
+    /** Unix seconds from Plex addedAt; 0 if missing (sorts last for “recently added”). */
+    function movieAddedAtEpochN(m) {
+      const n = Number(m && (m.addedAt != null ? m.addedAt : m.AddedAtEpoch));
+      return Number.isFinite(n) && n > 0 ? n : 0;
+    }
+
+    function movieContentRatingRaw(m) {
+      const s = m && (m.ContentRating != null ? m.ContentRating : m.contentRating);
+      return typeof s === 'string' ? s.trim() : '';
+    }
+
+    /**
+     * Plex contentRating → sort tier. Higher = stricter / more adult.
+     * Returns -1 when unknown or unrated (sorted last for both asc and desc).
+     */
+    function movieContentRatingTier(m) {
+      let u = movieContentRatingRaw(m).toUpperCase().replace(/\s+/g, '');
+      if (!u) return -1;
+      if (u === 'PG13') u = 'PG-13';
+      if (u === 'NC17') u = 'NC-17';
+      const tiers = {
+        'TV-Y': 12,
+        'TV-Y7': 14,
+        'TV-Y7-FV': 15,
+        G: 20,
+        'TV-G': 21,
+        PG: 40,
+        'TV-PG': 41,
+        M: 52,
+        'PG-13': 60,
+        'TV-14': 62,
+        R: 80,
+        'TV-MA': 85,
+        'NC-17': 95,
+        X: 98,
+        XXX: 100,
+      };
+      if (tiers[u] !== undefined) return tiers[u];
+      if (
+        u === 'NR' ||
+        u === 'UR' ||
+        u === 'NOTRATED' ||
+        u === 'UNRATED' ||
+        u === 'APPROVED' ||
+        u === 'PASSED'
+      ) {
+        return -1;
+      }
+      return -1;
+    }
 
     function cmpTitle(a, b) {
       return String(a.Title || '').localeCompare(String(b.Title || ''), undefined, { sensitivity: 'base' });
@@ -2544,6 +2779,36 @@
             if (movieYearN(a) !== movieYearN(b)) return movieYearN(b) - movieYearN(a);
             return cmpTitle(a, b);
           }
+          case 'contentRatingDesc': {
+            const ta = movieContentRatingTier(a);
+            const tb = movieContentRatingTier(b);
+            const ua = ta < 0;
+            const ub = tb < 0;
+            if (ua !== ub) return ua ? 1 : -1;
+            if (!ua && ta !== tb) return tb - ta;
+            if (movieYearN(a) !== movieYearN(b)) return movieYearN(b) - movieYearN(a);
+            return cmpTitle(a, b);
+          }
+          case 'contentRatingAsc': {
+            const ta = movieContentRatingTier(a);
+            const tb = movieContentRatingTier(b);
+            const ua = ta < 0;
+            const ub = tb < 0;
+            if (ua !== ub) return ua ? 1 : -1;
+            if (!ua && ta !== tb) return ta - tb;
+            if (movieYearN(a) !== movieYearN(b)) return movieYearN(b) - movieYearN(a);
+            return cmpTitle(a, b);
+          }
+          case 'plexAddedDesc': {
+            const aa = movieAddedAtEpochN(a);
+            const ab = movieAddedAtEpochN(b);
+            const ua = aa <= 0;
+            const ub = ab <= 0;
+            if (ua !== ub) return ua ? 1 : -1;
+            if (!ua && aa !== ab) return ab - aa;
+            if (movieYearN(a) !== movieYearN(b)) return movieYearN(b) - movieYearN(a);
+            return cmpTitle(a, b);
+          }
           case 'yearDesc':
           default: {
             const ya = movieYearN(a);
@@ -2639,9 +2904,10 @@
         const movie = moviesAll[j];
         const el = buildMovieCard(movie);
         const searchText = [
-          movie.Title, String(movie.Year || ''),
-          ...(movie.Actors || []),
-          ...(movie.Directors || []),
+          movie.Title,
+          String(movie.Year || ''),
+          ...dashboardCreditNameList(movie.Actors),
+          ...dashboardCreditNameList(movie.Directors),
         ].join(' ').toLowerCase();
         allCardData.push({ movie, el, searchText, orderIndex: j });
         frag.appendChild(el);
@@ -2747,9 +3013,58 @@
       return r + 1e-9 >= min;
     }
 
+    function dashboardMovieSearchScope() {
+      const el = document.querySelector('input[name="movieSearchScope"]:checked');
+      const v = el && el.value;
+      return v === 'actor' || v === 'director' ? v : 'all';
+    }
+
+    /** Plex may send arrays; cached/edge data might use a single string — normalize for search. */
+    function dashboardCreditNameList(v) {
+      if (v == null) return [];
+      if (Array.isArray(v)) return v.map((x) => String(x).trim()).filter(Boolean);
+      const s = String(v).trim();
+      return s ? [s] : [];
+    }
+
+    /** qLower = trimmed lowercase query; scope all | actor | director */
+    function movieMatchesDashboardSearch(movie, searchTextLowerBlob, qLower, scope) {
+      if (!qLower) return true;
+      if (scope === 'actor') {
+        return dashboardCreditNameList(movie && movie.Actors).some((a) => a.toLowerCase().includes(qLower));
+      }
+      if (scope === 'director') {
+        return dashboardCreditNameList(movie && movie.Directors).some((d) => d.toLowerCase().includes(qLower));
+      }
+      const blob = searchTextLowerBlob == null ? '' : String(searchTextLowerBlob);
+      return blob.includes(qLower);
+    }
+
+    function applyDashboardSearchFromCredit(name, kind) {
+      const q = String(name || '').trim();
+      if (!q) return;
+      const searchEl = document.getElementById('movieSearch');
+      if (searchEl) searchEl.value = q;
+      const scope = kind === 'director' ? 'director' : 'actor';
+      const radio = document.querySelector(`input[name="movieSearchScope"][value="${scope}"]`);
+      if (radio) radio.checked = true;
+      filterMovieCards();
+      if (searchEl) {
+        searchEl.focus();
+        try {
+          searchEl.select();
+        } catch (_) { /* ignore */ }
+      }
+      if (typeof window._hideMovieInfoImmediate === 'function') {
+        window._hideMovieInfoImmediate();
+      }
+    }
+
     function filterMovieCardsSync() {
       const grid = document.getElementById('movieGrid');
+      if (!grid) return;
       const q = (document.getElementById('movieSearch')?.value || '').trim().toLowerCase();
+      const scope = dashboardMovieSearchScope();
       const genreOn = genreFilterActive();
       const decadeOn = decadeFilterActive();
       const ratingMin = dashboardMinRatingFilter();
@@ -2757,7 +3072,7 @@
       let shown = 0;
       for (const entry of allCardData) {
         const genreOk = moviePassesGenreFilters(entry.movie);
-        const textOk = !q || entry.searchText.includes(q);
+        const textOk = !q || movieMatchesDashboardSearch(entry.movie, entry.searchText, q, scope);
         const ratingOk = movieMeetsRatingFilter(entry.movie);
         const matches = genreOk && textOk && ratingOk;
         entry.el.hidden = !matches;
@@ -2791,10 +3106,14 @@
       const q = (document.getElementById('movieSearch')?.value || '').trim().toLowerCase();
       const needFullLibrary = !!(q || genreFilterActive() || dashboardMinRatingFilter() > 0);
       const run = async () => {
-        if (needFullLibrary) await ensureAllMoviesMaterialized();
+        try {
+          if (needFullLibrary) await ensureAllMoviesMaterialized();
+        } catch (err) {
+          console.error('[Plex Dashboard] filterMovieCards materialize', err);
+        }
         requestAnimationFrame(() => filterMovieCardsSync());
       };
-      if (needFullLibrary) run().catch(err => console.error('[Plex Dashboard] filterMovieCards', err));
+      if (needFullLibrary) void run();
       else requestAnimationFrame(() => filterMovieCardsSync());
     }
 
@@ -2867,6 +3186,7 @@
 
     function renderPersonSuggestions(names) {
       const datalist = document.getElementById('personSuggestions');
+      if (!datalist) return;
       datalist.innerHTML = '';
       for (const name of names) {
         const option = document.createElement('option');
@@ -2899,7 +3219,7 @@
           const query = input.value.trim();
           if (suggestTimer) clearTimeout(suggestTimer);
           suggestTimer = setTimeout(async () => {
-            if (query.length < 2) {
+            if (query.length < 1) {
               renderPersonSuggestions([]);
               return;
             }
@@ -2912,7 +3232,7 @@
             } catch (err) {
               console.error('[Plex Dashboard] person suggest failed', err);
             }
-          }, 180);
+          }, 100);
         });
 
         if (id === 'discoverPerson') {
@@ -2936,6 +3256,133 @@
           });
         }
       });
+    }
+
+    function renderStudioSuggestions(names) {
+      const datalist = document.getElementById('studioSuggestions');
+      if (!datalist) return;
+      datalist.innerHTML = '';
+      for (const name of names) {
+        const option = document.createElement('option');
+        option.value = name;
+        datalist.appendChild(option);
+      }
+    }
+
+    function wireStudioAutocomplete() {
+      const input = document.getElementById('discoverStudio');
+      if (!input) return;
+      input.addEventListener('input', () => {
+        const query = input.value.trim();
+        if (studioSuggestTimer) clearTimeout(studioSuggestTimer);
+        studioSuggestTimer = setTimeout(async () => {
+          if (query.length < 1) {
+            renderStudioSuggestions([]);
+            return;
+          }
+          try {
+            const data = await apiJson(`/api/discovery/studio-suggest?q=${encodeURIComponent(query)}`);
+            renderStudioSuggestions(data.suggestions || []);
+          } catch (err) {
+            console.error('[Plex Dashboard] studio suggest failed', err);
+          }
+        }, 100);
+      });
+    }
+
+    function renderDashboardSearchSuggestions(names) {
+      const dl = document.getElementById('dashboardSearchSuggestions');
+      if (!dl) return;
+      dl.innerHTML = '';
+      for (const n of names) {
+        const opt = document.createElement('option');
+        opt.value = n;
+        dl.appendChild(opt);
+      }
+    }
+
+    function scheduleDashboardSearchSuggestions() {
+      const el = document.getElementById('movieSearch');
+      if (!el) return;
+      if (dashboardSuggestTimer) clearTimeout(dashboardSuggestTimer);
+      dashboardSuggestTimer = setTimeout(() => {
+        dashboardSuggestTimer = null;
+        const q = (el.value || '').trim();
+        if (q.length < 1) {
+          renderDashboardSearchSuggestions([]);
+          return;
+        }
+        const scope = dashboardMovieSearchScope();
+        const qq = q.toLowerCase();
+        const lib = moviesLibraryFull || [];
+        const seen = new Set();
+        const out = [];
+        const add = (s) => {
+          const t = String(s).trim();
+          if (!t) return;
+          const k = t.toLowerCase();
+          if (!k.includes(qq) || seen.has(k)) return;
+          seen.add(k);
+          out.push(t);
+        };
+        if (scope === 'all') {
+          for (const m of lib) {
+            add(m.Title);
+            if (out.length >= 28) break;
+          }
+        } else if (scope === 'actor') {
+          for (const m of lib) {
+            for (const a of dashboardCreditNameList(m.Actors)) add(a);
+            if (out.length >= 36) break;
+          }
+        } else {
+          for (const m of lib) {
+            for (const d of dashboardCreditNameList(m.Directors)) add(d);
+            if (out.length >= 36) break;
+          }
+        }
+        out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+        renderDashboardSearchSuggestions(out.slice(0, 25));
+      }, 90);
+    }
+
+    function wireDashboardSearchDatalist() {
+      const el = document.getElementById('movieSearch');
+      if (!el) return;
+      el.addEventListener('input', scheduleDashboardSearchSuggestions);
+      document.querySelectorAll('input[name="movieSearchScope"]').forEach((r) => {
+        r.addEventListener('change', scheduleDashboardSearchSuggestions);
+      });
+    }
+
+    const DASH_LIB_TIP_KEY = 'plexdash.dashboard.hideLibraryTip.v1';
+
+    function initDashboardLibraryTip() {
+      const box = document.getElementById('libraryTipBox');
+      const dismiss = document.getElementById('libraryTipDismissBtn');
+      const restore = document.getElementById('libraryTipRestoreBtn');
+      if (!box || !dismiss || !restore) return;
+
+      function applyHidden(hidden) {
+        box.hidden = hidden;
+        restore.hidden = !hidden;
+        try {
+          if (hidden) {
+            localStorage.setItem(DASH_LIB_TIP_KEY, '1');
+          } else {
+            localStorage.removeItem(DASH_LIB_TIP_KEY);
+          }
+        } catch (_) { /* ignore quota / private mode */ }
+      }
+
+      try {
+        if (localStorage.getItem(DASH_LIB_TIP_KEY) === '1') {
+          applyHidden(true);
+        }
+      } catch (_) { /* ignore */ }
+
+      dismiss.addEventListener('click', () => applyHidden(true));
+      restore.addEventListener('click', () => applyHidden(false));
     }
 
     function bindTabs() {
@@ -4060,13 +4507,31 @@
       const mipPlot     = popup.querySelector('.mip-plot');
       const mipPlotMore = popup.querySelector('.mip-plot-more');
       const movieGridEl = document.getElementById('movieGrid');
-      const SHOW_MS = plexdashHoverPopupDelayMs();
+      /* Slightly longer than Discovery so brief pointer passes don’t open the panel. */
+      const SHOW_MS = plexdashHoverPopupDelayMs() + 300;
       let showTimer = null;
       let hideTimer = null;
       let anchorCard = null;
       let moveRaf = null;
       let suspendedForLightbox = false;
       let mipRatingsAbort = null;
+      let mipOmdbRequestedURL = null;
+
+      function appendMipCreditButton(parentEl, name, kind) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'mip-search-credit';
+        btn.textContent = name;
+        btn.title =
+          kind === 'director'
+            ? `Search library (director): ${name}`
+            : `Search library (actor): ${name}`;
+        btn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          applyDashboardSearchFromCredit(name, kind);
+        });
+        parentEl.appendChild(btn);
+      }
 
       function abortMipRatingsFetch() {
         if (mipRatingsAbort) {
@@ -4092,54 +4557,63 @@
         return order[src] || 99;
       }
 
-      function applyMipRatingsSubtitle(plexR, entries) {
+      function applyMipRatingsSubtitle(plexR, entries, contentRating) {
         if (!mipTitleRating) return;
         const plex = Number(plexR);
         const hasPlex = Number.isFinite(plex) && plex > 0;
         const list = entries || [];
-        const nSources = (hasPlex ? 1 : 0) + list.length;
-        if (nSources === 0) {
+        const nScore = (hasPlex ? 1 : 0) + list.length;
+        // One line under the title: combined average only when 2+ sources (no Plex / Rated / per-source — those are pills).
+        if (nScore < 2) {
+          mipTitleRating.textContent = '';
+          mipTitleRating.hidden = true;
+          return;
+        }
+        const avg = combinedRatingsAverage10(plexR, list);
+        if (avg <= 0) {
           mipTitleRating.textContent = '';
           mipTitleRating.hidden = true;
           return;
         }
         mipTitleRating.hidden = false;
-        if (nSources === 1) {
-          if (hasPlex) {
-            mipTitleRating.textContent = `Plex ★ ${plex.toFixed(1)}`;
-          } else {
-            const e = list[0];
-            mipTitleRating.textContent = `${e.label} ${e.display}`;
-          }
-          return;
-        }
-        const avg = combinedRatingsAverage10(plexR, list);
-        mipTitleRating.textContent = avg > 0 ? `Avg ★ ${avg.toFixed(1)}` : '';
+        mipTitleRating.textContent = `Avg ★ ${avg.toFixed(1)}`;
       }
 
-      function fillMipRatingsPills(plexR, entries) {
+      /** Score pills + content rating; always lists each source when present (not only when 2+ scores). */
+      function fillMipRatingsPills(plexR, entries, contentRating) {
         if (!mipRatingsRow) return;
         mipRatingsRow.innerHTML = '';
+        const cr = (contentRating && String(contentRating).trim()) || '';
+        if (cr) {
+          const rated = pill(`Rated ${cr}`);
+          rated.classList.add('mip-pill-rated');
+          rated.title = 'Content rating from Plex (MPAA, TV, or regional)';
+          mipRatingsRow.appendChild(rated);
+        }
         const plex = Number(plexR);
         const hasPlex = Number.isFinite(plex) && plex > 0;
         const list = (entries || []).slice().sort((a, b) => sourceSortKey(a.source) - sourceSortKey(b.source));
-        const nSources = (hasPlex ? 1 : 0) + list.length;
-        if (nSources < 2) return;
+        const nScore = (hasPlex ? 1 : 0) + list.length;
+        if (nScore === 0) return;
 
-        const avg = combinedRatingsAverage10(plexR, list);
-        if (avg > 0) {
-          const avgEl = pill(`Avg ★ ${avg.toFixed(1)}`);
-          avgEl.classList.add('mip-pill-avg');
-          mipRatingsRow.appendChild(avgEl);
-        }
         if (hasPlex) {
           const p = pill(`Plex ★ ${plex.toFixed(1)}`);
           p.classList.add('mip-pill-plex');
+          p.title = 'Plex library aggregate rating';
           mipRatingsRow.appendChild(p);
         }
         for (const e of list) {
           const el = pill(`${e.label} ${e.display}`);
-          el.title = e.source === 'rottenTomatoes' ? 'Tomatometer (all critics)' : '';
+          el.title =
+            e.source === 'rottenTomatoes'
+              ? 'Tomatometer (all critics)'
+              : e.source === 'tmdb'
+                ? 'TMDB vote average (0–10)'
+                : e.source === 'imdb'
+                  ? 'IMDb score'
+                  : e.source === 'metacritic'
+                    ? 'Metacritic score'
+                    : '';
           mipRatingsRow.appendChild(el);
         }
       }
@@ -4160,11 +4634,12 @@
       }
 
       function positionPopup(cardRect) {
-        const margin = 24;
-        const gap = 32;
+        const margin = 8;
+        const sideGap = 2;
+        const stackGap = 10;
         const vw = window.innerWidth;
         const vh = window.innerHeight;
-        popup.style.display = 'block';
+        popup.style.display = 'flex';
         popup.style.visibility = 'hidden';
         const pw = popup.offsetWidth;
         const ph = popup.offsetHeight;
@@ -4177,39 +4652,37 @@
           return Math.max(margin, Math.min(t, vh - ph - margin));
         }
 
-        const hUnder = clampLeft(cardRect.left + (cardRect.width - pw) / 2);
-
-        // Prefer below the card so the poster + play overlay stay clickable (avoid centered-on-card overlap).
-        let top = cardRect.bottom + gap;
-        if (top + ph <= vh - margin) {
-          popup.style.left = hUnder + 'px';
-          popup.style.top = top + 'px';
-          return;
-        }
-
-        top = cardRect.top - gap - ph;
-        if (top >= margin) {
-          popup.style.left = hUnder + 'px';
-          popup.style.top = top + 'px';
-          return;
-        }
-
-        let left = cardRect.right + gap;
-        if (left + pw <= vw - margin) {
-          popup.style.left = left + 'px';
+        // Beside the card: panel edge flush with card (tiny gap) so the pointer can reach the popup.
+        const rightSideLeft = cardRect.right + sideGap;
+        if (rightSideLeft + pw <= vw - margin) {
+          popup.style.left = clampLeft(rightSideLeft) + 'px';
           popup.style.top = clampTop(cardRect.top + (cardRect.height - ph) / 2) + 'px';
           return;
         }
 
-        left = cardRect.left - gap - pw;
-        if (left >= margin) {
-          popup.style.left = left + 'px';
+        const leftSideLeft = cardRect.left - pw - sideGap;
+        if (leftSideLeft >= margin) {
+          popup.style.left = clampLeft(leftSideLeft) + 'px';
           popup.style.top = clampTop(cardRect.top + (cardRect.height - ph) / 2) + 'px';
           return;
         }
 
-        popup.style.left = hUnder + 'px';
-        popup.style.top = clampTop(cardRect.bottom + gap) + 'px';
+        const belowTop = cardRect.bottom + stackGap;
+        if (belowTop + ph <= vh - margin) {
+          popup.style.left = clampLeft(cardRect.left) + 'px';
+          popup.style.top = belowTop + 'px';
+          return;
+        }
+
+        const aboveTop = cardRect.top - stackGap - ph;
+        if (aboveTop >= margin) {
+          popup.style.left = clampLeft(cardRect.left) + 'px';
+          popup.style.top = aboveTop + 'px';
+          return;
+        }
+
+        popup.style.left = clampLeft(Math.round((vw - pw) / 2)) + 'px';
+        popup.style.top = clampTop(Math.round((vh - ph) / 2)) + 'px';
       }
 
       function clearHideTimer() {
@@ -4253,7 +4726,7 @@
             anchorCard = null;
             suspendedForLightbox = false;
           }, 150);
-        }, 320);
+        }, 500);
       }
 
       function edgeSeparation(r1, r2) {
@@ -4308,6 +4781,40 @@
         hideMovieInfoImmediate();
       }, { passive: true });
 
+      /** When the cursor is over the popup, forward wheel to the movie grid if inner panels can’t scroll (or are at an edge). */
+      function mipScrollableFromTarget(el) {
+        let n = el;
+        while (n && n !== popup) {
+          if (n.classList && (n.classList.contains('mip-body') || n.classList.contains('mip-plot-wrap'))) {
+            if (n.scrollHeight > n.clientHeight + 2) return n;
+          }
+          n = n.parentElement;
+        }
+        return null;
+      }
+
+      popup.addEventListener(
+        'wheel',
+        (e) => {
+          const sp = mipScrollableFromTarget(e.target);
+          if (!sp) {
+            e.preventDefault();
+            movieGridEl.scrollTop += e.deltaY;
+            return;
+          }
+          const st = sp.scrollTop;
+          const ch = sp.clientHeight;
+          const sh = sp.scrollHeight;
+          const atTop = st <= 0;
+          const atBottom = st + ch >= sh - 2;
+          if ((e.deltaY < 0 && atTop) || (e.deltaY > 0 && atBottom)) {
+            e.preventDefault();
+            movieGridEl.scrollTop += e.deltaY;
+          }
+        },
+        { passive: false }
+      );
+
       function refreshPlotMoreButton() {
         mipPlot.classList.remove('mip-plot-expanded');
         mipPlotMore.textContent = 'Show more';
@@ -4338,6 +4845,7 @@
           if (!popup.classList.contains('mip-visible')) return;
           const t = e.target;
           if (t === mipPoster || (mipPoster && mipPoster.contains(t))) return;
+          if (t.closest && t.closest('.mip-search-credit')) return;
           e.stopPropagation();
           e.preventDefault();
           hideMovieInfoImmediate();
@@ -4362,6 +4870,7 @@
           resetMipExtras();
 
           const rk = movie.RatingKey;
+          const rkWant = String(rk);
           mipPoster.src = `/api/plex/thumb?ratingKey=${encodeURIComponent(rk)}`;
           mipPoster.alt = movie.Title;
 
@@ -4369,9 +4878,81 @@
             ? `${movie.Title} (${movie.Year})`
             : movie.Title;
 
+          mipRatingsAbort = new AbortController();
+          const mipSignal = mipRatingsAbort.signal;
+          mipOmdbRequestedURL = null;
+
+          const ratingsState = {
+            contentRating: movieContentRatingRaw(movie) || '',
+            entries: [],
+          };
+
+          const movieTmdb = Number(movie.TMDBID != null ? movie.TMDBID : movie.tmdbId);
+          const movieImdb = String(movie.IMDbID != null ? movie.IMDbID : movie.imdbId || '').trim();
+          const hasMovieTmdb = Number.isFinite(movieTmdb) && movieTmdb > 0;
+          const hasMovieImdb = movieImdb.startsWith('tt');
+
+          let resolvedMetaTmdb = 0;
+          let resolvedMetaImdb = '';
+
+          function stillSameMovieHover() {
+            return anchorCard && String(anchorCard.dataset.ratingKey) === rkWant;
+          }
+
+          function refreshMipRatingsOverlay() {
+            if (!stillSameMovieHover()) return;
+            applyMipRatingsSubtitle(movie.Rating, ratingsState.entries, ratingsState.contentRating);
+            fillMipRatingsPills(movie.Rating, ratingsState.entries, ratingsState.contentRating);
+          }
+
+          function scheduleOmdbRatings() {
+            const tid = hasMovieTmdb ? movieTmdb : resolvedMetaTmdb;
+            const iid = hasMovieImdb ? movieImdb : resolvedMetaImdb;
+            let url = '';
+            if (Number.isFinite(tid) && tid > 0) {
+              url = '/api/omdb-ratings?tmdbId=' + encodeURIComponent(String(tid));
+            } else if (iid.startsWith('tt')) {
+              url = '/api/omdb-ratings?imdbId=' + encodeURIComponent(iid);
+            }
+            if (!url) return;
+            if (mipOmdbRequestedURL === url) return;
+            mipOmdbRequestedURL = url;
+            apiJson(url, { signal: mipSignal })
+              .then((d) => {
+                if (!stillSameMovieHover()) return;
+                ratingsState.entries = d && Array.isArray(d.entries) ? d.entries : [];
+                refreshMipRatingsOverlay();
+              })
+              .catch((err) => {
+                if (err && err.name === 'AbortError') return;
+              });
+          }
+
           if (mipRatingsRow) mipRatingsRow.innerHTML = '';
-          applyMipRatingsSubtitle(movie.Rating, []);
-          fillMipRatingsPills(movie.Rating, []);
+          refreshMipRatingsOverlay();
+
+          scheduleOmdbRatings();
+
+          const needHoverMeta =
+            !!rk &&
+            (!ratingsState.contentRating || (!hasMovieTmdb && !hasMovieImdb));
+          if (needHoverMeta) {
+            apiJson('/api/movies/hover-meta?ratingKey=' + encodeURIComponent(String(rk)), { signal: mipSignal })
+              .then((d) => {
+                if (!stillSameMovieHover()) return;
+                const c = (d && d.contentRating != null && String(d.contentRating).trim()) || '';
+                if (c) ratingsState.contentRating = c;
+                const xt = d && d.tmdbId != null ? Number(d.tmdbId) : 0;
+                if (Number.isFinite(xt) && xt > 0) resolvedMetaTmdb = xt;
+                const xi = d && d.imdbId != null ? String(d.imdbId).trim() : '';
+                if (xi.startsWith('tt')) resolvedMetaImdb = xi;
+                refreshMipRatingsOverlay();
+                scheduleOmdbRatings();
+              })
+              .catch((err) => {
+                if (err && err.name === 'AbortError') return;
+              });
+          }
 
           mipAttrs.innerHTML = '';
           const rt = fmtRuntime(movie.DurationMillis);
@@ -4380,7 +4961,51 @@
             mipAttrs.appendChild(pill(`${movie.ViewCount} play${movie.ViewCount !== 1 ? 's' : ''}`));
           }
           const dirs = (movie.Directors || []).slice(0, 2);
-          if (dirs.length) mipAttrs.appendChild(pill('Dir: ' + dirs.join(', ')));
+          if (dirs.length) {
+            const wrap = document.createElement('span');
+            wrap.className = 'mip-attr-pill mip-credit-pill';
+            wrap.appendChild(document.createTextNode('Dir: '));
+            dirs.forEach((d, i) => {
+              if (i > 0) wrap.appendChild(document.createTextNode(', '));
+              appendMipCreditButton(wrap, d, 'director');
+            });
+            mipAttrs.appendChild(wrap);
+          }
+
+          const measuredMip = effectivePlexSampleMbps();
+          const avgMip = movieAvgBitrateMbps(movie);
+          const hintMip = movieStreamHint(movie);
+          if (measuredMip != null) {
+            const pe = pill(`Plex sample ~${measuredMip.toFixed(1)} Mb/s`);
+            pe.title =
+              'Ranged read from this PC to your Plex server (not the TV). Same sample as the header P bars; shown here even when bars are full.';
+            mipAttrs.appendChild(pe);
+          } else {
+            const ps0 = lastConnectivityData && lastConnectivityData.plexStream;
+            if (ps0 && String(ps0.message || '').trim()) {
+              const pe = pill('Plex speed: not sampled');
+              pe.title = String(ps0.message);
+              mipAttrs.appendChild(pe);
+            }
+          }
+          if (avgMip != null) {
+            const pe = pill(`Title ~${avgMip.toFixed(1)} Mb/s avg`);
+            pe.title = 'From file size and duration (similar to Plex overall bitrate). Compared to Plex sample for poster colors.';
+            mipAttrs.appendChild(pe);
+          }
+          if (hintMip.level === 'risk') {
+            const pe = pill('Stream: may buffer');
+            pe.title = hintMip.detail || '';
+            mipAttrs.appendChild(pe);
+          } else if (hintMip.level === 'warn') {
+            const pe = pill('Stream: tight headroom');
+            pe.title = hintMip.detail || '';
+            mipAttrs.appendChild(pe);
+          } else if (hintMip.level === 'ok') {
+            const pe = pill('Stream: comfortable');
+            pe.title = hintMip.detail || '';
+            mipAttrs.appendChild(pe);
+          }
 
           mipGenres.textContent = (movie.Genres || []).slice(0, 4).join(' · ');
 
@@ -4392,7 +5017,11 @@
             lab.className = 'mip-actors-label';
             lab.textContent = 'Starring:';
             mipActors.appendChild(lab);
-            mipActors.appendChild(document.createTextNode(' ' + actors.join(', ')));
+            mipActors.appendChild(document.createTextNode(' '));
+            actors.forEach((a, i) => {
+              if (i > 0) mipActors.appendChild(document.createTextNode(', '));
+              appendMipCreditButton(mipActors, a, 'actor');
+            });
           } else {
             mipActors.style.display = 'none';
           }
@@ -4424,23 +5053,6 @@
             mipPoster.onerror = () => { reveal(); };
             if (mipPoster.complete) reveal();
           }
-
-          const tmdbId = Number(movie.TMDBID != null ? movie.TMDBID : movie.tmdbId);
-          if (Number.isFinite(tmdbId) && tmdbId > 0) {
-            mipRatingsAbort = new AbortController();
-            const sig = mipRatingsAbort.signal;
-            const rkWant = String(rk);
-            apiJson('/api/omdb-ratings?tmdbId=' + encodeURIComponent(String(tmdbId)), { signal })
-              .then((d) => {
-                if (!popup.classList.contains('mip-visible') || !anchorCard || String(anchorCard.dataset.ratingKey) !== rkWant) return;
-                if (!d || !d.ok || !Array.isArray(d.entries) || d.entries.length === 0) return;
-                applyMipRatingsSubtitle(movie.Rating, d.entries);
-                fillMipRatingsPills(movie.Rating, d.entries);
-              })
-              .catch((err) => {
-                if (err && err.name === 'AbortError') return;
-              });
-          }
         }, SHOW_MS);
       };
 
@@ -4470,7 +5082,7 @@
             });
           });
         };
-        popup.style.display = 'block';
+        popup.style.display = 'flex';
         popup.classList.remove('mip-visible');
         show();
         suspendedForLightbox = false;
@@ -5575,6 +6187,21 @@
         const node = document.getElementById(id);
         if (node) node.addEventListener('change', redraw);
       });
+      const dateInp = document.getElementById('connHistDate');
+      const openCal = document.getElementById('connHistOpenCalendarBtn');
+      if (openCal && dateInp) {
+        openCal.addEventListener('click', () => {
+          if (typeof dateInp.showPicker === 'function') {
+            try {
+              dateInp.showPicker();
+            } catch (_) {
+              dateInp.focus();
+            }
+          } else {
+            dateInp.focus();
+          }
+        });
+      }
       const btnR = document.getElementById('connHistRedrawBtn');
       if (btnR) btnR.addEventListener('click', redraw);
       const btnC = document.getElementById('connHistClearBtn');
@@ -5786,12 +6413,98 @@
       connectivityPollTimer = setInterval(pollConnectivity, CONNECTIVITY_POLL_MS);
     }
 
-    /** Escape HTML, then apply **bold** and [label](https://...) for help docs (not a full Markdown engine). */
-    function formatHelpInline(raw) {
-      let s = escapeHTML(raw);
+    /** Apply **bold**, `inline code`, [label](help:…), [label](https://…) to one text span (no backticks inside). */
+    function formatHelpTextSpan(span) {
+      let s = escapeHTML(span);
       s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      s = s.replace(/\[([^\]]+)\]\(help:([^)\s#]+)\)/g, '<a href="#" class="help-doc-link" data-help-name="$2">$1</a>');
       s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
       return s;
+    }
+
+    /**
+     * Inline Markdown-ish: backtick code spans first (so ** and links inside code stay literal),
+     * then **bold**, help: and https links on the rest.
+     */
+    function formatHelpInline(raw) {
+      const str = String(raw || '');
+      const parts = [];
+      let i = 0;
+      while (i < str.length) {
+        const open = str.indexOf('`', i);
+        if (open === -1) {
+          parts.push(formatHelpTextSpan(str.slice(i)));
+          break;
+        }
+        if (open > i) parts.push(formatHelpTextSpan(str.slice(i, open)));
+        const close = str.indexOf('`', open + 1);
+        if (close === -1) {
+          parts.push(formatHelpTextSpan(str.slice(open)));
+          break;
+        }
+        parts.push('<code>' + escapeHTML(str.slice(open + 1, close)) + '</code>');
+        i = close + 1;
+      }
+      return parts.join('');
+    }
+
+    /** Split a pipe row into cells (GitHub-style table line). */
+    function helpParseTableRow(line) {
+      let s = String(line || '').trim();
+      if (!s) return [];
+      if (s.startsWith('|')) s = s.slice(1);
+      if (s.endsWith('|')) s = s.slice(0, -1);
+      return s.split('|').map(function (cell) { return cell.trim(); });
+    }
+
+    /** GFM separator row: | --- | :---: | ---: | */
+    function helpIsTableSeparatorRow(line) {
+      const cells = helpParseTableRow(line);
+      if (cells.length < 2) return false;
+      return cells.every(function (c) {
+        const t = c.replace(/\s+/g, '');
+        return /^:?-{2,}:?$/.test(t);
+      });
+    }
+
+    function helpLooksLikeTableDataRow(line) {
+      const t = String(line || '').trim();
+      return t.startsWith('|') && t.indexOf('|', 1) !== -1;
+    }
+
+    /**
+     * If lines[startIdx] starts a GFM table (header + separator), return HTML and index after last body row.
+     */
+    function helpTryParseTable(lines, startIdx) {
+      const row0 = (lines[startIdx] || '').trim();
+      const row1 = (lines[startIdx + 1] || '').trim();
+      if (!helpLooksLikeTableDataRow(row0) || !helpIsTableSeparatorRow(row1)) return null;
+      const headerCells = helpParseTableRow(row0);
+      if (headerCells.length < 2) return null;
+      const bodyRows = [];
+      let j = startIdx + 2;
+      for (; j < lines.length; j++) {
+        const raw = lines[j] || '';
+        const tr = raw.trim();
+        if (!tr) break;
+        if (!helpLooksLikeTableDataRow(raw)) break;
+        if (helpIsTableSeparatorRow(raw)) continue;
+        bodyRows.push(helpParseTableRow(raw));
+      }
+      let html = '<div class="help-doc-table-wrap"><table class="help-doc-table"><thead><tr>';
+      headerCells.forEach(function (cell) {
+        html += '<th>' + formatHelpInline(cell) + '</th>';
+      });
+      html += '</tr></thead><tbody>';
+      bodyRows.forEach(function (cells) {
+        html += '<tr>';
+        for (let c = 0; c < headerCells.length; c++) {
+          html += '<td>' + formatHelpInline(cells[c] != null ? cells[c] : '') + '</td>';
+        }
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+      return { html: html, nextIndex: j };
     }
 
     function renderHelpMarkdown(md) {
@@ -5799,8 +6512,8 @@
       const out = [];
       let inList = false;
       let inCode = false;
-      for (const raw of lines) {
-        const line = raw || '';
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i] || '';
         if (line.startsWith('```')) {
           if (!inCode) {
             if (inList) { out.push('</ul>'); inList = false; }
@@ -5814,6 +6527,13 @@
         }
         if (inCode) {
           out.push(escapeHTML(line) + '\n');
+          continue;
+        }
+        const tbl = helpTryParseTable(lines, i);
+        if (tbl) {
+          if (inList) { out.push('</ul>'); inList = false; }
+          out.push(tbl.html);
+          i = tbl.nextIndex - 1;
           continue;
         }
         if (line.startsWith('### ')) {
@@ -6002,6 +6722,9 @@
     loadPlaylists();
     loadHelpDocs();
     wirePersonAutocomplete();
+    wireStudioAutocomplete();
+    wireDashboardSearchDatalist();
+    initDashboardLibraryTip();
     wireDiscoveryTableSort();
     wireDiscoveryTableActions();
     wireDiscoveryInfiniteScroll();
@@ -6029,6 +6752,9 @@
     document.getElementById('movieSearch').addEventListener('search', () => {
       clearTimeout(searchDebounceTimer);
       filterMovieCards();
+    });
+    document.querySelectorAll('input[name="movieSearchScope"]').forEach((el) => {
+      el.addEventListener('change', () => filterMovieCards());
     });
     const movieRatingFilterEl = document.getElementById('movieRatingFilter');
     if (movieRatingFilterEl) {
@@ -6173,6 +6899,18 @@
     document.getElementById('playlistSelect').addEventListener('change', loadPlaylistItems);
     document.getElementById('helpDocSelect').addEventListener('change', (e) => loadHelpDoc(e.target.value));
     document.getElementById('helpReloadBtn').addEventListener('click', loadHelpDocs);
+    document.getElementById('tab-help').addEventListener('click', (e) => {
+      const a = e.target.closest && e.target.closest('a.help-doc-link');
+      if (!a || !document.getElementById('helpDocContent').contains(a)) return;
+      e.preventDefault();
+      const name = (a.getAttribute('data-help-name') || '').trim();
+      if (!name) return;
+      const sel = document.getElementById('helpDocSelect');
+      const ok = [...sel.options].some((o) => o.value === name);
+      if (!ok) return;
+      sel.value = name;
+      loadHelpDoc(name);
+    });
     document.getElementById('createPeoplePlaylistBtn').addEventListener('click', createByPeople);
     document.getElementById('createGenrePlaylistBtn').addEventListener('click', createByGenreRating);
     document.getElementById('previewGenrePlaylistBtn').addEventListener('click', previewByGenreRating);
@@ -6588,6 +7326,5 @@
       console.log('[Snapshots] initialized');
     })();
   </script>
-  <datalist id="personSuggestions"></datalist>
 </body>
 </html>
