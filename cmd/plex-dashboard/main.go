@@ -22,6 +22,7 @@ func main() {
 	ctx := context.Background()
 	go server.WarmLibraryCacheOnStartup(ctx)
 	go server.StartDailySnapshotWorker(ctx)
+	go server.StartConnectivityProbes(ctx)
 
 	addr := ":" + cfg.Port
 	if wd, err := os.Getwd(); err == nil {

@@ -138,3 +138,20 @@ func TestLibraryMovieTotalCount_httptest(t *testing.T) {
 		t.Fatalf("got %d", n)
 	}
 }
+
+func TestParseTMDBIDFromPlexGuid(t *testing.T) {
+	tests := []struct {
+		guid string
+		want int
+	}{
+		{"", 0},
+		{"tmdb://9517", 9517},
+		{"plex://movie/guid/tmdb://9517", 9517},
+		{"com.plexapp.agents.themoviedb://9517?lang=en", 9517},
+	}
+	for _, tc := range tests {
+		if got := parseTMDBIDFromPlexGuid(tc.guid); got != tc.want {
+			t.Errorf("parseTMDBIDFromPlexGuid(%q) = %d want %d", tc.guid, got, tc.want)
+		}
+	}
+}

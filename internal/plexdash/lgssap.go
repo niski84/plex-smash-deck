@@ -386,3 +386,74 @@ func PairLGTV(ctx context.Context, tvIP string) (clientKey string, err error) {
 	}
 	return "", fmt.Errorf("no client-key received (did you accept on the TV?)")
 }
+
+// ssapSendRequest sends a single SSAP request (after registration).
+func ssapSendRequest(conn *ssapConn, id, uri string, payload any) error {
+	return conn.sendJSON(ssapMsg{ID: id, Type: "request", URI: uri, Payload: payload})
+}
+
+// ssapRegisterManifest registers with an extended permission list (required for
+// audio getStatus / setVolume and other read APIs on many firmwares).
+func ssapRegisterManifest(conn *ssapConn, clientKey string, permissions []string) error {
+	msg := ssapMsg{
+		ID:   "reg0",
+		Type: "register",
+		Payload: map[string]any{
+			"forcePairing": false,
+			"pairingType":  "PROMPT",
+			"client-key":   clientKey,
+			"manifest": map[string]any{
+				"appVersion":      "1.1",
+				"manifestVersion": 1,
+				"permissions":     permissions,
+			},
+		},
+	}
+	if err := conn.sendJSON(msg); err != nil {
+		return err
+	}
+	var resp map[string]any
+	if err := conn.recvJSON(&resp); err != nil {
+		return err
+	}
+	if t, _ := resp["type"].(string); t != "registered" {
+		return fmt.Errorf("SSAP registration failed (type=%q payload=%v)", t, resp["payload"])
+	}
+	return nil
+}
+
+// recvSSAPResponse reads frames until a response or error type is seen (or max frames).
+func recvSSAPResponse(conn *ssapConn, maxFrames int) (map[string]any, error) {
+	return recvSSAPResponseForID(conn, "", maxFrames)
+}
+
+// recvSSAPResponseForID reads until a matching SSAP response/error. If wantID is non-empty,
+// "response" frames with a different id are skipped (avoids pairing with the wrong reply
+// when the TV emits multiple messages per connection).
+func recvSSAPResponseForID(conn *ssapConn, wantID string, maxFrames int) (map[string]any, error) {
+	for range maxFrames {
+		var m map[string]any
+		if err := conn.recvJSON(&m); err != nil {
+			return nil, err
+		}
+		t, _ := m["type"].(string)
+		switch t {
+		case "error":
+			return m, nil
+		case "response":
+			if wantID == "" {
+				return m, nil
+			}
+			id, _ := m["id"].(string)
+			if id == "" || id == wantID {
+				return m, nil
+			}
+		default:
+			continue
+		}
+	}
+	if wantID != "" {
+		return nil, fmt.Errorf("no SSAP response for id %q after %d frames", wantID, maxFrames)
+	}
+	return nil, fmt.Errorf("no response/error after %d frames", maxFrames)
+}
