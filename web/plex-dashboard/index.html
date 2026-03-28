@@ -427,6 +427,122 @@
     .settings-group h4 { margin: 0 0 10px 0; font-size: 14px; color: #ddd; }
     #tab-settings .row { align-items: flex-start; gap: 16px; margin-bottom: 10px; }
     #tab-settings .row:last-child { margin-bottom: 0; }
+    .settings-page-title {
+      font-size: 1.35rem;
+      margin: 0 0 8px 0;
+      color: #eef2ff;
+      letter-spacing: 0.02em;
+      font-weight: 650;
+    }
+    .settings-page-title--sub {
+      font-size: 1.15rem;
+      color: #d8dce8;
+      margin-top: 0;
+    }
+    #tab-settings .settings-group-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin: 0 0 14px 0;
+      padding-bottom: 10px;
+      border-bottom: 2px solid var(--settings-svc-line, #3a3f4d);
+    }
+    #tab-settings .settings-group-head h4 {
+      margin: 0;
+      font-size: 1.05rem;
+      font-weight: 650;
+      letter-spacing: 0.04em;
+      color: var(--settings-svc-heading, #e4e4e4);
+    }
+    .settings-group-icon { display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .settings-group-icon svg { display: block; }
+    .settings-group-eyebrow {
+      margin-left: auto;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: #6b7280;
+      font-weight: 700;
+    }
+    .settings-group--plex { --settings-svc-line: rgba(229, 160, 13, 0.5); --settings-svc-heading: #f0d080; }
+    .settings-group--plex .settings-group-icon { color: #e5a00d; }
+    .settings-group--brand { --settings-svc-line: rgba(167, 139, 250, 0.4); --settings-svc-heading: #ddd6fe; }
+    .settings-group--brand .settings-group-icon { color: #a78bfa; }
+    .settings-group--tmdb { --settings-svc-line: rgba(1, 210, 119, 0.45); --settings-svc-heading: #86efac; }
+    .settings-group--tmdb .settings-group-icon { color: #01d277; }
+    .settings-group--omdb { --settings-svc-line: rgba(234, 179, 8, 0.4); --settings-svc-heading: #fde047; }
+    .settings-group--omdb .settings-group-icon { color: #eab308; }
+    .settings-group--conn { --settings-svc-line: rgba(56, 189, 248, 0.35); --settings-svc-heading: #7dd3fc; }
+    .settings-group--conn .settings-group-icon { color: #38bdf8; }
+    .settings-group--data { --settings-svc-line: rgba(148, 163, 184, 0.4); --settings-svc-heading: #cbd5e1; }
+    .settings-group--data .settings-group-icon { color: #94a3b8; }
+    .settings-group--ui { --settings-svc-line: rgba(251, 146, 60, 0.35); --settings-svc-heading: #fdba74; }
+    .settings-group--ui .settings-group-icon { color: #fb923c; }
+    .settings-group--radarr { --settings-svc-line: rgba(0, 180, 216, 0.45); --settings-svc-heading: #a5f3fc; }
+    .settings-group--radarr .settings-group-icon { color: #00b4d8; }
+    #tab-settings .settings-field-label {
+      display: inline-block;
+      font-weight: 650;
+      font-size: 12px;
+      color: #9fb0d4;
+      letter-spacing: 0.03em;
+      margin-bottom: 4px;
+    }
+    #tab-settings .settings-input {
+      background: #101318;
+      border: 1px solid #3d4a63;
+      border-radius: 6px;
+      padding: 8px 10px;
+      color: #ececec;
+      font-size: 13px;
+      font-family: inherit;
+    }
+    #tab-settings .settings-input:focus {
+      outline: none;
+      border-color: #5c7ab8;
+      box-shadow: 0 0 0 1px rgba(92, 122, 184, 0.35);
+    }
+    #tab-settings select.settings-input {
+      padding: 7px 10px;
+      cursor: pointer;
+    }
+    .settings-secret-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      margin-top: 2px;
+    }
+    .settings-secret-row .settings-input {
+      flex: 1 1 220px;
+      min-width: 180px;
+      max-width: 440px;
+      font-family: ui-monospace, monospace;
+      font-size: 12px;
+    }
+    .settings-secret-btn {
+      font-size: 12px;
+      padding: 7px 12px;
+      border-radius: 6px;
+      border: 1px solid #3d4d66;
+      background: #1c2433;
+      color: #9ec0ff;
+      cursor: pointer;
+      font-family: inherit;
+      white-space: nowrap;
+    }
+    .settings-secret-btn:hover {
+      border-color: #5a7094;
+      color: #c8d9ff;
+    }
+    #tab-settings .settings-group--conn h5 {
+      margin: 14px 0 8px 0;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #64748b;
+    }
     .settings-cache-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
     .settings-cache-table th,
     .settings-cache-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #333; vertical-align: top; line-height: 1.4; }
@@ -1772,33 +1888,40 @@
 
   <section id="tab-settings" class="tab-panel">
     <div class="card">
-      <h3>Settings</h3>
-      <p class="muted">Environment values are loaded first. Save here to persist missing values between runs.</p>
+      <h3 class="settings-page-title">Settings</h3>
+      <p class="muted" style="max-width:52rem;line-height:1.45;">Environment variables load first on the server. Use this page to persist values between runs. Secret fields show only the start and end; use <strong>Copy</strong> for the full token.</p>
 
-      <div class="settings-group">
-        <h4>Plex</h4>
+      <div class="settings-group settings-group--plex">
+        <div class="settings-group-head">
+          <span class="settings-group-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none"><circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.4" opacity="0.55"/><path d="M10 7.5v9l7.5-4.5L10 7.5z" fill="currentColor"/></svg></span>
+          <h4>Plex</h4>
+          <span class="settings-group-eyebrow">Library &amp; TV</span>
+        </div>
       <div class="row">
         <div>
-          <label for="cfgPlexBase">Plex Base URL</label><br />
-          <input id="cfgPlexBase" placeholder="https://your-plex-host:32400" style="min-width: 360px;" />
+          <label class="settings-field-label" for="cfgPlexBase">Plex Base URL</label><br />
+          <input id="cfgPlexBase" class="settings-input" placeholder="https://your-plex-host:32400" style="min-width: 360px;" />
           <div class="small">Used for Plex API calls.</div>
         </div>
         <div>
-          <label for="cfgPlexToken">Plex Token</label><br />
-          <input id="cfgPlexToken" placeholder="X-Plex-Token" style="min-width: 360px;" />
+          <label class="settings-field-label" for="cfgPlexToken">Plex Token</label>
+          <div class="settings-secret-row">
+            <input id="cfgPlexToken" class="settings-input settings-secret-input" autocomplete="off" spellcheck="false" placeholder="X-Plex-Token" />
+            <button type="button" class="settings-secret-btn" data-secret-copy="cfgPlexToken" title="Copy full token">Copy</button>
+          </div>
           <div class="small">Account token for Plex authentication.</div>
         </div>
       </div>
 
       <div class="row">
         <div>
-          <label for="cfgLibraryKey">Plex Library Key</label><br />
-          <input id="cfgLibraryKey" placeholder="1" />
-          <div class="small">Movie section key, usually `1`.</div>
+          <label class="settings-field-label" for="cfgLibraryKey">Plex Library Key</label><br />
+          <input id="cfgLibraryKey" class="settings-input" placeholder="1" />
+          <div class="small">Movie section key, usually <code>1</code>.</div>
         </div>
         <div>
-          <label for="cfgTargetClient">Default Target Player</label><br />
-          <select id="cfgTargetClient" style="min-width: 280px;"></select>
+          <label class="settings-field-label" for="cfgTargetClient">Default Target Player</label><br />
+          <select id="cfgTargetClient" class="settings-input" style="min-width: 280px;"></select>
           <div class="small">Pick from detected players; this is used as fallback for play actions.</div>
         </div>
       </div>
@@ -1811,17 +1934,21 @@
       </div>
       </div>
 
-      <div class="settings-group">
-        <h4>Branding</h4>
+      <div class="settings-group settings-group--brand">
+        <div class="settings-group-head">
+          <span class="settings-group-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3c-4.5 0-8 3-8 7.5 0 3 2 5.5 5 6.5v2.5h6v-2.5c3-1 5-3.5 5-6.5 0-4.5-3.5-7.5-8-7.5z"/><path d="M9 14h6" stroke-linecap="round"/></svg></span>
+          <h4>Branding</h4>
+          <span class="settings-group-eyebrow">Look &amp; feel</span>
+        </div>
       <div class="row" style="margin-top:10px;">
         <div>
-          <label for="cfgAppDisplayName">App Header Name</label><br />
-          <input id="cfgAppDisplayName" placeholder="plex-smash-deck" style="min-width: 280px;" />
+          <label class="settings-field-label" for="cfgAppDisplayName">App Header Name</label><br />
+          <input id="cfgAppDisplayName" class="settings-input" placeholder="plex-smash-deck" style="min-width: 280px;" />
           <div class="small">Shown on the dashboard hero banner (over the image).</div>
         </div>
         <div>
-          <label for="cfgHeroBannerURL">Banner Image URL (optional)</label><br />
-          <input id="cfgHeroBannerURL" placeholder="https://.../banner.jpg" style="min-width: 360px;" />
+          <label class="settings-field-label" for="cfgHeroBannerURL">Banner Image URL (optional)</label><br />
+          <input id="cfgHeroBannerURL" class="settings-input" placeholder="https://.../banner.jpg" style="min-width: 360px;" />
         </div>
       </div>
       <p class="muted small" style="margin:10px 0 0 0; max-width:52rem; line-height:1.45;">
@@ -1830,8 +1957,8 @@
       </p>
       <div class="row" style="margin-top:2px;">
         <div>
-          <label for="cfgHeroBannerHeight">Banner Height (px)</label><br />
-          <input id="cfgHeroBannerHeight" type="number" min="80" max="420" value="140" style="width:120px;" />
+          <label class="settings-field-label" for="cfgHeroBannerHeight">Banner Height (px)</label><br />
+          <input id="cfgHeroBannerHeight" class="settings-input" type="number" min="80" max="420" value="140" style="width:120px;" />
           <div class="small">Recommended range: 100–220.</div>
         </div>
         <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;margin-top:22px;">
@@ -1841,31 +1968,48 @@
       </div>
       </div>
 
-      <div class="settings-group">
-        <h4>TMDB</h4>
+      <div class="settings-group settings-group--tmdb">
+        <div class="settings-group-head">
+          <span class="settings-group-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M3.5 9h4M3.5 15h4M16.5 9h4M16.5 15h4" stroke-linecap="round"/><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/></svg></span>
+          <h4>TMDB</h4>
+          <span class="settings-group-eyebrow">Discovery data</span>
+        </div>
       <div class="row">
         <div>
-          <label for="cfgTMDBKey">TMDB API Key (v3)</label><br />
-          <input id="cfgTMDBKey" placeholder="TMDB API Key" style="min-width: 360px;" />
+          <label class="settings-field-label" for="cfgTMDBKey">TMDB API Key (v3)</label>
+          <div class="settings-secret-row">
+            <input id="cfgTMDBKey" class="settings-input settings-secret-input" autocomplete="off" spellcheck="false" placeholder="TMDB API Key" />
+            <button type="button" class="settings-secret-btn" data-secret-copy="cfgTMDBKey" title="Copy full key">Copy</button>
+          </div>
           <div class="small">Used for discovery search and filmography lookup. <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener noreferrer">Get API key</a>.</div>
         </div>
         <div>
-          <label for="cfgTMDBReadToken">TMDB Read Access Token</label><br />
-          <input id="cfgTMDBReadToken" placeholder="TMDB Read Access Token" style="min-width: 360px;" />
+          <label class="settings-field-label" for="cfgTMDBReadToken">TMDB Read Access Token</label>
+          <div class="settings-secret-row">
+            <input id="cfgTMDBReadToken" class="settings-input settings-secret-input" autocomplete="off" spellcheck="false" placeholder="TMDB Read Access Token" />
+            <button type="button" class="settings-secret-btn" data-secret-copy="cfgTMDBReadToken" title="Copy full token">Copy</button>
+          </div>
           <div class="small">Optional token; kept for compatibility/future use. <a href="https://www.themoviedb.org/signup" target="_blank" rel="noopener noreferrer">Create TMDB account</a>.</div>
         </div>
       </div>
       </div>
 
-      <div class="settings-group">
-        <h4>OMDb (optional ratings)</h4>
+      <div class="settings-group settings-group--omdb">
+        <div class="settings-group-head">
+          <span class="settings-group-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M12 2l2.6 7.4H22l-6.2 4.5 2.4 7.1L12 16.9 5.8 20.9l2.4-7.1L2 9.4h7.4z"/></svg></span>
+          <h4>OMDb</h4>
+          <span class="settings-group-eyebrow">Optional ratings</span>
+        </div>
         <p class="muted small" style="margin:0 0 10px 0;max-width:52rem;line-height:1.45;">
           When enabled, Discovery uses the <strong>average of TMDB vote average and OMDb IMDb score</strong> (both on a 0–10 style scale) for sorting, filtering, and table display. That blends two communities’ ratings and can track closer to how you personally weight critic vs crowd scores. Requires a free API key from <a href="https://www.omdbapi.com/apikey.aspx" target="_blank" rel="noopener noreferrer">OMDb</a>. Responses are cached on disk under <code>data/omdb-cache/</code> (cleared with <strong>Clear TMDB cache</strong> on the Discovery tab). On the <strong>Dashboard</strong>, hovering a movie (after the usual delay) loads <strong>IMDb, Rotten Tomatoes, and Metacritic</strong> from OMDb when the title has a TMDB id from Plex, merges <strong>TMDB vote average</strong>, and updates the line under the title to show a combined <strong>Avg ★</strong> plus per-source pills.
         </p>
         <div class="row">
           <div>
-            <label for="cfgOMDbKey">OMDb API Key</label><br />
-            <input id="cfgOMDbKey" type="password" autocomplete="off" placeholder="OMDb API key" style="min-width: 360px;" data-testid="cfg-omdb-key" />
+            <label class="settings-field-label" for="cfgOMDbKey">OMDb API Key</label>
+            <div class="settings-secret-row">
+              <input id="cfgOMDbKey" class="settings-input settings-secret-input" autocomplete="off" spellcheck="false" placeholder="OMDb API key" data-testid="cfg-omdb-key" />
+              <button type="button" class="settings-secret-btn" data-secret-copy="cfgOMDbKey" title="Copy full key">Copy</button>
+            </div>
             <div class="small">Sent as <code>apikey=</code> on each request (see <a href="https://www.omdbapi.com/" target="_blank" rel="noopener noreferrer">omdbapi.com</a>).</div>
           </div>
           <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;margin-top:22px;">
@@ -1875,8 +2019,12 @@
         </div>
       </div>
 
-      <div class="settings-group">
-        <h4>Connectivity</h4>
+      <div class="settings-group settings-group--conn">
+        <div class="settings-group-head">
+          <span class="settings-group-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 12.5a7 7 0 0 1 14 0"/><path d="M8.5 12.5a3.5 3.5 0 0 1 7 0"/><circle cx="12" cy="12.5" r="1.2" fill="currentColor" stroke="none"/></svg></span>
+          <h4>Connectivity</h4>
+          <span class="settings-group-eyebrow">Health &amp; history</span>
+        </div>
         <p class="muted small" style="margin:0 0 10px 0;max-width:52rem;line-height:1.45;">
           Playback video goes <strong>directly from Plex to the TV</strong>; this app does not proxy the movie stream. Background checks run about every <strong>45s</strong> (internet, Plex <code>/identity</code>, TMDB, LG SSAP). Every <strong>~4 minutes</strong> the server also pulls a small <strong>ranged sample</strong> (up to 512&nbsp;KB) from one small library file to estimate Plex throughput. The Dashboard library hint caches Plex title count for <strong>90s</strong> to limit duplicate API calls. LG volume polls every 15s (TV only, not Plex).
           Last update: <strong id="connDetailUpdated">—</strong>
@@ -1937,8 +2085,12 @@
         </div>
       </div>
 
-      <div class="settings-group">
-        <h4>Maintaining caches</h4>
+      <div class="settings-group settings-group--data">
+        <div class="settings-group-head">
+          <span class="settings-group-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3 3 7 3s7-1.3 7-3V6"/><path d="M5 12v6c0 1.7 3 3 7 3s7-1.3 7-3v-6"/></svg></span>
+          <h4>Maintaining caches</h4>
+          <span class="settings-group-eyebrow">Disk &amp; memory</span>
+        </div>
         <p class="muted small" style="margin:0 0 8px 0;max-width:52rem;line-height:1.45;">
           On-disk paths are under the server’s <strong>working directory</strong> (shown below). <strong>TMDB / OMDb</strong> caches are cleared from the <strong>Discovery</strong> tab. The <strong>movie grid</strong> row reflects this browser’s saved copy (localStorage), not the server.
         </p>
@@ -1964,8 +2116,12 @@
         <p id="settingsCachesCwd" class="settings-cache-meta muted" data-testid="settings-caches-cwd" hidden></p>
       </div>
 
-      <div class="settings-group">
-        <h4>Dashboard genre bar</h4>
+      <div class="settings-group settings-group--ui">
+        <div class="settings-group-head">
+          <span class="settings-group-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 7h6v6H4zM14 7h6v4h-6zM4 15h16v4H4z"/></svg></span>
+          <h4>Dashboard genre bar</h4>
+          <span class="settings-group-eyebrow">This browser</span>
+        </div>
         <p class="muted small" style="margin:0 0 10px 0;max-width:52rem;line-height:1.45;">
           Quick filter chips above the movie grid default to <strong>Action</strong>, <strong>Comedy</strong>, <strong>Thriller</strong>, <strong>Adventure</strong>, and <strong>Science Fiction</strong> (including Sci‑Fi) when those genres exist in your library. Use <strong>Include any</strong> for OR-matching; <strong>Exclude if any</strong> hides titles that also have those genres (e.g. comedy but not documentary). Open <strong>More genres</strong> for <strong>+</strong> pin, <strong>⊘</strong> exclude, and <strong>−</strong>. Lists below are stored in this browser only.
         </p>
@@ -1994,8 +2150,12 @@
         </div>
       </div>
 
-      <div class="settings-group">
-        <h4>Radarr</h4>
+      <div class="settings-group settings-group--radarr">
+        <div class="settings-group-head">
+          <span class="settings-group-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v12M8 11l4 4 4-4"/><path d="M5 19h14" stroke-linecap="round"/></svg></span>
+          <h4>Radarr</h4>
+          <span class="settings-group-eyebrow">Add to library</span>
+        </div>
       <div class="row" style="margin-top:2px;">
         <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;">
           <input type="checkbox" id="cfgRadarrEnabled" style="width:16px;height:16px;" />
@@ -2005,26 +2165,29 @@
       <div id="radarrSettingsBlock">
       <div class="row">
         <div>
-          <label for="cfgRadarrURL">Radarr URL</label><br />
-          <input id="cfgRadarrURL" placeholder="http://radarr-host:7878" style="min-width: 360px;" />
+          <label class="settings-field-label" for="cfgRadarrURL">Radarr URL</label><br />
+          <input id="cfgRadarrURL" class="settings-input" placeholder="http://radarr-host:7878" style="min-width: 360px;" />
           <div class="small">Radarr server used for add/import automation.</div>
         </div>
         <div>
-          <label for="cfgRadarrAPIKey">Radarr API Key</label><br />
-          <input id="cfgRadarrAPIKey" placeholder="Radarr API Key" style="min-width: 360px;" />
-          <div class="small">Required for `/api/v3/movie` requests.</div>
+          <label class="settings-field-label" for="cfgRadarrAPIKey">Radarr API Key</label>
+          <div class="settings-secret-row">
+            <input id="cfgRadarrAPIKey" class="settings-input settings-secret-input" autocomplete="off" spellcheck="false" placeholder="Radarr API Key" />
+            <button type="button" class="settings-secret-btn" data-secret-copy="cfgRadarrAPIKey" title="Copy full key">Copy</button>
+          </div>
+          <div class="small">Required for <code>/api/v3/movie</code> requests.</div>
         </div>
       </div>
 
       <div class="row">
         <div>
-          <label for="cfgRadarrRoot">Radarr Root Folder</label><br />
-          <input id="cfgRadarrRoot" placeholder="/movies" style="min-width: 360px;" />
+          <label class="settings-field-label" for="cfgRadarrRoot">Radarr Root Folder</label><br />
+          <input id="cfgRadarrRoot" class="settings-input" placeholder="/movies" style="min-width: 360px;" />
           <div class="small">Root folder path where Radarr stores movies.</div>
         </div>
         <div>
-          <label for="cfgRadarrProfile">Radarr Profile ID</label><br />
-          <input id="cfgRadarrProfile" placeholder="1" />
+          <label class="settings-field-label" for="cfgRadarrProfile">Radarr Profile ID</label><br />
+          <input id="cfgRadarrProfile" class="settings-input" placeholder="1" />
           <div class="small">Quality profile ID used on add.</div>
         </div>
       </div>
@@ -2035,7 +2198,7 @@
     </div>
 
     <div class="card" style="margin-top:1rem;">
-      <h3>Snapshot Schedule</h3>
+      <h3 class="settings-page-title settings-page-title--sub">Snapshot schedule</h3>
       <p class="muted">The server takes one automatic snapshot per day and skips it silently if the movie count hasn't changed since the previous snapshot.</p>
       <div class="row" style="align-items:flex-start;gap:2rem;">
         <div>
@@ -5920,6 +6083,77 @@
       if (addSelectedBtn) addSelectedBtn.classList.toggle('hidden', !enabled);
     }
 
+    const settingsSecretStore = new Map();
+
+    function maskSecretString(s) {
+      const t = String(s || '');
+      if (!t) return '';
+      const head = t.length > 40 ? 6 : 4;
+      const tail = t.length > 40 ? 6 : 4;
+      if (t.length <= head + tail) {
+        if (t.length <= 2) return '•'.repeat(t.length);
+        return `${t.slice(0, 1)}${'•'.repeat(Math.max(2, t.length - 2))}${t.slice(-1)}`;
+      }
+      return `${t.slice(0, head)} … ${t.slice(-tail)}`;
+    }
+
+    function setSettingsSecretDisplay(id, raw) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const v = raw == null ? '' : String(raw);
+      settingsSecretStore.set(id, v);
+      el.value = maskSecretString(v);
+      el.dataset.secretMasked = '1';
+    }
+
+    function getSettingsSecretValue(id) {
+      const el = document.getElementById(id);
+      if (!el) return '';
+      if (el.dataset.secretMasked === '1') return settingsSecretStore.get(id) || '';
+      return String(el.value || '').trim();
+    }
+
+    function initSettingsSecretFields() {
+      const ids = ['cfgPlexToken', 'cfgTMDBKey', 'cfgTMDBReadToken', 'cfgOMDbKey', 'cfgRadarrAPIKey'];
+      for (const id of ids) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        el.addEventListener('focus', () => {
+          if (el.dataset.secretMasked === '1') {
+            el.value = settingsSecretStore.get(id) || '';
+            el.dataset.secretMasked = '0';
+          }
+        });
+        el.addEventListener('blur', () => {
+          const v = String(el.value || '');
+          settingsSecretStore.set(id, v);
+          el.value = maskSecretString(v);
+          el.dataset.secretMasked = '1';
+        });
+        el.addEventListener('input', () => {
+          if (el.dataset.secretMasked !== '1') {
+            settingsSecretStore.set(id, String(el.value || ''));
+          }
+        });
+      }
+      document.querySelectorAll('[data-secret-copy]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const id = btn.getAttribute('data-secret-copy');
+          const text = settingsSecretStore.get(id) || '';
+          try {
+            await navigator.clipboard.writeText(text);
+            const prev = btn.textContent;
+            btn.textContent = 'Copied';
+            setTimeout(() => {
+              btn.textContent = prev;
+            }, 1600);
+          } catch (err) {
+            setStatus('settingsStatus', `Copy failed: ${err.message}`, false);
+          }
+        });
+      });
+    }
+
     async function loadSettings() {
       try {
         const cfg = await apiJson('/api/settings');
@@ -5935,7 +6169,7 @@
           RadarrEnabled: !!radarrEnabled,
         };
         document.getElementById('cfgPlexBase').value = cfg.PlexBaseURL || '';
-        document.getElementById('cfgPlexToken').value = cfg.PlexToken || '';
+        setSettingsSecretDisplay('cfgPlexToken', cfg.PlexToken || '');
         document.getElementById('cfgLibraryKey').value = cfg.LibraryKey || '1';
         renderTargetClientSelect(cfg.TargetClientName || 'Living Room');
         document.getElementById('cfgAutoTargetDetected').checked = !!cfg.AutoTargetDetected;
@@ -5943,15 +6177,14 @@
         document.getElementById('cfgHeroBannerURL').value = cfg.HeroBannerURL || '';
         document.getElementById('cfgHeroBannerHeight').value = Number(cfg.HeroBannerHeight || 140);
         document.getElementById('cfgHeroBannerHidden').checked = !!cfg.HeroBannerHidden;
-        document.getElementById('cfgTMDBKey').value = cfg.TMDBAPIKey || '';
-        document.getElementById('cfgTMDBReadToken').value = cfg.TMDBReadToken || '';
-        const omdbKey = document.getElementById('cfgOMDbKey');
+        setSettingsSecretDisplay('cfgTMDBKey', cfg.TMDBAPIKey || '');
+        setSettingsSecretDisplay('cfgTMDBReadToken', cfg.TMDBReadToken || '');
         const omdbBlend = document.getElementById('cfgOMDbBlend');
-        if (omdbKey) omdbKey.value = cfg.OMDbAPIKey || '';
+        setSettingsSecretDisplay('cfgOMDbKey', cfg.OMDbAPIKey || '');
         if (omdbBlend) omdbBlend.checked = !!cfg.OMDbBlendRatings;
         document.getElementById('cfgRadarrEnabled').checked = !!radarrEnabled;
         document.getElementById('cfgRadarrURL').value = cfg.RadarrURL || '';
-        document.getElementById('cfgRadarrAPIKey').value = cfg.RadarrAPIKey || '';
+        setSettingsSecretDisplay('cfgRadarrAPIKey', cfg.RadarrAPIKey || '');
         document.getElementById('cfgRadarrRoot').value = cfg.RadarrRootFolder || '';
         document.getElementById('cfgRadarrProfile').value = cfg.RadarrProfileID || 1;
         document.getElementById('cfgSnapshotEnabled').checked = !cfg.SnapshotDisabled;
@@ -6820,7 +7053,7 @@
         const payload = {
           Port: '8081',
           PlexBaseURL: document.getElementById('cfgPlexBase').value.trim(),
-          PlexToken: document.getElementById('cfgPlexToken').value.trim(),
+          PlexToken: getSettingsSecretValue('cfgPlexToken'),
           LibraryKey: document.getElementById('cfgLibraryKey').value.trim(),
           TargetClientName: targetClient,
           AutoTargetDetected: autoTargetDetected,
@@ -6828,13 +7061,13 @@
           HeroBannerURL: document.getElementById('cfgHeroBannerURL').value.trim(),
           HeroBannerHeight: Number(document.getElementById('cfgHeroBannerHeight').value || '140'),
           HeroBannerHidden: document.getElementById('cfgHeroBannerHidden').checked,
-          TMDBAPIKey: document.getElementById('cfgTMDBKey').value.trim(),
-          TMDBReadToken: document.getElementById('cfgTMDBReadToken').value.trim(),
-          OMDbAPIKey: (document.getElementById('cfgOMDbKey') && document.getElementById('cfgOMDbKey').value.trim()) || '',
+          TMDBAPIKey: getSettingsSecretValue('cfgTMDBKey'),
+          TMDBReadToken: getSettingsSecretValue('cfgTMDBReadToken'),
+          OMDbAPIKey: getSettingsSecretValue('cfgOMDbKey'),
           OMDbBlendRatings: !!(document.getElementById('cfgOMDbBlend') && document.getElementById('cfgOMDbBlend').checked),
           RadarrEnabled: radarrEnabled,
           RadarrURL: document.getElementById('cfgRadarrURL').value.trim(),
-          RadarrAPIKey: document.getElementById('cfgRadarrAPIKey').value.trim(),
+          RadarrAPIKey: getSettingsSecretValue('cfgRadarrAPIKey'),
           RadarrRootFolder: document.getElementById('cfgRadarrRoot').value.trim(),
           RadarrProfileID: Number(document.getElementById('cfgRadarrProfile').value || '1'),
           SnapshotDisabled: !document.getElementById('cfgSnapshotEnabled').checked,
@@ -6879,6 +7112,7 @@
     startLibraryCachePoll();
     loadGenres();
     loadDiscoveryTmdbGenres();
+    initSettingsSecretFields();
     loadSettings();
     loadPlayers();
     startLgVolumePoll();
