@@ -10,7 +10,7 @@ It turned into something a bit bigger than that.
 
 ## Screenshots
 
-This section is generated from [`images/manifest.json`](images/manifest.json). Add files under [`images/`](images/) and list them there, then run:
+This section is generated automatically. **Dashboard grids:** add files under [`images/`](images/) and list them in [`images/manifest.json`](images/manifest.json). **Doc images:** place files under [`docs/images/`](docs/images/) with a sidecar `{name}.meta.json` next to each `{name}.png` (see [`docs/images/image.meta.json`](docs/images/image.meta.json)). Run:
 
 ```bash
 ./scripts/generate-readme-images.sh
@@ -19,6 +19,10 @@ This section is generated from [`images/manifest.json`](images/manifest.json). A
 ![Dashboard: search, Recently added to Plex sort, genre chips, and movie cards](images/dashboard-movie-grid.png)
 
 ![Dashboard: sort dropdown, decade filter, genre tags, Select All, Playback path, Play Selected, and cards with file-size coloring](images/dashboard-sort-controls.png)
+
+![Dashboard hover: blended TMDB and OMDb ratings with overall average](docs/images/image.png)
+
+After the hover delay, the panel merges **TMDB vote average** with **OMDb** (IMDb, Rotten Tomatoes, Metacritic) into one **Avg ★** line and shows per-source pills so you can see both the combined score and each provider at a glance.
 
 <!-- readme-gallery:end -->
 
@@ -119,7 +123,8 @@ Tagged releases now also publish a Windows NSIS installer (`*-windows-x64-setup.
 Go standard library backend, vanilla JS frontend, single binary. No web framework, no JavaScript framework, no database. Movie metadata is cached in memory and on disk so Plex takes as few hits as possible.
 
 ```
-images/                 — README screenshots ([`manifest.json`](images/manifest.json)); run `npm run gen:readme`
+images/                 — README dashboard screenshots ([`manifest.json`](images/manifest.json))
+docs/images/           — README doc figures; `{name}.meta.json` per `{name}.png` (same generator)
 cmd/plex-dashboard/     — entry point
 internal/plexdash/
   server.go             — HTTP routes, shared in-memory movie list (invalidated on refresh / snapshot)
