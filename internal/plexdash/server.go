@@ -417,6 +417,7 @@ func (s *Server) Routes() http.Handler {
 
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/connectivity", s.handleConnectivity)
+	mux.HandleFunc("/api/settings/caches", s.handleSettingsCaches)
 	mux.HandleFunc("/api/settings", s.handleSettings)
 	// Register /api/movies/* before /api/movies so path matching is unambiguous across Go versions.
 	mux.HandleFunc("/api/movies/hover-meta", s.handleMoviesHoverMeta)
