@@ -3,6 +3,7 @@ package plexdash
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -63,6 +64,7 @@ func (s *Server) runConnectivityProbe(ctx context.Context) {
 		probeInternet(tctx),
 		probePlex(tctx, cfg),
 		probeTMDB(tctx, cfg),
+		probeOMDb(tctx, cfg),
 		probeLG(tctx, cfg),
 	}
 	cancel()
@@ -252,6 +254,52 @@ func probeTMDB(ctx context.Context, cfg Config) ConnectivityCheck {
 			Message:   "TMDB API reachable",
 			LatencyMs: time.Since(t0).Milliseconds(),
 		}
+	}
+}
+
+func probeOMDb(ctx context.Context, cfg Config) ConnectivityCheck {
+	const id = "omdb"
+	label := "OMDb API"
+	key := strings.TrimSpace(cfg.OMDbAPIKey)
+	if key == "" {
+		return ConnectivityCheck{ID: id, Label: label, Level: "skip", Message: "OMDb API key not configured (optional)"}
+	}
+	t0 := time.Now()
+	u := "https://www.omdbapi.com/?i=tt3896198&apikey=" + url.QueryEscape(key)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return ConnectivityCheck{ID: id, Label: label, Level: "error", Message: err.Error(), LatencyMs: time.Since(t0).Milliseconds()}
+	}
+	client := &http.Client{Timeout: 6 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return ConnectivityCheck{ID: id, Label: label, Level: "error", Message: err.Error(), LatencyMs: time.Since(t0).Milliseconds()}
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return ConnectivityCheck{
+			ID: id, Label: label, Level: "warn",
+			Message:   fmt.Sprintf("HTTP %d", resp.StatusCode),
+			LatencyMs: time.Since(t0).Milliseconds(),
+		}
+	}
+	var out struct {
+		Response string `json:"Response"`
+		Error    string `json:"Error"`
+	}
+	_ = json.Unmarshal(body, &out)
+	if strings.EqualFold(out.Response, "False") {
+		msg := strings.TrimSpace(out.Error)
+		if msg == "" {
+			msg = "OMDb returned Response=False"
+		}
+		return ConnectivityCheck{ID: id, Label: label, Level: "warn", Message: msg, LatencyMs: time.Since(t0).Milliseconds()}
+	}
+	return ConnectivityCheck{
+		ID: id, Label: label, Level: "ok",
+		Message:   "OMDb API reachable",
+		LatencyMs: time.Since(t0).Milliseconds(),
 	}
 }
 

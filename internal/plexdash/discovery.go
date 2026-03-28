@@ -398,6 +398,19 @@ func AnalyzeFilmography(ctx context.Context, cfg Config, plex *PlexClient, plexM
 			posterURL = tmdbPosterURLFromPath(rawPosterPath)
 		}
 
+		imdbID := ""
+		if hasDet && det.OK {
+			imdbID = strings.TrimSpace(det.IMDbID)
+		}
+		if cfg.OMDbBlendRatings && strings.TrimSpace(cfg.OMDbAPIKey) != "" && imdbID == "" {
+			if ex, err := tmdbMovieExternalIDsCached(ctx, cfg.TMDBAPIKey, credit.ID, cache); err == nil {
+				imdbID = strings.TrimSpace(ex)
+			}
+		}
+		if cfg.OMDbBlendRatings && strings.TrimSpace(cfg.OMDbAPIKey) != "" {
+			vote = blendVoteWithOMDb(ctx, cfg, vote, imdbID)
+		}
+
 		// Drop documentaries, TV movies, news, making-of extras, and any film
 		// whose overview mentions "documentary".
 		if excludedFromDiscovery(credit.Title, overview, genres) {
@@ -438,6 +451,20 @@ func AnalyzeFilmography(ctx context.Context, cfg Config, plex *PlexClient, plexM
 	sortDiscoveryItems(items)
 
 	return items, nil
+}
+
+func filterDiscoveryItemsByMinVote(items []DiscoveryItem, minVoteAverage float64) []DiscoveryItem {
+	effectiveMin := discoveryEffectiveMinVote(minVoteAverage)
+	if effectiveMin <= 0 {
+		return items
+	}
+	out := make([]DiscoveryItem, 0, len(items))
+	for _, it := range items {
+		if it.VoteAverage+1e-9 >= effectiveMin {
+			out = append(out, it)
+		}
+	}
+	return out
 }
 
 func mergePosterRawPath(credit tmdbCredit, det fetchedMovieDetails, hasDet bool) string {
@@ -521,6 +548,7 @@ type fetchedMovieDetails struct {
 	PosterURL        string
 	PosterPath       string // raw TMDB poster_path
 	OriginalLanguage string // ISO 639-1, e.g. "en", "fr", "it"
+	IMDbID           string // from TMDB external_ids when present (e.g. tt1234567)
 }
 
 func uniqueMovieIDs(credits []tmdbCredit) []int {
@@ -584,6 +612,7 @@ func fetchMovieDetailsBatch(ctx context.Context, apiKey string, ids []int, cache
 				PosterURL:        d.PosterURL,
 				PosterPath:       strings.TrimSpace(d.PosterPath),
 				OriginalLanguage: d.OriginalLanguage,
+				IMDbID:           d.IMDbID,
 			}
 			out[movieID] = det
 			cache.putMovieDetails(movieID, det)
@@ -601,6 +630,7 @@ type tmdbMovieDetailsResult struct {
 	PosterURL        string
 	PosterPath       string
 	OriginalLanguage string
+	IMDbID           string
 }
 
 func tmdbFetchMovieDetails(ctx context.Context, apiKey string, movieID int) (tmdbMovieDetailsResult, error) {
@@ -608,6 +638,7 @@ func tmdbFetchMovieDetails(ctx context.Context, apiKey string, movieID int) (tmd
 	endpoint := fmt.Sprintf("https://api.themoviedb.org/3/movie/%d", movieID)
 	q := url.Values{}
 	q.Set("api_key", apiKey)
+	q.Set("append_to_response", "external_ids")
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?"+q.Encode(), nil)
 	if err != nil {
 		return empty, err
@@ -629,6 +660,9 @@ func tmdbFetchMovieDetails(ctx context.Context, apiKey string, movieID int) (tmd
 		Genres           []struct {
 			Name string `json:"name"`
 		} `json:"genres"`
+		ExternalIDs struct {
+			IMDbID string `json:"imdb_id"`
+		} `json:"external_ids"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		return empty, err
@@ -650,7 +684,47 @@ func tmdbFetchMovieDetails(ctx context.Context, apiKey string, movieID int) (tmd
 		PosterURL:        posterURL,
 		PosterPath:       rawPath,
 		OriginalLanguage: strings.TrimSpace(body.OriginalLanguage),
+		IMDbID:           strings.TrimSpace(body.ExternalIDs.IMDbID),
 	}, nil
+}
+
+func tmdbFetchMovieExternalIDs(ctx context.Context, apiKey string, movieID int) (string, error) {
+	u := fmt.Sprintf("https://api.themoviedb.org/3/movie/%d/external_ids?api_key=%s", movieID, url.QueryEscape(apiKey))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("tmdb external_ids %d: status %s", movieID, resp.Status)
+	}
+	var body struct {
+		IMDbID string `json:"imdb_id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(body.IMDbID), nil
+}
+
+func tmdbMovieExternalIDsCached(ctx context.Context, apiKey string, movieID int, cache *diskDiscoveryCache) (string, error) {
+	if cache != nil {
+		if s, ok := cache.getMovieExternalIDs(movieID); ok {
+			return s, nil
+		}
+	}
+	s, err := tmdbFetchMovieExternalIDs(ctx, apiKey, movieID)
+	if err != nil {
+		return "", err
+	}
+	if cache != nil {
+		cache.putMovieExternalIDs(movieID, s)
+	}
+	return s, nil
 }
 
 type Collaborators struct {
@@ -1258,6 +1332,8 @@ func AnalyzeBrowse(ctx context.Context, cfg Config, _ *PlexClient, plexMovies []
 		label += fmt.Sprintf(" · ≥%.1f TMDB", v)
 	}
 	items := buildDiscoveryItemsFromTMDBDiscoverList(plexMovies, credits, label, minVoteAverage)
+	items = applyOMDbBlendToDiscoveryItems(ctx, cfg, items, cache)
+	items = filterDiscoveryItemsByMinVote(items, minVoteAverage)
 	return items, label, nil
 }
 
@@ -1288,6 +1364,8 @@ func AnalyzeStudio(ctx context.Context, cfg Config, _ *PlexClient, plexMovies []
 	}
 
 	items := buildDiscoveryItemsFromTMDBDiscoverList(plexMovies, credits, resolvedName, minVoteAverage)
+	items = applyOMDbBlendToDiscoveryItems(ctx, cfg, items, cache)
+	items = filterDiscoveryItemsByMinVote(items, minVoteAverage)
 	return items, resolvedName, nil
 }
 
