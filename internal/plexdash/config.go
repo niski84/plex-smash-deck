@@ -22,6 +22,9 @@ type Config struct {
 	HeroBannerHidden   bool
 	TMDBAPIKey         string
 	TMDBReadToken      string
+	// OMDb (Open Movie Database) — optional; used to blend ratings with TMDB in Discovery.
+	OMDbAPIKey       string
+	OMDbBlendRatings bool
 	RadarrEnabled      bool
 	RadarrURL          string
 	RadarrAPIKey       string
@@ -60,6 +63,8 @@ func LoadConfig() (Config, error) {
 		HeroBannerHidden:   getenv("HERO_BANNER_HIDDEN", "") == "1",
 		TMDBAPIKey:         os.Getenv("TMDB_API_KEY"),
 		TMDBReadToken:      os.Getenv("TMDB_READ_ACCESS_TOKEN"),
+		OMDbAPIKey:         os.Getenv("OMDB_API_KEY"),
+		OMDbBlendRatings:   getenv("OMDB_BLEND_RATINGS", "") == "1",
 		RadarrEnabled:      getenv("RADARR_ENABLED", "") == "1",
 		RadarrURL:          strings.TrimRight(os.Getenv("RADARR_URL"), "/"),
 		RadarrAPIKey:       os.Getenv("RADARR_API_KEY"),
@@ -226,6 +231,15 @@ func mergeMissingConfig(dst *Config, src Config) {
 	}
 	if dst.TMDBReadToken == "" {
 		dst.TMDBReadToken = src.TMDBReadToken
+	}
+	if dst.OMDbAPIKey == "" {
+		dst.OMDbAPIKey = src.OMDbAPIKey
+	}
+	// Avoid wiping OMDB_BLEND_RATINGS from .env when older saved settings omit OMDb fields (JSON false).
+	if strings.TrimSpace(src.OMDbAPIKey) != "" {
+		dst.OMDbBlendRatings = src.OMDbBlendRatings
+	} else if src.OMDbBlendRatings {
+		dst.OMDbBlendRatings = true
 	}
 	dst.RadarrEnabled = src.RadarrEnabled
 	if dst.RadarrURL == "" {

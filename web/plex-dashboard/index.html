@@ -630,6 +630,17 @@
       font-size: 13px;
     }
     .movies-search:focus { outline: none; border-color: #4f7cff; }
+    .movies-rating-filter {
+      padding: 6px 10px;
+      background: #0d0f18;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #eee;
+      font-size: 13px;
+      min-width: 130px;
+      cursor: pointer;
+    }
+    .movies-rating-filter:focus { outline: none; border-color: #4f7cff; }
     .movies-count-badge {
       font-size: 12px;
       color: #888;
@@ -1117,6 +1128,16 @@
       <div class="movies-filter-stack">
         <div class="movies-toolbar">
           <input type="search" id="movieSearch" class="movies-search" placeholder="Search by title, actor, or director…" data-testid="movie-search" />
+          <label for="movieRatingFilter" class="muted" style="font-size:12px;white-space:nowrap;align-self:center;">Min rating</label>
+          <select id="movieRatingFilter" class="movies-rating-filter" title="Plex aggregate rating (0–10). Titles without a rating are hidden when a minimum is set." data-testid="movie-rating-filter">
+            <option value="">Any</option>
+            <option value="9">9.0+</option>
+            <option value="8">8.0+</option>
+            <option value="7">7.0+</option>
+            <option value="6">6.0+</option>
+            <option value="5">5.0+</option>
+            <option value="4">4.0+</option>
+          </select>
           <span id="movieCount" class="movies-count-badge" data-testid="movie-count">0 movies</span>
           <button id="movieSelectAllBtn" style="font-size:12px;">Select All</button>
           <button id="moviePlaySelectedBtn" class="movies-play-selected-btn" disabled data-testid="movie-play-selected">▶ Play Selected (0)</button>
@@ -1236,7 +1257,7 @@
         <input id="discoverMaxYear" placeholder="Max Year (optional)" style="width: 170px;" />
       </div>
       <div class="row" style="margin-top: 8px;">
-        <label for="discoverMinRating">Min TMDB rating</label>
+        <label for="discoverMinRating">Min rating (TMDB, or TMDB+OMDb avg if enabled in Settings)</label>
         <label for="discoverGenreIds" style="align-self:center;">Genres (optional)</label>
         <select id="discoverGenreIds" data-testid="discover-genre-ids" multiple size="5" style="min-width:200px;max-width:min(360px,100%);" title="Hold Ctrl/Cmd to select multiple. Matches TMDB genres (any selected).">
         </select>
@@ -1473,6 +1494,24 @@
           <div class="small">Optional token; kept for compatibility/future use. <a href="https://www.themoviedb.org/signup" target="_blank" rel="noopener noreferrer">Create TMDB account</a>.</div>
         </div>
       </div>
+      </div>
+
+      <div class="settings-group">
+        <h4>OMDb (optional ratings)</h4>
+        <p class="muted small" style="margin:0 0 10px 0;max-width:52rem;line-height:1.45;">
+          When enabled, Discovery uses the <strong>average of TMDB vote average and OMDb IMDb score</strong> (both on a 0–10 style scale) for sorting, filtering, and table display. That blends two communities’ ratings and can track closer to how you personally weight critic vs crowd scores. Requires a free API key from <a href="https://www.omdbapi.com/apikey.aspx" target="_blank" rel="noopener noreferrer">OMDb</a>. Responses are cached on disk under <code>data/omdb-cache/</code> (cleared with <strong>Clear TMDB cache</strong> on the Discovery tab).
+        </p>
+        <div class="row">
+          <div>
+            <label for="cfgOMDbKey">OMDb API Key</label><br />
+            <input id="cfgOMDbKey" type="password" autocomplete="off" placeholder="OMDb API key" style="min-width: 360px;" data-testid="cfg-omdb-key" />
+            <div class="small">Sent as <code>apikey=</code> on each request (see <a href="https://www.omdbapi.com/" target="_blank" rel="noopener noreferrer">omdbapi.com</a>).</div>
+          </div>
+          <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;margin-top:22px;">
+            <input type="checkbox" id="cfgOMDbBlend" style="width:16px;height:16px;" data-testid="cfg-omdb-blend" />
+            Blend OMDb + TMDB ratings in Discovery
+          </label>
+        </div>
       </div>
 
       <div class="settings-group">
@@ -2117,15 +2156,33 @@
       return false;
     }
 
+    function dashboardMinRatingFilter() {
+      const raw = (document.getElementById('movieRatingFilter')?.value || '').trim();
+      if (!raw) return 0;
+      const n = Number(raw);
+      return Number.isFinite(n) ? n : 0;
+    }
+
+    function movieMeetsRatingFilter(movie) {
+      const min = dashboardMinRatingFilter();
+      if (min <= 0) return true;
+      const r = Number(movie && (movie.Rating != null ? movie.Rating : movie.rating));
+      if (!Number.isFinite(r) || r <= 0) return false;
+      return r + 1e-9 >= min;
+    }
+
     function filterMovieCardsSync() {
       const grid = document.getElementById('movieGrid');
       const q = (document.getElementById('movieSearch')?.value || '').trim().toLowerCase();
       const genreOn = selectedDashboardGenres.size > 0;
+      const ratingMin = dashboardMinRatingFilter();
+      const ratingOn = ratingMin > 0;
       let shown = 0;
       for (const entry of allCardData) {
         const genreOk = movieMatchesGenreBubbles(entry.movie);
         const textOk = !q || entry.searchText.includes(q);
-        const matches = genreOk && textOk;
+        const ratingOk = movieMeetsRatingFilter(entry.movie);
+        const matches = genreOk && textOk && ratingOk;
         entry.el.hidden = !matches;
         if (matches) shown++;
       }
@@ -2148,14 +2205,14 @@
         movieGridOrderIsSearchSorted = false;
         grid.scrollTop = 0;
       }
-      updateMovieCountDisplay(q, shown, genreOn);
+      updateMovieCountDisplay(q, shown, genreOn, ratingOn);
     }
 
     // Show/hide materialized cards. When there is a search query, the full library
     // is materialized first so matches are not limited to the first scroll chunk.
     function filterMovieCards() {
       const q = (document.getElementById('movieSearch')?.value || '').trim().toLowerCase();
-      const needFullLibrary = !!(q || selectedDashboardGenres.size > 0);
+      const needFullLibrary = !!(q || selectedDashboardGenres.size > 0 || dashboardMinRatingFilter() > 0);
       const run = async () => {
         if (needFullLibrary) await ensureAllMoviesMaterialized();
         requestAnimationFrame(() => filterMovieCardsSync());
@@ -2164,9 +2221,9 @@
       else requestAnimationFrame(() => filterMovieCardsSync());
     }
 
-    function updateMovieCountDisplay(q, shown, genreOn) {
+    function updateMovieCountDisplay(q, shown, genreOn, ratingOn) {
       const total = moviesAll.length;
-      const filtering = !!(q || genreOn);
+      const filtering = !!(q || genreOn || ratingOn);
       if (!filtering) {
         const mat = moviesMaterializedCount;
         if (mat < total && mat > 0) {
@@ -4228,6 +4285,10 @@
         document.getElementById('cfgHeroBannerHidden').checked = !!cfg.HeroBannerHidden;
         document.getElementById('cfgTMDBKey').value = cfg.TMDBAPIKey || '';
         document.getElementById('cfgTMDBReadToken').value = cfg.TMDBReadToken || '';
+        const omdbKey = document.getElementById('cfgOMDbKey');
+        const omdbBlend = document.getElementById('cfgOMDbBlend');
+        if (omdbKey) omdbKey.value = cfg.OMDbAPIKey || '';
+        if (omdbBlend) omdbBlend.checked = !!cfg.OMDbBlendRatings;
         document.getElementById('cfgRadarrEnabled').checked = !!radarrEnabled;
         document.getElementById('cfgRadarrURL').value = cfg.RadarrURL || '';
         document.getElementById('cfgRadarrAPIKey').value = cfg.RadarrAPIKey || '';
@@ -4661,7 +4722,7 @@
       else if (overall === 'warn') sumEl.classList.add('connectivity-summary--warn');
 
       const checks = Array.isArray(data.checks) ? data.checks : [];
-      const abbr = { internet: 'Net', plex: 'Plex', tmdb: 'TMDB', lgtv: 'LG' };
+      const abbr = { internet: 'Net', plex: 'Plex', tmdb: 'TMDB', omdb: 'OMDb', lgtv: 'LG' };
       const pills = checks.map((c) => {
         const cls = levelToDotClass(c.level);
         const tip = `${c.label}: ${c.message}`;
@@ -4899,6 +4960,8 @@
           HeroBannerHidden: document.getElementById('cfgHeroBannerHidden').checked,
           TMDBAPIKey: document.getElementById('cfgTMDBKey').value.trim(),
           TMDBReadToken: document.getElementById('cfgTMDBReadToken').value.trim(),
+          OMDbAPIKey: (document.getElementById('cfgOMDbKey') && document.getElementById('cfgOMDbKey').value.trim()) || '',
+          OMDbBlendRatings: !!(document.getElementById('cfgOMDbBlend') && document.getElementById('cfgOMDbBlend').checked),
           RadarrEnabled: radarrEnabled,
           RadarrURL: document.getElementById('cfgRadarrURL').value.trim(),
           RadarrAPIKey: document.getElementById('cfgRadarrAPIKey').value.trim(),
@@ -4980,6 +5043,10 @@
       clearTimeout(searchDebounceTimer);
       filterMovieCards();
     });
+    const movieRatingFilterEl = document.getElementById('movieRatingFilter');
+    if (movieRatingFilterEl) {
+      movieRatingFilterEl.addEventListener('change', () => filterMovieCards());
+    }
 
     document.getElementById('movieGenreClearBtn').addEventListener('click', () => {
       selectedDashboardGenres.clear();

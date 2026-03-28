@@ -295,6 +295,7 @@ type cachedMovieDetails struct {
 	PosterURL        string   `json:"posterUrl"`
 	PosterPath       string   `json:"posterPath"` // raw TMDB poster_path (e.g. /x.jpg)
 	OriginalLanguage string   `json:"originalLanguage,omitempty"`
+	IMDbID           string   `json:"imdbId,omitempty"`
 }
 
 func movieDetailsCacheFile(movieID int) string {
@@ -325,6 +326,7 @@ func (d *diskDiscoveryCache) getMovieDetails(movieID int) (fetchedMovieDetails, 
 		PosterURL:        c.PosterURL,
 		PosterPath:       strings.TrimSpace(c.PosterPath),
 		OriginalLanguage: c.OriginalLanguage,
+		IMDbID:           strings.TrimSpace(c.IMDbID),
 	}, true
 }
 
@@ -347,6 +349,52 @@ func (d *diskDiscoveryCache) putMovieDetails(movieID int, det fetchedMovieDetail
 		PosterURL:        det.PosterURL,
 		PosterPath:       det.PosterPath,
 		OriginalLanguage: det.OriginalLanguage,
+		IMDbID:           det.IMDbID,
+	}
+	_ = writeJSONAtomic(path, c)
+}
+
+// --- TMDB /movie/{id}/external_ids (IMDb id for OMDb, etc.) ---
+
+type cachedMovieExternalIDs struct {
+	cachedEnvelope
+	IMDbID string `json:"imdbId"`
+}
+
+func movieExternalIDsCacheFile(movieID int) string {
+	return fmt.Sprintf("movie-external-ids-%d.json", movieID)
+}
+
+func (d *diskDiscoveryCache) getMovieExternalIDs(movieID int) (string, bool) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	path := d.abs(movieExternalIDsCacheFile(movieID))
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", false
+	}
+	var c cachedMovieExternalIDs
+	if err := json.Unmarshal(b, &c); err != nil || c.Version != discoveryCacheJSONVersion {
+		return "", false
+	}
+	if c.expired() {
+		return "", false
+	}
+	return c.IMDbID, true
+}
+
+func (d *diskDiscoveryCache) putMovieExternalIDs(movieID int, imdbID string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_ = d.ensureDir()
+	path := d.abs(movieExternalIDsCacheFile(movieID))
+	c := cachedMovieExternalIDs{
+		cachedEnvelope: cachedEnvelope{
+			Version:    discoveryCacheJSONVersion,
+			CachedAt:   time.Now().UTC(),
+			TTLSeconds: int64(discoveryCacheMovieDetailsTTL / time.Second),
+		},
+		IMDbID: imdbID,
 	}
 	_ = writeJSONAtomic(path, c)
 }

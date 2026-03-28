@@ -1298,7 +1298,12 @@ func (s *Server) handleDiscoveryCacheInvalidate(w http.ResponseWriter, r *http.R
 		}
 		removed++
 	}
-	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"removed": removed}})
+	omdbN, omdbErr := RemoveAllOMDbCache()
+	if omdbErr != nil {
+		respondJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: omdbErr.Error()})
+		return
+	}
+	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"removed": removed, "omdbRemoved": omdbN}})
 }
 
 func (s *Server) handleDiscoveryPersonSuggest(w http.ResponseWriter, r *http.Request) {
