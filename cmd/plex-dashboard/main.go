@@ -16,8 +16,7 @@ func main() {
 		log.Fatalf("config error: %v", err)
 	}
 
-	uiRoot, err := plexdash.DashboardWebRoot()
-	if err != nil {
+	if err := plexdash.EnsureDashboardUI(); err != nil {
 		log.Fatalf("dashboard UI: %v", err)
 	}
 
@@ -36,7 +35,7 @@ func main() {
 	if wd, err := os.Getwd(); err == nil {
 		fmt.Printf("[BOOT] cwd=%s\n", wd)
 	}
-	fmt.Printf("[BOOT] dashboard UI: %s\n", uiRoot)
+	fmt.Printf("[BOOT] dashboard UI: %s\n", plexdash.DashboardUISource())
 	fmt.Printf("[BOOT] listening on %s — open http://127.0.0.1:%s/\n", addr, cfg.Port)
 	if err := http.ListenAndServe(addr, server.Routes()); err != nil {
 		log.Fatalf("listen %s: %v", addr, err)

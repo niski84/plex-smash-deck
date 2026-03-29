@@ -19,7 +19,7 @@ RUN apk add --no-cache ca-certificates tzdata wget \
 
 WORKDIR /app
 COPY --from=build /out/plex-dashboard /usr/local/bin/plex-dashboard
-COPY web/plex-dashboard ./web/plex-dashboard
+# UI is embedded in the binary (web/embed_ui.go); no separate web/ copy needed.
 
 RUN mkdir -p data && chown -R nonroot:nonroot /app
 
