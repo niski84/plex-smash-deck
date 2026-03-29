@@ -273,6 +273,21 @@ func (s *Server) cachedListMovies(ctx context.Context) ([]Movie, error) {
 	}
 	s.mlMu.RUnlock()
 
+	if movies, savedAt, ok := s.tryLoadLibraryMemoryFromDisk(cfg); ok {
+		s.mlMu.Lock()
+		if s.mlKey == cfg.LibraryKey && len(s.mlMovies) > 0 {
+			out := s.mlMovies
+			s.mlMu.Unlock()
+			return out, nil
+		}
+		s.mlMovies = movies
+		s.mlCachedAt = savedAt
+		s.mlKey = cfg.LibraryKey
+		s.mlMu.Unlock()
+		fmt.Printf("[library-cache] restored %d title(s) from disk (%s, saved %s)\n", len(movies), libraryMemoryCachePath(), savedAt.UTC().Format(time.RFC3339))
+		return movies, nil
+	}
+
 	client := NewPlexClient(cfg)
 	movies, err := client.ListMovies(ctx, cfg.LibraryKey)
 	if err != nil {
@@ -285,6 +300,8 @@ func (s *Server) cachedListMovies(ctx context.Context) ([]Movie, error) {
 	s.mlKey = cfg.LibraryKey
 	s.mlMu.Unlock()
 
+	s.saveLibraryMemoryToDisk(cfg, movies)
+
 	return movies, nil
 }
 
@@ -293,6 +310,7 @@ func (s *Server) invalidateMovieListCache() {
 	s.mlMu.Lock()
 	s.mlMovies = nil
 	s.mlMu.Unlock()
+	s.removeLibraryMemoryDiskCache()
 	s.invalidatePlexStreamProbe()
 }
 
@@ -1067,6 +1085,8 @@ func (s *Server) handleMoviesSyncRecent(w http.ResponseWriter, r *http.Request) 
 	s.mlCachedAt = time.Now()
 	s.mlKey = cfg.LibraryKey
 	s.mlMu.Unlock()
+
+	s.saveLibraryMemoryToDisk(cfg, merged)
 
 	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{
 		"added":           len(newMovies),
