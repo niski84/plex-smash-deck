@@ -3796,19 +3796,31 @@
       await applyHeaderBranding();
     }
 
-    function hydrateMoviesFromCache() {
+    /** Prefer localStorage for instant paint; otherwise load from server (RAM, disk snapshot, or Plex). */
+    async function bootstrapMoviesOnPageLoad() {
       const cached = readMoviesCache();
-      if (!cached) {
-        setMoviesButtonLabel(false);
+      if (cached && Array.isArray(cached.movies) && cached.movies.length > 0) {
+        try {
+          await renderMovies(cached.movies);
+          setMoviesButtonLabel(true);
+          const ageMs = cached.savedAt ? Date.now() - cached.savedAt : Infinity;
+          const ageMin = Math.round(ageMs / 60000);
+          setStatus(
+            'movieStatus',
+            `Loaded from browser cache (${ageMin}m ago). Use Refresh Movies to sync with Plex if needed.`,
+            true
+          );
+          updateLibraryCacheHint();
+          console.debug('[plexdash][movies] hydrated from localStorage', cached.movies.length);
+        } catch (err) {
+          console.error('[Plex Dashboard] bootstrapMoviesOnPageLoad localStorage', err);
+          await loadMovies(false);
+        }
         return;
       }
-      renderMovies(cached.movies || []).then(() => {
-        setMoviesButtonLabel(true);
-        const ageMs = cached.savedAt ? Date.now() - cached.savedAt : Infinity;
-        const ageMin = Math.round(ageMs / 60000);
-        setStatus('movieStatus', `Loaded from browser cache (${ageMin}m ago). Use Refresh Movies on the Dashboard to pull Plex again.`, true);
-        updateLibraryCacheHint();
-      }).catch(err => console.error('[Plex Dashboard] hydrateMoviesFromCache', err));
+      setMoviesButtonLabel(false);
+      console.debug('[plexdash][movies] no localStorage library; loading from server (/api/movies)');
+      await loadMovies(false);
     }
 
     function renderPersonSuggestions(names) {
@@ -7552,7 +7564,9 @@
     applyRadarrVisibility();
     syncSettingsGenreBarFields();
     applyMovieSortDecadeSelectsFromPrefs();
-    hydrateMoviesFromCache();
+    bootstrapMoviesOnPageLoad().catch((err) =>
+      console.error('[Plex Dashboard] bootstrapMoviesOnPageLoad', err)
+    );
     startLibraryCachePoll();
     loadGenres();
     loadDiscoveryTmdbGenres();
