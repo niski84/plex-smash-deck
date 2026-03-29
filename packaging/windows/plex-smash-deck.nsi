@@ -54,8 +54,9 @@ Section "Install Core Files" SecCore
   ; Replace bundled web UI cleanly (removes files dropped from a newer layout).
   RMDir /r "$INSTDIR\web"
 
-  ; app + static web assets
-  File /r "${SOURCE_DIR}\*.*"
+  ; app + static web assets (*.* skipped extensionless files; cwd is script dir unless CI passes abs paths)
+  File "${SOURCE_DIR}\plex-dashboard.exe"
+  File /r "${SOURCE_DIR}\web"
 
   ; helper launcher scripts
   FileOpen $0 "$INSTDIR\run-plex-smash-deck.bat" w

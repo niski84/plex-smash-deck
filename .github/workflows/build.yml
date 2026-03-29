@@ -109,15 +109,20 @@ jobs:
         shell: pwsh
         run: choco install nsis -y --no-progress
 
+      # makensis sets cwd to the script directory, so SOURCE_DIR/OUT_FILE must be absolute.
       - name: Build NSIS installer
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}"
+          $root = "${{ github.workspace }}"
+          $source = Join-Path $root "dist\winpkg"
+          $out = Join-Path $root "dist\plex-smash-deck-$version-windows-x64-setup.exe"
+          $script = Join-Path $root "packaging\windows\plex-smash-deck.nsi"
           & "C:\Program Files (x86)\NSIS\makensis.exe" `
             "/DAPP_VERSION=$version" `
-            "/DSOURCE_DIR=dist\winpkg" `
-            "/DOUT_FILE=dist\plex-smash-deck-$version-windows-x64-setup.exe" `
-            "packaging\windows\plex-smash-deck.nsi"
+            "/DSOURCE_DIR=$source" `
+            "/DOUT_FILE=$out" `
+            $script
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
