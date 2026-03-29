@@ -63,6 +63,22 @@
         0 2px 12px rgba(0, 0, 0, 0.75);
       box-shadow: 0 4px 28px rgba(0, 0, 0, 0.45);
     }
+    .hero-banner-movie-line {
+      display: block;
+      margin-top: 8px;
+      padding: 6px 12px;
+      border-radius: 8px;
+      background: rgba(10, 12, 20, 0.72);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #e2e8f0;
+      font-size: 0.82rem;
+      font-weight: 600;
+      max-width: min(520px, 92vw);
+      line-height: 1.35;
+    }
+    .hero-banner--fanart {
+      cursor: help;
+    }
     .tabs-row {
       display: flex;
       align-items: center;
@@ -1229,6 +1245,34 @@
     }
     .mip-plot-more:hover { color: #9bb4ff; }
     .mip-plot-more[hidden] { display: none !important; }
+    .mip-play-tv {
+      margin-top: 8px;
+      padding: 7px 12px;
+      border-radius: 8px;
+      border: none;
+      background: linear-gradient(180deg, #3b82f6, #1d4ed8);
+      color: #fff;
+      font-weight: 700;
+      font-size: 12px;
+      cursor: pointer;
+      width: 100%;
+    }
+    .mip-play-tv:hover { filter: brightness(1.06); }
+    .mip-play-tv[hidden] { display: none !important; }
+    .fanart-banner-log {
+      max-height: 16em;
+      overflow: auto;
+      margin: 8px 0;
+      padding: 10px 12px;
+      font-size: 11px;
+      line-height: 1.45;
+      background: #0a0d18;
+      border: 1px solid #1e2840;
+      border-radius: 8px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: ui-monospace, monospace;
+    }
     /* ── Snapshots Tab ─────────────────────────────────── */
     #snapshots-history { width: 100%; border-collapse: collapse; margin-top: 12px; }
     #snapshots-history th {
@@ -1455,6 +1499,7 @@
         <div class="mip-attrs"></div>
         <div class="mip-genres"></div>
         <div class="mip-actors"></div>
+        <button type="button" class="mip-play-tv" hidden data-testid="mip-play-tv">Play on TV</button>
       </div>
     </div>
     <div class="mip-plot-wrap">
@@ -1462,10 +1507,11 @@
       <button type="button" class="mip-plot-more" hidden>Show more</button>
     </div>
   </div>
-  <div class="hero-banner" id="heroBanner">
-    <img id="heroBannerImg" class="hero-banner-img" alt="" />
+  <div class="hero-banner" id="heroBanner" data-testid="hero-banner">
+    <img id="heroBannerImg" class="hero-banner-img" alt="" data-testid="hero-banner-img" />
     <div class="hero-banner-overlay">
       <span class="hero-banner-title" id="appDisplayName">plex-smash-deck</span>
+      <span class="hero-banner-movie-line" id="heroBannerMovieLine" hidden data-testid="hero-banner-movie-line"></span>
     </div>
   </div>
   <div class="tabs-row">
@@ -1959,13 +2005,75 @@
         <div>
           <label class="settings-field-label" for="cfgHeroBannerHeight">Banner Height (px)</label><br />
           <input id="cfgHeroBannerHeight" class="settings-input" type="number" min="80" max="420" value="140" style="width:120px;" />
-          <div class="small">Recommended range: 100–220.</div>
+          <div class="small">Recommended range: 100–220. Fanart images use <strong>object-fit: cover</strong> so wide backgrounds crop cleanly.</div>
         </div>
         <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;margin-top:22px;">
           <input type="checkbox" id="cfgHeroBannerHidden" style="width:16px;height:16px;" />
           Hide banner image
         </label>
       </div>
+      </div>
+
+      <div class="settings-group">
+        <h4>Fanart.tv (hero banner)</h4>
+        <p class="muted small" style="margin:0 0 10px 0;max-width:52rem;line-height:1.45;">
+          When enabled and <strong>Banner Image URL</strong> is left blank, the hero strip loads wide movie art from <a href="https://fanart.tv/" target="_blank" rel="noopener noreferrer">fanart.tv</a> (requires a TMDB id on the Plex item). Titles are ordered by <strong>most played</strong> first, then <strong>newest added to the library</strong>. Downloaded files live under <code>data/fanart-banner-cache/</code> with LRU eviction when the cache exceeds your size budget.
+        </p>
+        <div class="row" style="flex-wrap:wrap;">
+          <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;">
+            <input type="checkbox" id="cfgFanartEnabled" style="width:16px;height:16px;" data-testid="cfg-fanart-enabled" />
+            Use Fanart.tv for hero banner
+          </label>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <div>
+            <label for="cfgFanartAPIKey">Fanart.tv personal API key</label><br />
+            <input id="cfgFanartAPIKey" type="password" autocomplete="off" placeholder="Fanart API key" style="min-width: 320px;" data-testid="cfg-fanart-api-key" />
+            <div class="small"><a href="https://fanart.tv/get-an-api-key/" target="_blank" rel="noopener noreferrer">Get an API key</a> (free).</div>
+          </div>
+          <div>
+            <label for="cfgFanartClientKey">Project client key (optional)</label><br />
+            <input id="cfgFanartClientKey" type="password" autocomplete="off" placeholder="Client key" style="min-width: 280px;" />
+            <div class="small">Register a project on fanart.tv for higher rate limits.</div>
+          </div>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <div>
+            <label for="cfgFanartCacheMaxMB">Fanart banner cache size (MB)</label><br />
+            <input id="cfgFanartCacheMaxMB" type="number" min="32" max="8192" value="200" style="width:120px;" data-testid="cfg-fanart-cache-mb" />
+            <div class="small">Oldest images are removed when the total exceeds this budget.</div>
+          </div>
+          <div>
+            <label for="cfgBannerArtRefresh">Re-fetch / refresh banner art</label><br />
+            <select id="cfgBannerArtRefresh" data-testid="cfg-banner-art-refresh">
+              <option value="5m">Every 5 minutes</option>
+              <option value="10m">Every 10 minutes</option>
+              <option value="30m">Every 30 minutes</option>
+              <option value="1h" selected>Every hour</option>
+              <option value="3h">Every 3 hours</option>
+              <option value="8h">Every 8 hours</option>
+              <option value="24h">Every day</option>
+              <option value="48h">Every 2 days</option>
+              <option value="1w">Every week</option>
+              <option value="once">Once per title (no periodic re-download)</option>
+            </select>
+          </div>
+          <div>
+            <label for="cfgBannerRotateInterval">Rotate to another library title</label><br />
+            <select id="cfgBannerRotateInterval" data-testid="cfg-banner-rotate">
+              <option value="5m">Every 5 minutes</option>
+              <option value="10m">Every 10 minutes</option>
+              <option value="30m" selected>Every 30 minutes</option>
+              <option value="1h">Every hour</option>
+              <option value="3h">Every 3 hours</option>
+              <option value="8h">Every 8 hours</option>
+              <option value="24h">Every day</option>
+              <option value="48h">Every 2 days</option>
+              <option value="1w">Every week</option>
+              <option value="once">Do not auto-rotate</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       <div class="settings-group settings-group--tmdb">
@@ -2019,6 +2127,23 @@
         </div>
       </div>
 
+      <div class="settings-group">
+        <h4>Disk caches</h4>
+        <p class="muted small" style="margin:0 0 10px 0;max-width:52rem;line-height:1.45;">
+          Fanart banner artwork is stored separately from TMDB discovery caches. Clearing it forces the next hero request to download again (subject to your refresh schedule).
+        </p>
+        <div class="row" style="align-items:center;flex-wrap:wrap;gap:10px;">
+          <span id="fanartCacheStatusLine" class="muted small" data-testid="fanart-cache-status-line" style="min-height:1.2em;">Fanart banner cache: —</span>
+          <button type="button" id="clearFanartBannerCacheBtn" data-testid="clear-fanart-cache-btn">Clear Fanart banner cache</button>
+        </div>
+        <h5 style="margin:14px 0 6px 0;">Fanart banner activity log</h5>
+        <p class="muted small" style="margin:0 0 8px 0;max-width:52rem;line-height:1.45;">
+          Server-side log: fanart.tv downloads, HTTP errors, cache evictions, Plex-thumb fallbacks, and startup prefetch. Up to 200 lines kept in memory (lost on server restart).
+        </p>
+        <pre id="fanartBannerActivityLog" class="fanart-banner-log" data-testid="fanart-activity-log">Loading…</pre>
+        <button type="button" id="fanartBannerLogRefreshBtn" data-testid="fanart-log-refresh-btn">Refresh log</button>
+      </div>
+
       <div class="settings-group settings-group--conn">
         <div class="settings-group-head">
           <span class="settings-group-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 12.5a7 7 0 0 1 14 0"/><path d="M8.5 12.5a3.5 3.5 0 0 1 7 0"/><circle cx="12" cy="12.5" r="1.2" fill="currentColor" stroke="none"/></svg></span>
@@ -2026,7 +2151,7 @@
           <span class="settings-group-eyebrow">Health &amp; history</span>
         </div>
         <p class="muted small" style="margin:0 0 10px 0;max-width:52rem;line-height:1.45;">
-          Playback video goes <strong>directly from Plex to the TV</strong>; this app does not proxy the movie stream. Background checks run about every <strong>45s</strong> (internet, Plex <code>/identity</code>, TMDB, LG SSAP). Every <strong>~4 minutes</strong> the server also pulls a small <strong>ranged sample</strong> (up to 512&nbsp;KB) from one small library file to estimate Plex throughput. The Dashboard library hint caches Plex title count for <strong>90s</strong> to limit duplicate API calls. LG volume polls every 15s (TV only, not Plex).
+          Playback video goes <strong>directly from Plex to the TV</strong>; this app does not proxy the movie stream. When healthy, each connectivity target is probed about every <strong>45s</strong> (internet, Plex <code>/identity</code>, TMDB, OMDb, LG SSAP). After a failure the server retries with <strong>exponential backoff</strong> (about 4s→90s per target, with jitter) and never stops. The Plex <strong>speed sample</strong> uses a ~4&nbsp;minute interval when OK; on failure it retries sooner (about 20s→3&nbsp;min). The Dashboard library hint caches Plex title count for <strong>90s</strong> to limit duplicate API calls. LG volume polls about every 15s when the TV responds; on errors it retries with the same style of exponential backoff (TV only, not Plex).
           Last update: <strong id="connDetailUpdated">—</strong>
         </p>
         <div id="connectivityDetail" class="connectivity-detail" aria-live="polite" data-testid="connectivity-detail"></div>
@@ -2250,6 +2375,8 @@
     let studioSuggestTimer = null;
     let dashboardSuggestTimer = null;
     let libraryCachePollTimer = null;
+    let fanartBannerPollTimer = null;
+    let fanartLogPollTimer = null;
     const LIBRARY_CACHE_POLL_MS = 10 * 60 * 1000;
     const moviesCacheKey = 'plexdash.movies.cache.v6';
     const MOVIE_SORT_PREFS_KEY = 'plexdash.movieSort.v1';
@@ -2314,46 +2441,140 @@
       HeroBannerHidden: false,
       AutoTargetDetected: false,
       RadarrEnabled: false,
+      FanartEnabled: false,
+      FanartAPIKey: '',
+      FanartClientKey: '',
+      FanartBannerCacheMaxMB: 200,
+      BannerArtRefresh: '1h',
+      BannerRotateInterval: '30m',
     };
 
-    function pickMostWatchedMovie(movies) {
-      if (!Array.isArray(movies) || movies.length === 0) return null;
-      let best = null;
-      for (const m of movies) {
-        if (!m || !m.RatingKey) continue;
-        if (!best) { best = m; continue; }
-        const a = Number(m.ViewCount || 0);
-        const b = Number(best.ViewCount || 0);
-        if (a > b) best = m;
+    function stopFanartBannerPolling() {
+      if (fanartBannerPollTimer) {
+        clearInterval(fanartBannerPollTimer);
+        fanartBannerPollTimer = null;
       }
-      return best;
     }
 
-    /** Poster URL for hero when no banner URL: prefer highest view count, else first title with a rating key. */
-    function pickBannerFallbackMovie(movies) {
-      const w = pickMostWatchedMovie(movies);
-      if (w && w.RatingKey) return w;
-      if (!Array.isArray(movies)) return null;
-      for (const m of movies) {
-        if (m && m.RatingKey) return m;
-      }
-      return null;
+    function scheduleTokenToMs(tok) {
+      const t = String(tok || '').trim().toLowerCase();
+      if (t === 'once') return 120000;
+      const map = {
+        '5m': 5 * 60 * 1000,
+        '10m': 10 * 60 * 1000,
+        '30m': 30 * 60 * 1000,
+        '1h': 60 * 60 * 1000,
+        '3h': 3 * 60 * 60 * 1000,
+        '8h': 8 * 60 * 60 * 1000,
+        '24h': 24 * 60 * 60 * 1000,
+        '48h': 48 * 60 * 60 * 1000,
+        '1w': 7 * 24 * 60 * 60 * 1000,
+      };
+      return map[t] || 60000;
     }
 
-    async function applyHeaderBranding() {
+    function computeFanartPollMs() {
+      const r = document.getElementById('cfgBannerArtRefresh');
+      const o = document.getElementById('cfgBannerRotateInterval');
+      const a = scheduleTokenToMs((r && r.value) || currentSettings.BannerArtRefresh);
+      const b = scheduleTokenToMs((o && o.value) || currentSettings.BannerRotateInterval);
+      return Math.min(600000, Math.max(15000, Math.min(a, b)));
+    }
+
+    /** Map /api/branding/fanart-banner movie payload → Plex-shaped object for #movieInfoPopup. */
+    function bannerPayloadToMovie(m) {
+      if (!m) return null;
+      return {
+        RatingKey: m.ratingKey || '',
+        Title: m.title || '',
+        Year: Number(m.year) || 0,
+        DurationMillis: Number(m.durationMs) || 0,
+        ViewCount: Number(m.viewCount) || 0,
+        Rating: m.rating != null ? Number(m.rating) : 0,
+        Summary: m.summary != null ? String(m.summary) : '',
+        Genres: [],
+        Actors: Array.isArray(m.actors) ? m.actors : [],
+        Directors: [],
+        PartKey: m.partKey || '',
+        FileContainer: m.container || 'mp4',
+        PartSize: Number(m.partSize) || 0,
+      };
+    }
+
+    async function refreshFanartBannerOnce() {
       const titleEl = document.getElementById('appDisplayName');
       const bannerEl = document.getElementById('heroBanner');
       const bannerImg = document.getElementById('heroBannerImg');
+      const movieLine = document.getElementById('heroBannerMovieLine');
       const appTitle = (currentSettings.AppDisplayName || '').trim() || 'plex-smash-deck';
       titleEl.textContent = appTitle;
       document.title = appTitle;
-      if (currentSettings.HeroBannerHidden) {
-        bannerEl.classList.remove('is-visible', 'hero-banner--placeholder');
-        bannerImg.removeAttribute('src');
+      const h = Math.max(80, Math.min(420, Number(currentSettings.HeroBannerHeight || 140)));
+      bannerImg.style.height = `${h}px`;
+
+      try {
+        const d = await apiJson('/api/branding/fanart-banner');
+        console.log('[Plex Dashboard] fanart-banner', { active: d.active, source: d.source, title: d.movie && d.movie.title, fetchError: d.fetchError });
+        if (!d.active) {
+          bannerEl.classList.remove('hero-banner--fanart');
+          if (movieLine) movieLine.hidden = true;
+          window.__plexdashFanartBannerMovie = null;
+          return false;
+        }
+        window.__plexdashFanartBannerMovie = d.movie;
+        const showPlaceholderOnly = () => {
+          bannerEl.classList.add('hero-banner--placeholder', 'is-visible');
+          bannerEl.classList.remove('hero-banner--fanart');
+          bannerImg.removeAttribute('src');
+          bannerImg.style.display = 'none';
+          bannerEl.style.minHeight = `${h}px`;
+          bannerImg.onerror = null;
+          if (movieLine) movieLine.hidden = true;
+        };
+        let src = d.imageUrl || '';
+        if (src.indexOf('/api/plex/thumb') === 0) {
+          src += (src.includes('?') ? '&' : '?') + '_=' + Date.now();
+        }
+        if (!src) {
+          showPlaceholderOnly();
+          return true;
+        }
+        bannerEl.classList.remove('hero-banner--placeholder');
         bannerImg.style.display = '';
-        bannerImg.onerror = null;
-        return;
+        bannerEl.style.minHeight = '';
+        bannerEl.classList.add('is-visible', 'hero-banner--fanart');
+        bannerImg.onerror = () => {
+          console.warn('[Plex Dashboard] fanart hero image failed');
+          showPlaceholderOnly();
+        };
+        bannerImg.src = src;
+        const m = d.movie || {};
+        if (movieLine) {
+          movieLine.textContent = `Now showing: ${m.title || ''}${m.year ? ' (' + m.year + ')' : ''}${d.source === 'fanart' ? ' · fanart.tv' : ''}`;
+          movieLine.hidden = false;
+        }
+        return true;
+      } catch (err) {
+        console.warn('[Plex Dashboard] fanart-banner fetch failed', err);
+        bannerEl.classList.remove('hero-banner--fanart');
+        if (movieLine) movieLine.hidden = true;
+        window.__plexdashFanartBannerMovie = null;
+        return false;
       }
+    }
+
+    async function applyClassicHeroBannerPlex() {
+      const titleEl = document.getElementById('appDisplayName');
+      const bannerEl = document.getElementById('heroBanner');
+      const bannerImg = document.getElementById('heroBannerImg');
+      const movieLine = document.getElementById('heroBannerMovieLine');
+      const appTitle = (currentSettings.AppDisplayName || '').trim() || 'plex-smash-deck';
+      titleEl.textContent = appTitle;
+      document.title = appTitle;
+      if (movieLine) movieLine.hidden = true;
+      bannerEl.classList.remove('hero-banner--fanart');
+      window.__plexdashFanartBannerMovie = null;
+
       let src = (currentSettings.HeroBannerURL || '').trim();
       if (!src) {
         const lib = moviesLibraryFull.length ? moviesLibraryFull : moviesAll;
@@ -2400,6 +2621,81 @@
       }
     }
 
+    function pickMostWatchedMovie(movies) {
+      if (!Array.isArray(movies) || movies.length === 0) return null;
+      let best = null;
+      for (const m of movies) {
+        if (!m || !m.RatingKey) continue;
+        if (!best) { best = m; continue; }
+        const a = Number(m.ViewCount || 0);
+        const b = Number(best.ViewCount || 0);
+        if (a > b) best = m;
+      }
+      return best;
+    }
+
+    /** Poster URL for hero when no banner URL: prefer highest view count, else first title with a rating key. */
+    function pickBannerFallbackMovie(movies) {
+      const w = pickMostWatchedMovie(movies);
+      if (w && w.RatingKey) return w;
+      if (!Array.isArray(movies)) return null;
+      for (const m of movies) {
+        if (m && m.RatingKey) return m;
+      }
+      return null;
+    }
+
+    async function applyHeaderBranding() {
+      const titleEl = document.getElementById('appDisplayName');
+      const bannerEl = document.getElementById('heroBanner');
+      const bannerImg = document.getElementById('heroBannerImg');
+      const movieLine = document.getElementById('heroBannerMovieLine');
+      const appTitle = (currentSettings.AppDisplayName || '').trim() || 'plex-smash-deck';
+      titleEl.textContent = appTitle;
+      document.title = appTitle;
+      if (currentSettings.HeroBannerHidden) {
+        stopFanartBannerPolling();
+        bannerEl.classList.remove('is-visible', 'hero-banner--placeholder', 'hero-banner--fanart');
+        bannerImg.removeAttribute('src');
+        bannerImg.style.display = '';
+        bannerImg.onerror = null;
+        if (movieLine) movieLine.hidden = true;
+        window.__plexdashFanartBannerMovie = null;
+        return;
+      }
+      const customUrl = (currentSettings.HeroBannerURL || '').trim();
+      if (customUrl) {
+        stopFanartBannerPolling();
+        await applyClassicHeroBannerPlex();
+        return;
+      }
+      // Server may have FANART_API_KEY + FANART_BANNER_ENABLED in .env even before the UI field is filled.
+      if (currentSettings.FanartEnabled) {
+        stopFanartBannerPolling();
+        await applyClassicHeroBannerPlex();
+        const runFanartInBackground = () => {
+          refreshFanartBannerOnce()
+            .then((ok) => console.log('[Plex Dashboard] fanart-banner background fetch done', { ok }))
+            .catch((e) => console.warn('[Plex Dashboard] fanart-banner background', e));
+        };
+        if (typeof requestIdleCallback === 'function') {
+          requestIdleCallback(() => runFanartInBackground(), { timeout: 2000 });
+        } else {
+          setTimeout(runFanartInBackground, 0);
+        }
+        fanartBannerPollTimer = setInterval(async () => {
+          try {
+            await refreshFanartBannerOnce();
+          } catch (e) {
+            console.warn('[Plex Dashboard] fanart-banner poll', e);
+          }
+        }, computeFanartPollMs());
+        return;
+      }
+      stopFanartBannerPolling();
+      await applyClassicHeroBannerPlex();
+    }
+
     function setStatus(id, message, ok) {
       const el = document.getElementById(id);
       el.textContent = message;
@@ -2417,8 +2713,12 @@
     const PLAYBACK_POLL_MS = 8 * 60 * 1000;
     let playbackPollTimer = null;
 
-    const LG_VOLUME_POLL_MS = 15 * 1000;
+    const LG_VOLUME_POLL_HEALTHY_MS = 15 * 1000;
+    const LG_VOLUME_POLL_UNSUPPORTED_MS = 5 * 60 * 1000;
+    const LG_VOLUME_BACKOFF_BASE_MS = 4000;
+    const LG_VOLUME_BACKOFF_MAX_MS = 90 * 1000;
     let lgVolumePollTimer = null;
+    let lgVolumeFailStreak = 0;
     let lgVolumePollSuppressUntil = 0;
     let lgVolumePostDebounceTimer = null;
 
@@ -4833,6 +5133,7 @@
       const mipPlotWrap = popup.querySelector('.mip-plot-wrap');
       const mipPlot     = popup.querySelector('.mip-plot');
       const mipPlotMore = popup.querySelector('.mip-plot-more');
+      const mipPlayTv   = popup.querySelector('.mip-play-tv');
       const movieGridEl = document.getElementById('movieGrid');
       /* Slightly longer than Discovery so brief pointer passes don’t open the panel. */
       const SHOW_MS = plexdashHoverPopupDelayMs() + 300;
@@ -5023,6 +5324,10 @@
         mipPlot.classList.remove('mip-plot-expanded');
         mipPlotMore.textContent = 'Show more';
         mipPlotMore.hidden = true;
+        if (mipPlayTv) {
+          mipPlayTv.hidden = true;
+          mipPlayTv.onclick = null;
+        }
       }
 
       function hideMovieInfoImmediate() {
@@ -5187,7 +5492,8 @@
         openPosterLightbox(src, mipPoster.alt || '', { nativePixels: true, resumeMovieInfo: true });
       });
 
-      window._showMovieInfo = function (cardEl, movie) {
+      window._showMovieInfo = function (cardEl, movie, opts) {
+        opts = opts || {};
         clearHideTimer();
         if (showTimer) { clearTimeout(showTimer); showTimer = null; }
         showTimer = setTimeout(() => {
@@ -5361,6 +5667,19 @@
             mipPlot.style.display = summary ? '' : 'none';
           }
 
+          if (mipPlayTv) {
+            if (opts.showPlay && movie.RatingKey && movie.PartKey) {
+              mipPlayTv.hidden = false;
+              mipPlayTv.onclick = (e) => {
+                e.stopPropagation();
+                playMovieItems([movieToStreamItem(movie)], false);
+              };
+            } else {
+              mipPlayTv.hidden = true;
+              mipPlayTv.onclick = null;
+            }
+          }
+
           popup.classList.remove('mip-visible');
           const reveal = () => {
             requestAnimationFrame(() => {
@@ -5414,6 +5733,25 @@
         show();
         suspendedForLightbox = false;
       };
+    }());
+
+    // Hero banner: same #movieInfoPopup as dashboard cards (with Play when PartKey exists).
+    (function wireHeroBannerMovieInfoPopup() {
+      const banner = document.getElementById('heroBanner');
+      if (!banner) return;
+      banner.addEventListener('mouseenter', () => {
+        const raw = window.__plexdashFanartBannerMovie;
+        if (!raw || !banner.classList.contains('hero-banner--fanart')) return;
+        const movie = bannerPayloadToMovie(raw);
+        if (!movie || !movie.RatingKey) return;
+        console.log('[Plex Dashboard] hero banner → movie info popup', { title: movie.Title });
+        if (typeof window._showMovieInfo === 'function') {
+          window._showMovieInfo(banner, movie, { showPlay: true });
+        }
+      });
+      banner.addEventListener('mouseleave', () => {
+        if (typeof window._hideMovieInfo === 'function') window._hideMovieInfo();
+      });
     }());
 
     // ── Poster lightbox ──────────────────────────────────────────────────────
@@ -6167,6 +6505,12 @@
           HeroBannerHidden: !!cfg.HeroBannerHidden,
           AutoTargetDetected: !!cfg.AutoTargetDetected,
           RadarrEnabled: !!radarrEnabled,
+          FanartEnabled: !!cfg.FanartEnabled,
+          FanartAPIKey: cfg.FanartAPIKey || '',
+          FanartClientKey: cfg.FanartClientKey || '',
+          FanartBannerCacheMaxMB: Number(cfg.FanartBannerCacheMaxMB || 200),
+          BannerArtRefresh: cfg.BannerArtRefresh || '1h',
+          BannerRotateInterval: cfg.BannerRotateInterval || '30m',
         };
         document.getElementById('cfgPlexBase').value = cfg.PlexBaseURL || '';
         setSettingsSecretDisplay('cfgPlexToken', cfg.PlexToken || '');
@@ -6177,6 +6521,18 @@
         document.getElementById('cfgHeroBannerURL').value = cfg.HeroBannerURL || '';
         document.getElementById('cfgHeroBannerHeight').value = Number(cfg.HeroBannerHeight || 140);
         document.getElementById('cfgHeroBannerHidden').checked = !!cfg.HeroBannerHidden;
+        const fe = document.getElementById('cfgFanartEnabled');
+        if (fe) fe.checked = !!cfg.FanartEnabled;
+        const fk = document.getElementById('cfgFanartAPIKey');
+        if (fk) fk.value = cfg.FanartAPIKey || '';
+        const fck = document.getElementById('cfgFanartClientKey');
+        if (fck) fck.value = cfg.FanartClientKey || '';
+        const fcm = document.getElementById('cfgFanartCacheMaxMB');
+        if (fcm) fcm.value = Number(cfg.FanartBannerCacheMaxMB || 200);
+        const bar = document.getElementById('cfgBannerArtRefresh');
+        if (bar) bar.value = cfg.BannerArtRefresh || '1h';
+        const bro = document.getElementById('cfgBannerRotateInterval');
+        if (bro) bro.value = cfg.BannerRotateInterval || '30m';
         setSettingsSecretDisplay('cfgTMDBKey', cfg.TMDBAPIKey || '');
         setSettingsSecretDisplay('cfgTMDBReadToken', cfg.TMDBReadToken || '');
         const omdbBlend = document.getElementById('cfgOMDbBlend');
@@ -6192,8 +6548,38 @@
         applyRadarrVisibility();
         syncSettingsGenreBarFields();
         await applyHeaderBranding();
+        await updateFanartCacheHint();
+        await loadFanartBannerActivityLog();
       } catch (err) {
         setStatus('settingsStatus', `Failed to load: ${err.message}`, false);
+      }
+    }
+
+    async function updateFanartCacheHint() {
+      const el = document.getElementById('fanartCacheStatusLine');
+      if (!el) return;
+      try {
+        const d = await apiJson('/api/fanart-banner/cache-status');
+        const n = d.entries != null ? d.entries : 0;
+        const mb = d.bytes != null ? (Number(d.bytes) / (1024 * 1024)).toFixed(2) : '0';
+        const max = d.maxMB != null ? d.maxMB : '—';
+        el.textContent = `Fanart banner cache: ${n} file(s), ~${mb} MB / ${max} MB cap (${d.dir || 'data/fanart-banner-cache'})`;
+      } catch {
+        el.textContent = 'Fanart banner cache: (server unavailable)';
+      }
+    }
+
+    async function loadFanartBannerActivityLog() {
+      const el = document.getElementById('fanartBannerActivityLog');
+      if (!el) return;
+      try {
+        const d = await apiJson('/api/fanart-banner/log');
+        const entries = d.entries || [];
+        const lines = entries.map((e) => `${e.time}  ${e.line}`);
+        el.textContent = lines.length ? lines.join('\n') : '(no fanart banner events yet — enable fanart and load the dashboard)';
+        console.log('[Plex Dashboard] fanart activity log', { lines: entries.length });
+      } catch (err) {
+        el.textContent = 'Failed to load fanart log: ' + (err && err.message ? err.message : String(err));
       }
     }
 
@@ -6222,23 +6608,60 @@
       label.textContent = `${v}%${m}`;
     }
 
-    async function pollLgVolume() {
-      if (Date.now() < lgVolumePollSuppressUntil) return;
+    function lgVolumeBackoffDelayMs() {
+      lgVolumeFailStreak++;
+      if (lgVolumeFailStreak < 1) lgVolumeFailStreak = 1;
+      const exp = Math.min(lgVolumeFailStreak - 1, 6);
+      let d = LG_VOLUME_BACKOFF_BASE_MS * 2 ** exp;
+      d = Math.min(d, LG_VOLUME_BACKOFF_MAX_MS);
+      const j = 0.85 + Math.random() * 0.30;
+      return Math.round(d * j);
+    }
+
+    function scheduleLgVolumePoll(delayMs) {
+      if (lgVolumePollTimer) clearTimeout(lgVolumePollTimer);
+      lgVolumePollTimer = setTimeout(() => runLgVolumePollTick(), delayMs);
+    }
+
+    async function runLgVolumePollTick() {
+      if (Date.now() < lgVolumePollSuppressUntil) {
+        scheduleLgVolumePoll(LG_VOLUME_POLL_HEALTHY_MS);
+        return;
+      }
       const slider = document.getElementById('lgVolumeSlider');
-      if (slider && document.activeElement === slider) return;
+      if (slider && document.activeElement === slider) {
+        scheduleLgVolumePoll(LG_VOLUME_POLL_HEALTHY_MS);
+        return;
+      }
       try {
         const d = await apiJson('/api/lg/volume');
+        if (!d || d.supported !== true) {
+          lgVolumeFailStreak = 0;
+          applyLgVolumeUI(d);
+          scheduleLgVolumePoll(LG_VOLUME_POLL_UNSUPPORTED_MS);
+          return;
+        }
+        if (d.error) {
+          console.debug('[plexdash][lg-volume] tv error', d.error);
+          applyLgVolumeUI(d);
+          scheduleLgVolumePoll(lgVolumeBackoffDelayMs());
+          return;
+        }
+        lgVolumeFailStreak = 0;
         applyLgVolumeUI(d);
-      } catch {
+        scheduleLgVolumePoll(LG_VOLUME_POLL_HEALTHY_MS);
+      } catch (err) {
+        console.debug('[plexdash][lg-volume] poll failed', err);
         const row = document.getElementById('lgVolumeRow');
         if (row) row.style.display = 'none';
+        scheduleLgVolumePoll(lgVolumeBackoffDelayMs());
       }
     }
 
     function startLgVolumePoll() {
-      if (lgVolumePollTimer) clearInterval(lgVolumePollTimer);
-      pollLgVolume();
-      lgVolumePollTimer = setInterval(pollLgVolume, LG_VOLUME_POLL_MS);
+      if (lgVolumePollTimer) clearTimeout(lgVolumePollTimer);
+      lgVolumeFailStreak = 0;
+      runLgVolumePollTick();
     }
 
     async function loadPlayers() {
@@ -6791,6 +7214,7 @@
       const sumEl = document.getElementById('connectivitySummary');
       try {
         const data = await apiJson('/api/connectivity');
+        console.debug('[plexdash][connectivity]', data?.updatedAt, data?.overall, data?.summary);
         appendConnectivityHistorySample(data);
         renderConnectivityUI(data);
       } catch (err) {
@@ -7072,6 +7496,12 @@
           RadarrProfileID: Number(document.getElementById('cfgRadarrProfile').value || '1'),
           SnapshotDisabled: !document.getElementById('cfgSnapshotEnabled').checked,
           SnapshotHour: Number(document.getElementById('cfgSnapshotHour').value),
+          FanartEnabled: !!(document.getElementById('cfgFanartEnabled') && document.getElementById('cfgFanartEnabled').checked),
+          FanartAPIKey: (document.getElementById('cfgFanartAPIKey') && document.getElementById('cfgFanartAPIKey').value.trim()) || '',
+          FanartClientKey: (document.getElementById('cfgFanartClientKey') && document.getElementById('cfgFanartClientKey').value.trim()) || '',
+          FanartBannerCacheMaxMB: Number((document.getElementById('cfgFanartCacheMaxMB') && document.getElementById('cfgFanartCacheMaxMB').value) || '200'),
+          BannerArtRefresh: (document.getElementById('cfgBannerArtRefresh') && document.getElementById('cfgBannerArtRefresh').value) || '1h',
+          BannerRotateInterval: (document.getElementById('cfgBannerRotateInterval') && document.getElementById('cfgBannerRotateInterval').value) || '30m',
         };
         await apiJson('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         currentSettings = {
@@ -7081,11 +7511,18 @@
           HeroBannerHidden: !!payload.HeroBannerHidden,
           AutoTargetDetected: !!payload.AutoTargetDetected,
           RadarrEnabled: !!payload.RadarrEnabled,
+          FanartEnabled: !!payload.FanartEnabled,
+          FanartAPIKey: payload.FanartAPIKey || '',
+          FanartClientKey: payload.FanartClientKey || '',
+          FanartBannerCacheMaxMB: Number(payload.FanartBannerCacheMaxMB || 200),
+          BannerArtRefresh: payload.BannerArtRefresh || '1h',
+          BannerRotateInterval: payload.BannerRotateInterval || '30m',
         };
         renderTargetClientSelect(targetClient || 'Living Room');
         applyRadarrVisibility();
         renderDiscoveryTableReset();
         await applyHeaderBranding();
+        await updateFanartCacheHint();
         setStatus('settingsStatus', 'Saved settings (persisted).', true);
         loadPlayers();
       } catch (err) {
@@ -7099,10 +7536,17 @@
     initConnHistDateDefault();
     renderConnectivityHistoryChart();
     document.addEventListener('tabChanged', (e) => {
+      if (fanartLogPollTimer) {
+        clearInterval(fanartLogPollTimer);
+        fanartLogPollTimer = null;
+      }
       if (e.detail === 'settings') {
         syncSettingsGenreBarFields();
         renderConnectivityHistoryChart();
         refreshSettingsCaches();
+        updateFanartCacheHint();
+        loadFanartBannerActivityLog();
+        fanartLogPollTimer = setInterval(loadFanartBannerActivityLog, 8000);
       }
     });
     applyRadarrVisibility();
@@ -7332,6 +7776,28 @@
         setStatus('discoveryStatus', `Clear TMDB cache failed: ${err.message}`, false);
       }
     });
+    const clearFanartBtn = document.getElementById('clearFanartBannerCacheBtn');
+    if (clearFanartBtn) {
+      clearFanartBtn.addEventListener('click', async () => {
+        try {
+          const data = await apiJson('/api/fanart-banner/cache/invalidate', { method: 'POST' });
+          const n = data.removedEntries != null ? data.removedEntries : 0;
+          setStatus('settingsStatus', `Cleared Fanart banner cache (${n} file record(s)).`, true);
+          console.log('[Plex Dashboard] fanart cache cleared', n);
+          await updateFanartCacheHint();
+          await loadFanartBannerActivityLog();
+          await applyHeaderBranding();
+        } catch (err) {
+          setStatus('settingsStatus', `Clear Fanart cache failed: ${err.message}`, false);
+        }
+      });
+    }
+    const fanartLogRefreshBtn = document.getElementById('fanartBannerLogRefreshBtn');
+    if (fanartLogRefreshBtn) {
+      fanartLogRefreshBtn.addEventListener('click', () => {
+        loadFanartBannerActivityLog();
+      });
+    }
     document.getElementById('discoverMode').addEventListener('change', function () {
       const mode = this.value;
       const isStudio = mode === 'studio';

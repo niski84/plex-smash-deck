@@ -1,19 +1,43 @@
 #!/bin/bash
 set -euo pipefail
 
+# Short double beep when reload succeeds (ASCII BEL). Enable “audible bell” in your terminal if silent.
+_reload_ok_double_beep() {
+	local _n
+	for _n in 1 2; do
+		printf '\a' 2>/dev/null || true
+		sleep 0.12
+	done
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BINARY="$PROJECT_DIR/plex-dashboard"
 
 echo "=== plex-dashboard reload ==="
 
-# Kill any running plex-dashboard processes
+cd "$PROJECT_DIR"
+
+# Stop the instance we last started (avoid broad pkill matching unrelated processes)
 echo "→ Stopping existing plex-dashboard..."
-pkill -f "plex-dashboard" 2>/dev/null && sleep 1 || echo "  (none running)"
+if [[ -f "$PROJECT_DIR/server.pid" ]]; then
+	OLD_PID="$(tr -d ' \n' <"$PROJECT_DIR/server.pid" 2>/dev/null || true)"
+	if [[ -n "$OLD_PID" ]] && kill -0 "$OLD_PID" 2>/dev/null; then
+		kill "$OLD_PID" 2>/dev/null || true
+		for _ in $(seq 1 25); do
+			kill -0 "$OLD_PID" 2>/dev/null || break
+			sleep 0.2
+		done
+	fi
+fi
+# Fallback: same binary path from a previous manual start
+if [[ -x "$BINARY" ]]; then
+	pkill -f "$BINARY" 2>/dev/null && sleep 1 || true
+fi
 
 # Build the new binary
 echo "→ Building cmd/plex-dashboard..."
-cd "$PROJECT_DIR"
+go vet ./...
 go build -o "$BINARY" ./cmd/plex-dashboard
 echo "  Build OK: $BINARY"
 
@@ -45,18 +69,22 @@ if [[ -n "$ENV_FILE" ]]; then
 fi
 
 PORT="${PORT:-8081}"
+export PORT
+echo "  PORT=$PORT (set in environment or .env; open http://127.0.0.1:${PORT}/)"
 nohup "$BINARY" >"$PROJECT_DIR/server.log" 2>&1 &
 NEW_PID=$!
-echo $NEW_PID > "$PROJECT_DIR/server.pid"
+echo "$NEW_PID" >"$PROJECT_DIR/server.pid"
 
 # Wait for it to start
 for i in $(seq 1 30); do
     sleep 0.3
     if curl -fsS "http://127.0.0.1:${PORT}/api/health" >/dev/null 2>&1; then
         echo "✓ Server running at http://127.0.0.1:${PORT}/ (PID $NEW_PID)"
+        _reload_ok_double_beep
         exit 0
     fi
 done
 
-echo "✗ Server did not respond within 9s — check server.log"
+echo "✗ Server did not respond within 9s — last lines of server.log:"
+tail -n 50 "$PROJECT_DIR/server.log" 2>/dev/null || true
 exit 1

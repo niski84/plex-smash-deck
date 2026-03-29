@@ -29,6 +29,7 @@ type Movie struct {
 	Year              int
 	TMDBID            int // from Plex guid when available; 0 if unknown
 	IMDbID            string // from Plex guid when agent exposes imdb:// (normalized tt…)
+	AddedAtEpoch      int64  `json:"addedAt"` // Plex addedAt (unix seconds) when present
 	DurationMillis    int64
 	LastViewedAtEpoch int64
 	ViewCount         int
@@ -42,8 +43,6 @@ type Movie struct {
 	PartKey           string // e.g. /library/parts/12345/file.mp4
 	FileContainer     string // e.g. mp4, mkv
 	PartSize          int64
-	// AddedAtEpoch is Unix seconds when the title was added to the Plex library (XML addedAt).
-	AddedAtEpoch int64 `json:"addedAt"`
 }
 
 type CreatePlaylistResult struct {
@@ -165,8 +164,8 @@ func plexExternalIDsFromVideo(v video) (tmdbID int, imdbID string) {
 func movieFromVideo(video video) Movie {
 	year, _ := strconv.Atoi(video.Year)
 	duration, _ := strconv.ParseInt(video.Duration, 10, 64)
-	lastViewedAt, _ := strconv.ParseInt(video.LastViewedAt, 10, 64)
 	addedAt, _ := strconv.ParseInt(strings.TrimSpace(video.AddedAt), 10, 64)
+	lastViewedAt, _ := strconv.ParseInt(video.LastViewedAt, 10, 64)
 	rating, _ := strconv.ParseFloat(video.Rating, 64)
 	viewCount, _ := strconv.Atoi(video.ViewCount)
 	tmdbID, imdbID := plexExternalIDsFromVideo(video)
@@ -193,9 +192,9 @@ func movieFromVideo(video video) Movie {
 		Year:              year,
 		TMDBID:            tmdbID,
 		IMDbID:            imdbID,
+		AddedAtEpoch:      addedAt,
 		DurationMillis:    duration,
 		LastViewedAtEpoch: lastViewedAt,
-		AddedAtEpoch:      addedAt,
 		ViewCount:         viewCount,
 		Rating:            rating,
 		ContentRating:     strings.TrimSpace(video.ContentRating),
@@ -1492,8 +1491,8 @@ type video struct {
 	Title        string          `xml:"title,attr"`
 	Year         string       `xml:"year,attr"`
 	Duration     string       `xml:"duration,attr"`
-	LastViewedAt string       `xml:"lastViewedAt,attr"`
 	AddedAt      string       `xml:"addedAt,attr"`
+	LastViewedAt string       `xml:"lastViewedAt,attr"`
 	ViewCount    string       `xml:"viewCount,attr"`
 	Rating         string `xml:"rating,attr"`
 	ContentRating  string `xml:"contentRating,attr"`
