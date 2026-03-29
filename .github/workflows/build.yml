@@ -62,7 +62,10 @@ jobs:
   release:
     name: Release
     needs: [build, windows_installer]
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Publish binaries even if the Windows NSIS job fails (e.g. Docker/Linux users still get a release).
+    if: >
+      always() && startsWith(github.ref, 'refs/tags/v') &&
+      needs.build.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
