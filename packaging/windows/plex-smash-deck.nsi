@@ -59,8 +59,9 @@ Section "Install Core Files" SecCore
   File /r "${SOURCE_DIR}\web"
 
   ; helper launcher scripts (plain files — avoids NSIS FileWrite quoting for "" and &)
-  File /oname="$INSTDIR\run-plex-smash-deck.bat" "assets\run-plex-smash-deck.bat"
-  File /oname="$INSTDIR\start-hidden.vbs" "assets\start-hidden.vbs"
+  ; /oname must not start with a double-quote (NSIS parses it as invalid)
+  File /oname=$INSTDIR\run-plex-smash-deck.bat assets\run-plex-smash-deck.bat
+  File /oname=$INSTDIR\start-hidden.vbs assets\start-hidden.vbs
 
   ; start menu entries
   StrCpy $StartMenuFolder "$SMPROGRAMS\Plex Smash Deck"
