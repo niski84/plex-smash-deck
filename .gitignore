@@ -21,6 +21,8 @@ data/tmdb-poster-cache/
 data/plexdash-settings.json
 data/playback-state.json
 data/plexdash-discovery.log
+data/plex-library-memory.json
+data/fanart-banner-cache/
 
 # Node / Playwright
 node_modules/
