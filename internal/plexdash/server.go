@@ -69,11 +69,14 @@ type Server struct {
 
 	connMu       sync.RWMutex
 	connectivity ConnectivityPayload
+	// Per-check exponential backoff for /api/connectivity (never stops retrying).
+	probeSched map[string]probeSlot
 
-	// Plex stream throughput probe (connectivity): rate-limited, see connectivity.go.
+	// Plex stream throughput probe (connectivity): backoff on failure, relaxed on success.
 	streamProbeMu     sync.Mutex
 	plexStreamCache   PlexStreamMetrics
-	lastStreamProbeAt time.Time
+	streamNextProbeAt time.Time
+	streamFailStreak  int
 
 	// Plex library title count for /api/movies/cache-status — avoids hammering Plex
 	// when several tabs poll or the hint refreshes often.
@@ -81,6 +84,31 @@ type Server struct {
 	remoteCountVal    int
 	remoteCountAt     time.Time
 	remoteCountLibKey string
+
+	// Fanart.tv hero banner rotation + current image (see fanart_banner.go).
+	fanartBannerMu          sync.Mutex
+	fanartBannerInitialized bool
+	fanartBannerRotateIdx   int
+	fanartBannerLastRotate  time.Time
+	fanartBannerLastFetch   time.Time
+	fanartBannerMovieKey    string
+	fanartBannerImageKind   string // fanart | plex
+	fanartBannerFanartURL   string
+	fanartBannerDiskID      string
+	fanartBannerTMDB        int
+	fanartBannerVersion     int64 // bump in JSON image URL for cache-bust
+
+	fanartManifestMu sync.Mutex
+
+	// Ring buffer of fanart banner activity for Settings UI (newest appended last).
+	fanartLogMu sync.Mutex
+	fanartLog   []FanartLogEntry
+}
+
+// FanartLogEntry is one line shown on the Settings tab fanart activity log.
+type FanartLogEntry struct {
+	Time string `json:"time"`
+	Line string `json:"line"`
 }
 
 type localPlaybackSend struct {
@@ -113,6 +141,55 @@ const (
 	maxAllowedYear         = 2016
 	localPlaybackFreshness = 45 * time.Minute
 )
+
+var (
+	dashboardWebRootOnce sync.Once
+	dashboardWebRootPath string
+	dashboardWebRootErr  error
+)
+
+// DashboardWebRoot returns the absolute directory that contains index.html for the dashboard UI.
+// It searches upward from the working directory, then next to the executable (repo-style layout).
+func DashboardWebRoot() (string, error) {
+	dashboardWebRootOnce.Do(func() {
+		dashboardWebRootPath, dashboardWebRootErr = resolveDashboardWebRoot()
+	})
+	return dashboardWebRootPath, dashboardWebRootErr
+}
+
+func resolveDashboardWebRoot() (string, error) {
+	const leaf = "web/plex-dashboard"
+	tryDir := func(base string) (string, bool) {
+		abs := filepath.Clean(base)
+		idx := filepath.Join(abs, "index.html")
+		st, err := os.Stat(idx)
+		if err != nil || st.IsDir() {
+			return "", false
+		}
+		return abs, true
+	}
+	if wd, err := os.Getwd(); err == nil {
+		for dir := filepath.Clean(wd); ; {
+			if p, ok := tryDir(filepath.Join(dir, leaf)); ok {
+				return p, nil
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
+	}
+	if exe, err := os.Executable(); err == nil {
+		exeDir := filepath.Clean(filepath.Dir(exe))
+		for _, base := range []string{exeDir, filepath.Join(exeDir, "..")} {
+			if p, ok := tryDir(filepath.Join(base, leaf)); ok {
+				return p, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("cannot find %s/index.html — run from the plex-dashboard repo root (or keep web/ next to the binary)", leaf)
+}
 
 func NewServer(cfg Config, client *PlexClient) *Server {
 	_ = client
@@ -221,7 +298,8 @@ func (s *Server) invalidateMovieListCache() {
 
 func (s *Server) invalidatePlexStreamProbe() {
 	s.streamProbeMu.Lock()
-	s.lastStreamProbeAt = time.Time{}
+	s.streamNextProbeAt = time.Time{}
+	s.streamFailStreak = 0
 	s.plexStreamCache = PlexStreamMetrics{}
 	s.streamProbeMu.Unlock()
 }
@@ -422,6 +500,11 @@ func (s *Server) Routes() http.Handler {
 	// Register /api/movies/* before /api/movies so path matching is unambiguous across Go versions.
 	mux.HandleFunc("/api/movies/hover-meta", s.handleMoviesHoverMeta)
 	mux.HandleFunc("/api/movies/cache-status", s.handleMovieCacheStatus)
+	mux.HandleFunc("/api/branding/fanart-banner/file", s.handleBrandingFanartBannerFile)
+	mux.HandleFunc("/api/branding/fanart-banner", s.handleBrandingFanartBanner)
+	mux.HandleFunc("/api/fanart-banner/cache-status", s.handleFanartBannerCacheStatus)
+	mux.HandleFunc("/api/fanart-banner/cache/invalidate", s.handleFanartBannerCacheInvalidate)
+	mux.HandleFunc("/api/fanart-banner/log", s.handleFanartBannerLog)
 	mux.HandleFunc("/api/movies/sync-recent", s.handleMoviesSyncRecent)
 	mux.HandleFunc("/api/movies/play", s.handleMoviesPlay)
 	mux.HandleFunc("/api/movies", s.handleMovies)
@@ -462,8 +545,12 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/playlists/by-genre-rating", s.handleCreatePlaylistByGenreRating)
 	mux.HandleFunc("/api/playlists/random-play", s.handleCreateAndPlayRandomPlaylist)
 
-	// Serve static dashboard UI.
-	mux.Handle("/", http.FileServer(http.Dir(filepath.Clean("web/plex-dashboard"))))
+	// Serve static dashboard UI (path resolved so the binary works when cwd is not the repo root).
+	root, err := DashboardWebRoot()
+	if err != nil {
+		root = filepath.Clean("web/plex-dashboard")
+	}
+	mux.Handle("/", http.FileServer(http.Dir(root)))
 
 	return requestLogMiddleware(mux)
 }
@@ -593,6 +680,20 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		if req.SnapshotHour < 0 || req.SnapshotHour > 23 {
 			req.SnapshotHour = 2
 		}
+		// Keep .env FANART_API_KEY when the settings form leaves the field blank (avoid wiping on Save).
+		if strings.TrimSpace(req.FanartAPIKey) == "" {
+			if ev := strings.TrimSpace(os.Getenv("FANART_API_KEY")); ev != "" {
+				req.FanartAPIKey = ev
+			}
+		}
+		if req.FanartBannerCacheMaxMB < 32 {
+			req.FanartBannerCacheMaxMB = 32
+		}
+		if req.FanartBannerCacheMaxMB > 8192 {
+			req.FanartBannerCacheMaxMB = 8192
+		}
+		req.BannerArtRefresh = NormalizeBannerSchedule(req.BannerArtRefresh, "1h")
+		req.BannerRotateInterval = NormalizeBannerSchedule(req.BannerRotateInterval, "30m")
 
 		// Persist settings and refresh in-memory configuration.
 		if err := SavePersistedConfig(s.settingsPath, req); err != nil {

@@ -1,6 +1,9 @@
 package plexdash
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestPickMovieForStreamProbe(t *testing.T) {
 	movies := []Movie{
@@ -14,6 +17,41 @@ func TestPickMovieForStreamProbe(t *testing.T) {
 	}
 	if m.Title != "Small" {
 		t.Fatalf("want smallest PartSize, got %q", m.Title)
+	}
+}
+
+func TestConnectivityBackoffCore(t *testing.T) {
+	cases := []struct {
+		streak int
+		want   time.Duration
+	}{
+		{1, 4 * time.Second},
+		{2, 8 * time.Second},
+		{3, 16 * time.Second},
+		{4, 32 * time.Second},
+		{5, 64 * time.Second},
+		{6, 90 * time.Second},
+		{99, 90 * time.Second},
+	}
+	for _, tc := range cases {
+		if got := connectivityBackoffCore(tc.streak); got != tc.want {
+			t.Fatalf("streak %d: got %v want %v", tc.streak, got, tc.want)
+		}
+	}
+	if got := connectivityBackoffCore(0); got != 4*time.Second {
+		t.Fatalf("streak 0 normalized: got %v", got)
+	}
+}
+
+func TestStreamProbeBackoffCore(t *testing.T) {
+	if got := streamProbeBackoffCore(1); got != 20*time.Second {
+		t.Fatalf("got %v", got)
+	}
+	if got := streamProbeBackoffCore(4); got != 160*time.Second {
+		t.Fatalf("got %v", got)
+	}
+	if got := streamProbeBackoffCore(99); got != streamProbeBackoffMax {
+		t.Fatalf("cap: got %v", got)
 	}
 }
 

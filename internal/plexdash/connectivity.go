@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -15,16 +16,36 @@ import (
 )
 
 const (
-	// connectivityProbeInterval spaces out lightweight checks (identity, etc.).
-	connectivityProbeInterval = 45 * time.Second
-	connectivityProbeTimeout  = 8 * time.Second
+	// When a check is ok or skip, wait this long before probing again (steady state).
+	connectivityHealthyInterval = 45 * time.Second
+	connectivityProbeTimeout    = 8 * time.Second
+	connectivityMinWake         = 400 * time.Millisecond
+	connectivityWakeMaxCap      = 5 * time.Minute
 
-	plexStreamProbeInterval = 4 * time.Minute
-	streamProbeMaxBytes     = 512 * 1024
-	streamProbeSlowMbps     = 12.0
-	streamProbeHTTPTimeout  = 22 * time.Second
-	streamProbeMinBytes     = 16 * 1024
+	// After warn/error: 4s, 8s, 16s, … capped at 90s (with jitter). Never stops retrying.
+	connectivityBackoffBase = 4 * time.Second
+	connectivityBackoffMax  = 90 * time.Second
+
+	plexStreamProbeIntervalOK = 4 * time.Minute
+	// After a failed stream sample: 20s, 40s, 80s, … capped at 3m (jitter). Success resets to OK interval.
+	streamProbeBackoffBase = 20 * time.Second
+	streamProbeBackoffMax  = 3 * time.Minute
+	streamProbeNoMoviesRetry = 90 * time.Second
+
+	streamProbeMaxBytes    = 512 * 1024
+	streamProbeSlowMbps    = 12.0
+	streamProbeHTTPTimeout = 22 * time.Second
+	streamProbeMinBytes    = 16 * 1024
 )
+
+// connectivityProbeOrder is the stable row order for /api/connectivity checks.
+var connectivityProbeOrder = []string{"internet", "plex", "tmdb", "omdb", "lgtv"}
+
+// probeSlot holds exponential backoff state for one connectivity check.
+type probeSlot struct {
+	failStreak int
+	nextDue    time.Time // absolute; zero means "due immediately"
+}
 
 // ConnectivityCheck is one row in the connectivity dashboard (JSON for the UI).
 type ConnectivityCheck struct {
@@ -55,17 +76,120 @@ type ConnectivityPayload struct {
 	PlexStream PlexStreamMetrics   `json:"plexStream"`
 }
 
-// Server fields (see server.go): connMu, connectivity atomic snapshot.
+// Server fields (see server.go): connMu, connectivity, probeSched; stream probe fields.
 
-func (s *Server) runConnectivityProbe(ctx context.Context) {
+func checksByID(checks []ConnectivityCheck) map[string]ConnectivityCheck {
+	m := make(map[string]ConnectivityCheck, len(checks))
+	for _, c := range checks {
+		m[c.ID] = c
+	}
+	return m
+}
+
+func connectivityBackoffCore(failStreak int) time.Duration {
+	if failStreak < 1 {
+		failStreak = 1
+	}
+	exp := failStreak - 1
+	if exp > 6 {
+		exp = 6
+	}
+	d := connectivityBackoffBase * time.Duration(uint64(1)<<uint(exp))
+	if d > connectivityBackoffMax {
+		d = connectivityBackoffMax
+	}
+	return d
+}
+
+func connectivityBackoffDuration(failStreak int) time.Duration {
+	d := connectivityBackoffCore(failStreak)
+	j := 0.85 + rand.Float64()*0.30
+	return time.Duration(float64(d) * j)
+}
+
+func streamProbeBackoffCore(failStreak int) time.Duration {
+	if failStreak < 1 {
+		failStreak = 1
+	}
+	exp := failStreak - 1
+	if exp > 6 {
+		exp = 6
+	}
+	d := streamProbeBackoffBase * time.Duration(uint64(1)<<uint(exp))
+	if d > streamProbeBackoffMax {
+		d = streamProbeBackoffMax
+	}
+	return d
+}
+
+func streamProbeBackoffDuration(failStreak int) time.Duration {
+	d := streamProbeBackoffCore(failStreak)
+	j := 0.85 + rand.Float64()*0.30
+	return time.Duration(float64(d) * j)
+}
+
+func applyProbeSlotUpdate(slot *probeSlot, c ConnectivityCheck, now time.Time) {
+	if c.Level == "ok" || c.Level == "skip" {
+		slot.failStreak = 0
+		slot.nextDue = now.Add(connectivityHealthyInterval)
+		return
+	}
+	slot.failStreak++
+	if slot.failStreak < 1 {
+		slot.failStreak = 1
+	}
+	slot.nextDue = now.Add(connectivityBackoffDuration(slot.failStreak))
+}
+
+func (s *Server) runConnectivityCheck(ctx context.Context, cfg Config, id string) ConnectivityCheck {
+	switch id {
+	case "internet":
+		return probeInternet(ctx)
+	case "plex":
+		return probePlex(ctx, cfg)
+	case "tmdb":
+		return probeTMDB(ctx, cfg)
+	case "omdb":
+		return probeOMDb(ctx, cfg)
+	case "lgtv":
+		return probeLG(ctx, cfg)
+	default:
+		return ConnectivityCheck{ID: id, Label: id, Level: "error", Message: "unknown connectivity probe id"}
+	}
+}
+
+func (s *Server) runConnectivityProbeTick(ctx context.Context) {
 	cfg := s.snapshot()
+	now := time.Now()
+
+	s.connMu.Lock()
+	if s.probeSched == nil {
+		s.probeSched = make(map[string]probeSlot)
+	}
+	prevByID := checksByID(s.connectivity.Checks)
+	s.connMu.Unlock()
+
 	tctx, cancel := context.WithTimeout(ctx, connectivityProbeTimeout)
-	checks := []ConnectivityCheck{
-		probeInternet(tctx),
-		probePlex(tctx, cfg),
-		probeTMDB(tctx, cfg),
-		probeOMDb(tctx, cfg),
-		probeLG(tctx, cfg),
+	checks := make([]ConnectivityCheck, 0, len(connectivityProbeOrder))
+	for _, id := range connectivityProbeOrder {
+		s.connMu.Lock()
+		slot := s.probeSched[id]
+		s.connMu.Unlock()
+
+		if !slot.nextDue.IsZero() && now.Before(slot.nextDue) {
+			if c, ok := prevByID[id]; ok {
+				checks = append(checks, c)
+				continue
+			}
+		}
+
+		c := s.runConnectivityCheck(tctx, cfg, id)
+		checks = append(checks, c)
+		s.connMu.Lock()
+		sl := s.probeSched[id]
+		applyProbeSlotUpdate(&sl, c, time.Now())
+		s.probeSched[id] = sl
+		s.connMu.Unlock()
 	}
 	cancel()
 
@@ -90,17 +214,60 @@ func (s *Server) runConnectivityProbe(ctx context.Context) {
 	s.connMu.Unlock()
 }
 
-// StartConnectivityProbes runs an immediate probe then repeats on an interval until ctx is done.
+// connectivityNextWake returns how long to sleep before the next probe may be due.
+func (s *Server) connectivityNextWake() time.Duration {
+	now := time.Now()
+	var earliest time.Time
+
+	s.connMu.RLock()
+	sched := s.probeSched
+	for _, id := range connectivityProbeOrder {
+		slot, ok := sched[id]
+		if !ok || slot.nextDue.IsZero() || !now.Before(slot.nextDue) {
+			s.connMu.RUnlock()
+			return connectivityMinWake
+		}
+		if earliest.IsZero() || slot.nextDue.Before(earliest) {
+			earliest = slot.nextDue
+		}
+	}
+	s.connMu.RUnlock()
+
+	s.streamProbeMu.Lock()
+	streamDue := s.streamNextProbeAt
+	s.streamProbeMu.Unlock()
+
+	if streamDue.IsZero() || !now.Before(streamDue) {
+		return connectivityMinWake
+	}
+	if earliest.IsZero() || streamDue.Before(earliest) {
+		earliest = streamDue
+	}
+
+	if earliest.IsZero() {
+		return connectivityHealthyInterval
+	}
+	d := time.Until(earliest)
+	if d < connectivityMinWake {
+		return connectivityMinWake
+	}
+	if d > connectivityWakeMaxCap {
+		return connectivityWakeMaxCap
+	}
+	return d
+}
+
+// StartConnectivityProbes runs connectivity checks with per-target exponential backoff on failure.
 func (s *Server) StartConnectivityProbes(ctx context.Context) {
-	s.runConnectivityProbe(context.Background())
-	t := time.NewTicker(connectivityProbeInterval)
-	defer t.Stop()
 	for {
+		s.runConnectivityProbeTick(context.Background())
+		d := s.connectivityNextWake()
+		t := time.NewTimer(d)
 		select {
 		case <-ctx.Done():
+			t.Stop()
 			return
 		case <-t.C:
-			s.runConnectivityProbe(context.Background())
 		}
 	}
 }
@@ -500,32 +667,66 @@ func formatByteSize(n int64) string {
 	return fmt.Sprintf("%.2f MB", float64(n)/(1024*1024))
 }
 
-// maybeProbePlexStream rate-limits Plex media reads (one short ranged GET every plexStreamProbeInterval).
+// maybeProbePlexStream rate-limits Plex media reads: long interval on success/skip, exponential backoff on failure.
 func (s *Server) maybeProbePlexStream(ctx context.Context, cfg Config, movies []Movie) PlexStreamMetrics {
 	base := strings.TrimSpace(cfg.PlexBaseURL)
 	token := strings.TrimSpace(cfg.PlexToken)
-	if base == "" || token == "" {
-		return PlexStreamMetrics{Level: "skip", Message: "Plex not configured"}
-	}
-
-	movie, ok := pickMovieForStreamProbe(movies)
-	if !ok {
-		return PlexStreamMetrics{
-			Level:   "skip",
-			Message: "No movies in server memory — open Dashboard and Refresh Movies to enable stream sampling",
-		}
-	}
+	now := time.Now()
 
 	s.streamProbeMu.Lock()
 	defer s.streamProbeMu.Unlock()
 
-	if !s.lastStreamProbeAt.IsZero() && time.Since(s.lastStreamProbeAt) < plexStreamProbeInterval {
+	if base == "" || token == "" {
+		if !s.streamNextProbeAt.IsZero() && now.Before(s.streamNextProbeAt) {
+			return s.plexStreamCache
+		}
+		s.streamFailStreak = 0
+		s.plexStreamCache = PlexStreamMetrics{Level: "skip", Message: "Plex not configured"}
+		s.streamNextProbeAt = now.Add(5 * time.Minute)
 		return s.plexStreamCache
 	}
 
-	s.lastStreamProbeAt = time.Now()
+	movie, ok := pickMovieForStreamProbe(movies)
+	if !ok {
+		if !s.streamNextProbeAt.IsZero() && now.Before(s.streamNextProbeAt) {
+			return s.plexStreamCache
+		}
+		s.streamFailStreak = 0
+		s.plexStreamCache = PlexStreamMetrics{
+			Level:   "skip",
+			Message: "No movies in server memory — open Dashboard and Refresh Movies to enable stream sampling",
+		}
+		s.streamNextProbeAt = now.Add(streamProbeNoMoviesRetry)
+		return s.plexStreamCache
+	}
+
+	if !s.streamNextProbeAt.IsZero() && now.Before(s.streamNextProbeAt) {
+		return s.plexStreamCache
+	}
+
 	s.plexStreamCache = executePlexStreamProbe(ctx, cfg, movie)
-	return s.plexStreamCache
+	ps := s.plexStreamCache
+	after := time.Now()
+
+	switch ps.Level {
+	case "ok":
+		s.streamFailStreak = 0
+		s.streamNextProbeAt = after.Add(plexStreamProbeIntervalOK)
+	case "skip":
+		s.streamFailStreak = 0
+		if strings.Contains(strings.ToLower(ps.Message), "not configured") {
+			s.streamNextProbeAt = after.Add(5 * time.Minute)
+		} else {
+			s.streamNextProbeAt = after.Add(streamProbeNoMoviesRetry)
+		}
+	default:
+		s.streamFailStreak++
+		if s.streamFailStreak < 1 {
+			s.streamFailStreak = 1
+		}
+		s.streamNextProbeAt = after.Add(streamProbeBackoffDuration(s.streamFailStreak))
+	}
+	return ps
 }
 
 func (s *Server) handleConnectivity(w http.ResponseWriter, r *http.Request) {

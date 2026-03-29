@@ -16,18 +16,29 @@ func main() {
 		log.Fatalf("config error: %v", err)
 	}
 
+	uiRoot, err := plexdash.DashboardWebRoot()
+	if err != nil {
+		log.Fatalf("dashboard UI: %v", err)
+	}
+
 	client := plexdash.NewPlexClient(cfg)
 	server := plexdash.NewServer(cfg, client)
 
 	ctx := context.Background()
-	go server.WarmLibraryCacheOnStartup(ctx)
+	go func() {
+		server.WarmLibraryCacheOnStartup(ctx)
+		server.WarmFanartBannerPrefetch(ctx)
+	}()
 	go server.StartDailySnapshotWorker(ctx)
 	go server.StartConnectivityProbes(ctx)
 
 	addr := ":" + cfg.Port
 	if wd, err := os.Getwd(); err == nil {
-		fmt.Printf("[BOOT] cwd=%s — UI is web/plex-dashboard relative to this directory\n", wd)
+		fmt.Printf("[BOOT] cwd=%s\n", wd)
 	}
-	fmt.Printf("[BOOT] plex-dashboard listening on %s\n", addr)
-	log.Fatal(http.ListenAndServe(addr, server.Routes()))
+	fmt.Printf("[BOOT] dashboard UI: %s\n", uiRoot)
+	fmt.Printf("[BOOT] listening on %s — open http://127.0.0.1:%s/\n", addr, cfg.Port)
+	if err := http.ListenAndServe(addr, server.Routes()); err != nil {
+		log.Fatalf("listen %s: %v", addr, err)
+	}
 }
