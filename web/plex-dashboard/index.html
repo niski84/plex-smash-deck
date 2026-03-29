@@ -1463,6 +1463,43 @@
       line-height: 1.35;
     }
     #posterLightboxHint[hidden] { display: none; }
+    .poster-lightbox-nav {
+      position: fixed;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 9002;
+      width: 44px;
+      height: 88px;
+      border: 1px solid rgba(255,255,255,0.22);
+      border-radius: 8px;
+      background: rgba(18, 24, 42, 0.75);
+      color: rgba(255,255,255,0.88);
+      font-size: 32px;
+      line-height: 1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+    }
+    .poster-lightbox-nav:hover { background: rgba(40, 52, 88, 0.9); color: #fff; }
+    .poster-lightbox-nav:disabled { opacity: 0.28; cursor: default; }
+    .poster-lightbox-prev { left: max(10px, env(safe-area-inset-left)); }
+    .poster-lightbox-next { right: max(10px, env(safe-area-inset-right)); }
+    .poster-lightbox-counter {
+      position: absolute;
+      top: 56px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 9002;
+      font-size: 12px;
+      color: rgba(235, 240, 255, 0.85);
+      background: rgba(14, 20, 34, 0.72);
+      border: 1px solid rgba(88, 109, 175, 0.45);
+      border-radius: 999px;
+      padding: 5px 12px;
+      pointer-events: none;
+    }
     .movie-card-poster img { cursor: zoom-in; }
     @keyframes lb-in {
       from { opacity: 0; transform: scale(0.92); }
@@ -1476,6 +1513,9 @@
     <button id="posterLightboxDownload" type="button" title="Download this image">Download</button>
     <button id="posterLightboxCopy" type="button" data-testid="poster-lightbox-copy" title="Copy image to clipboard">Copy</button>
   </div>
+  <div id="posterLightboxCounter" class="poster-lightbox-counter" hidden aria-live="polite">1 / 1</div>
+  <button type="button" id="posterLightboxPrev" class="poster-lightbox-nav poster-lightbox-prev" aria-label="Previous image" hidden data-testid="poster-lightbox-prev">‹</button>
+  <button type="button" id="posterLightboxNext" class="poster-lightbox-nav poster-lightbox-next" aria-label="Next image" hidden data-testid="poster-lightbox-next">›</button>
   <button id="posterLightboxClose" aria-label="Close">✕</button>
   <img id="posterLightboxImg" src="" alt="" />
   <div id="posterLightboxHint">Right-click image for Save image as...</div>
@@ -1642,7 +1682,7 @@
         </div>
         <div
           class="movie-genre-tags-bar"
-          title="Include: pick one or more genres (OR). Exclude: hide titles that also have that genre (e.g. Comedy but not Documentary). Open More for + pin, ⊘ exclude, and −. Saved in this browser."
+          title="Include: pick one or more genres (OR). Exclude: hide titles that also have that genre. Open More for + pin, ⊘ exclude, and −. Include and exclude choices are saved in this browser."
         >
           <span class="movie-genre-tags-label" style="align-self:flex-start;margin-top:3px;">Genres</span>
           <div class="movie-genre-tags-stack">
@@ -2248,7 +2288,7 @@
           <span class="settings-group-eyebrow">This browser</span>
         </div>
         <p class="muted small" style="margin:0 0 10px 0;max-width:52rem;line-height:1.45;">
-          Quick filter chips above the movie grid default to <strong>Action</strong>, <strong>Comedy</strong>, <strong>Thriller</strong>, <strong>Adventure</strong>, and <strong>Science Fiction</strong> (including Sci‑Fi) when those genres exist in your library. Use <strong>Include any</strong> for OR-matching; <strong>Exclude if any</strong> hides titles that also have those genres (e.g. comedy but not documentary). Open <strong>More genres</strong> for <strong>+</strong> pin, <strong>⊘</strong> exclude, and <strong>−</strong>. Lists below are stored in this browser only.
+          Quick filter chips above the movie grid default to <strong>Action</strong>, <strong>Comedy</strong>, <strong>Thriller</strong>, <strong>Adventure</strong>, and <strong>Science Fiction</strong> (including Sci‑Fi) when those genres exist in your library. Use <strong>Include any</strong> for OR-matching; <strong>Exclude if any</strong> hides titles that also have those genres (e.g. comedy but not documentary). Open <strong>More genres</strong> for <strong>+</strong> pin, <strong>⊘</strong> exclude, and <strong>−</strong>. Pinned/hidden lists and your active <strong>include</strong> / <strong>exclude</strong> filters are saved in this browser and survive refresh.
         </p>
         <div class="row" style="align-items:flex-start;">
           <div>
@@ -2487,6 +2527,7 @@
       return {
         RatingKey: m.ratingKey || '',
         Title: m.title || '',
+        TMDBID: Number(m.tmdbId) || 0,
         Year: Number(m.year) || 0,
         DurationMillis: Number(m.durationMs) || 0,
         ViewCount: Number(m.viewCount) || 0,
@@ -3172,6 +3213,9 @@
       movieGridOrderIsSearchSorted = false;
       if (!opts.keepGenreFilter) {
         selectedDashboardGenres.clear();
+        const gp = loadGenreBarPrefs();
+        gp.included = [];
+        saveGenreBarPrefs(gp);
         document.querySelectorAll('#movieGenreTags .movie-genre-tag').forEach((el) => el.classList.remove('is-active'));
         updateDashboardGenreClearBtn();
       }
@@ -3793,7 +3837,7 @@
       const sortEl = document.getElementById('movieSortSelect');
       const mode = (sortEl && sortEl.value) || loadMovieSortPrefs().sort;
       sortMoviesList(list, mode);
-      resetMovieGridState(list, { keepGenreFilter: false });
+      resetMovieGridState(list, { keepGenreFilter: true });
       await materializeMoreMovies(MOVIE_GRID_INITIAL);
       filterMovieCardsSync();
       refreshAllMovieStreamHints();
@@ -4290,18 +4334,20 @@
     function loadGenreBarPrefs() {
       try {
         const raw = localStorage.getItem(GENRE_BAR_PREFS_KEY);
-        if (!raw) return { pinned: [], hidden: [], excluded: [] };
+        if (!raw) return { pinned: [], hidden: [], excluded: [], included: [] };
         const o = JSON.parse(raw);
         const pinned = Array.isArray(o.pinned) ? o.pinned.map(genrePrefKey).filter(Boolean) : [];
         const hidden = Array.isArray(o.hidden) ? o.hidden.map(genrePrefKey).filter(Boolean) : [];
         const excluded = Array.isArray(o.excluded) ? o.excluded.map(genrePrefKey).filter(Boolean) : [];
+        const included = Array.isArray(o.included) ? o.included.map(genrePrefKey).filter(Boolean) : [];
         return {
           pinned: [...new Set(pinned)],
           hidden: [...new Set(hidden)],
           excluded: [...new Set(excluded)],
+          included: [...new Set(included)],
         };
       } catch {
-        return { pinned: [], hidden: [], excluded: [] };
+        return { pinned: [], hidden: [], excluded: [], included: [] };
       }
     }
 
@@ -4312,8 +4358,19 @@
           pinned: prefs.pinned || [],
           hidden: prefs.hidden || [],
           excluded: prefs.excluded || [],
+          included: prefs.included || [],
         })
       );
+    }
+
+    /** Persist which genres are toggled on for Include-any (OR) filtering. */
+    function persistDashboardGenreIncludedSelection() {
+      const p = loadGenreBarPrefs();
+      p.included = [...selectedDashboardGenres].map((g) => genrePrefKey(g)).filter(Boolean);
+      saveGenreBarPrefs(p);
+      try {
+        console.debug('[plexdash] genreBar included persisted', p.included);
+      } catch (_) {}
     }
 
     function computeOrderedMainGenres(allGenres, prefs) {
@@ -4376,13 +4433,16 @@
     }
 
     function applyGenreBarFromSettingsFields() {
+      const prev = loadGenreBarPrefs();
       const prefs = {
         pinned: parseGenreBarTextarea(document.getElementById('settingsGenrePinned')?.value),
         hidden: parseGenreBarTextarea(document.getElementById('settingsGenreHidden')?.value),
         excluded: parseGenreBarTextarea(document.getElementById('settingsGenreExcluded')?.value),
+        included: prev.included || [],
       };
-      saveGenreBarPrefs(prefs);
       const exSet = new Set(prefs.excluded || []);
+      prefs.included = (prefs.included || []).filter((k) => !exSet.has(k));
+      saveGenreBarPrefs(prefs);
       for (const g of [...selectedDashboardGenres]) {
         if (exSet.has(genrePrefKey(g))) selectedDashboardGenres.delete(g);
       }
@@ -4392,7 +4452,7 @@
     }
 
     function resetGenreBarPrefsToDefaults() {
-      saveGenreBarPrefs({ pinned: [], hidden: [], excluded: [] });
+      saveGenreBarPrefs({ pinned: [], hidden: [], excluded: [], included: [] });
       genreMoreRowExpanded = false;
       syncSettingsGenreBarFields();
       refreshDashboardGenreTagsFromLibrary();
@@ -4408,6 +4468,7 @@
         prefs.hidden = [...(prefs.hidden || []), pk];
       }
       selectedDashboardGenres.delete(displayName);
+      prefs.included = (prefs.included || []).filter((k) => k !== pk);
       saveGenreBarPrefs(prefs);
       refreshDashboardGenreTagsFromLibrary();
       filterMovieCards();
@@ -4421,6 +4482,7 @@
       ex.add(pk);
       prefs.excluded = [...ex];
       removeSelectedGenresForPrefKey(pk);
+      prefs.included = (prefs.included || []).filter((k) => k !== pk);
       saveGenreBarPrefs(prefs);
       refreshDashboardGenreTagsFromLibrary();
       filterMovieCards();
@@ -4481,8 +4543,15 @@
       }
 
       const validKeys = new Set(allGenres.map((g) => genrePrefKey(g)));
-      for (const sel of [...selectedDashboardGenres]) {
-        if (!validKeys.has(genrePrefKey(sel))) selectedDashboardGenres.delete(sel);
+      let inclKeys = (prefs.included || []).filter((pk) => validKeys.has(pk));
+      if (inclKeys.length !== (prefs.included || []).length) {
+        prefs.included = inclKeys;
+        saveGenreBarPrefs(prefs);
+      }
+      selectedDashboardGenres.clear();
+      for (const pk of inclKeys) {
+        const disp = byKey.get(pk);
+        if (disp) selectedDashboardGenres.add(disp);
       }
 
       wrap.innerHTML = '';
@@ -4509,6 +4578,7 @@
             selectedDashboardGenres.add(name);
             btn.classList.add('is-active');
           }
+          persistDashboardGenreIncludedSelection();
           updateDashboardGenreClearBtn();
           if (wasExcluded) renderExcludedGenreChips(allGenres, byKey);
           filterMovieCards();
@@ -5161,6 +5231,8 @@
       let suspendedForLightbox = false;
       let mipRatingsAbort = null;
       let mipOmdbRequestedURL = null;
+      /** Movie object for the open hover panel (lightbox fanart prefetch uses TMDB / ratingKey). */
+      let mipDetailMovie = null;
 
       function appendMipCreditButton(parentEl, name, kind) {
         const btn = document.createElement('button');
@@ -5278,10 +5350,23 @@
         return s;
       }
 
+      /** Use poster column for grid cards so the panel sits beside the art users point at (not the title row). */
+      function mipAnchorRect(cardEl) {
+        if (!cardEl) return null;
+        const poster =
+          cardEl.classList && cardEl.classList.contains('movie-card')
+            ? cardEl.querySelector('.movie-card-poster')
+            : null;
+        const el = poster || cardEl;
+        return el.getBoundingClientRect();
+      }
+
       function positionPopup(cardRect) {
+        if (!cardRect) return;
         const margin = 8;
-        const sideGap = 2;
-        const stackGap = 10;
+        /* Slight overlap removes the dead zone where the cursor leaves the card before reaching the panel. */
+        const sideOverlap = 6;
+        const stackGap = 6;
         const vw = window.innerWidth;
         const vh = window.innerHeight;
         popup.style.display = 'flex';
@@ -5296,19 +5381,20 @@
         function clampTop(t) {
           return Math.max(margin, Math.min(t, vh - ph - margin));
         }
+        const vMid = cardRect.top + (cardRect.height - ph) / 2;
 
-        // Beside the card: panel edge flush with card (tiny gap) so the pointer can reach the popup.
-        const rightSideLeft = cardRect.right + sideGap;
+        // Prefer right of anchor; then left; then below; then above.
+        const rightSideLeft = cardRect.right - sideOverlap;
         if (rightSideLeft + pw <= vw - margin) {
           popup.style.left = clampLeft(rightSideLeft) + 'px';
-          popup.style.top = clampTop(cardRect.top + (cardRect.height - ph) / 2) + 'px';
+          popup.style.top = clampTop(vMid) + 'px';
           return;
         }
 
-        const leftSideLeft = cardRect.left - pw - sideGap;
+        const leftSideLeft = cardRect.left - pw + sideOverlap;
         if (leftSideLeft >= margin) {
           popup.style.left = clampLeft(leftSideLeft) + 'px';
-          popup.style.top = clampTop(cardRect.top + (cardRect.height - ph) / 2) + 'px';
+          popup.style.top = clampTop(vMid) + 'px';
           return;
         }
 
@@ -5326,8 +5412,14 @@
           return;
         }
 
-        popup.style.left = clampLeft(Math.round((vw - pw) / 2)) + 'px';
-        popup.style.top = clampTop(Math.round((vh - ph) / 2)) + 'px';
+        // Narrow/tall viewports: stay beside the card (may overlap it) instead of jumping to viewport center.
+        const preferRight = cardRect.left + cardRect.width / 2 < vw / 2;
+        let left = preferRight
+          ? Math.min(cardRect.right - sideOverlap, vw - pw - margin)
+          : Math.max(margin, cardRect.left - pw + sideOverlap);
+        left = clampLeft(left);
+        popup.style.left = left + 'px';
+        popup.style.top = clampTop(vMid) + 'px';
       }
 
       function clearHideTimer() {
@@ -5361,6 +5453,7 @@
         popup.style.display = 'none';
         anchorCard = null;
         suspendedForLightbox = false;
+        mipDetailMovie = null;
       }
 
       function scheduleHideMovieInfo() {
@@ -5374,6 +5467,7 @@
             popup.style.display = 'none';
             anchorCard = null;
             suspendedForLightbox = false;
+            mipDetailMovie = null;
           }, 150);
         }, 500);
       }
@@ -5506,7 +5600,18 @@
         e.stopPropagation();
         const src = (mipPoster.src || '').trim();
         if (!src) return;
-        openPosterLightbox(src, mipPoster.alt || '', { nativePixels: true, resumeMovieInfo: true });
+        const m = mipDetailMovie;
+        const tmdb = m ? Number(m.TMDBID != null ? m.TMDBID : m.tmdbId) : 0;
+        const rk = m && m.RatingKey != null ? String(m.RatingKey).trim() : '';
+        const fanartGallery = tmdb > 0 || rk ? { tmdbId: tmdb > 0 ? tmdb : 0, ratingKey: rk } : null;
+        try {
+          console.debug('[plexdash] mip poster → lightbox', { tmdbId: tmdb, ratingKey: rk, fanart: !!fanartGallery });
+        } catch (_) {}
+        openPosterLightbox(src, mipPoster.alt || '', {
+          nativePixels: true,
+          resumeMovieInfo: true,
+          fanartGallery,
+        });
       });
 
       window._showMovieInfo = function (cardEl, movie, opts) {
@@ -5517,6 +5622,7 @@
           showTimer = null;
           abortMipRatingsFetch();
           anchorCard = cardEl;
+          mipDetailMovie = movie;
           resetMipExtras();
 
           const rk = movie.RatingKey;
@@ -5701,14 +5807,13 @@
           const reveal = () => {
             requestAnimationFrame(() => {
               requestAnimationFrame(() => {
-                positionPopup(cardEl.getBoundingClientRect());
+                positionPopup(mipAnchorRect(cardEl));
                 popup.classList.add('mip-visible');
                 refreshPlotMoreButton();
               });
             });
           };
-          const rect = cardEl.getBoundingClientRect();
-          positionPopup(rect);
+          positionPopup(mipAnchorRect(cardEl));
           if (mipPoster.complete && mipPoster.naturalWidth > 0) {
             reveal();
           } else {
@@ -5739,7 +5844,7 @@
         const show = () => {
           requestAnimationFrame(() => {
             requestAnimationFrame(() => {
-              positionPopup(anchorCard.getBoundingClientRect());
+              positionPopup(mipAnchorRect(anchorCard));
               popup.classList.add('mip-visible');
               refreshPlotMoreButton();
             });
@@ -5780,6 +5885,75 @@
     let lbReturnToMovieInfo = false;
     let lbCurrentSrc = '';
     let lbBodyOverflowPrev = '';
+    let lbGallerySlides = [];
+    let lbGalleryIndex = 0;
+    let lbGalleryFetchSession = 0;
+    const lbPrevBtn = document.getElementById('posterLightboxPrev');
+    const lbNextBtn = document.getElementById('posterLightboxNext');
+    const lbCounterEl = document.getElementById('posterLightboxCounter');
+
+    function lightboxStemFromTitle(title) {
+      return (String(title || 'poster').trim() || 'poster')
+        .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '')
+        .replace(/\s+/g, '-')
+        .toLowerCase();
+    }
+
+    function updateLightboxNavUI() {
+      const n = lbGallerySlides.length;
+      if (!lbPrevBtn || !lbNextBtn || !lbCounterEl) return;
+      if (n <= 1) {
+        lbPrevBtn.hidden = true;
+        lbNextBtn.hidden = true;
+        lbCounterEl.hidden = true;
+        return;
+      }
+      lbPrevBtn.hidden = false;
+      lbNextBtn.hidden = false;
+      lbCounterEl.hidden = false;
+      lbCounterEl.textContent = lbGalleryIndex + 1 + ' / ' + n;
+    }
+
+    function preloadAdjacentLightboxSlides() {
+      if (lbGallerySlides.length < 2) return;
+      const i = lbGalleryIndex;
+      const next = (i + 1) % lbGallerySlides.length;
+      const prev = (i - 1 + lbGallerySlides.length) % lbGallerySlides.length;
+      try {
+        const im1 = new Image();
+        im1.decoding = 'async';
+        im1.src = lbGallerySlides[next].src;
+        const im2 = new Image();
+        im2.decoding = 'async';
+        im2.src = lbGallerySlides[prev].src;
+      } catch (_) {}
+    }
+
+    function applyLightboxSlide(i) {
+      if (!lbGallerySlides.length) return;
+      const n = lbGallerySlides.length;
+      lbGalleryIndex = ((i % n) + n) % n;
+      const slide = lbGallerySlides[lbGalleryIndex];
+      lbImg.onload = function () {
+        lbImg.onload = null;
+        lbImg.style.width = '';
+        lbImg.style.height = '';
+        lbImg.style.maxWidth = '';
+        lbImg.style.maxHeight = '';
+      };
+      lbImg.alt = slide.alt || '';
+      lbImg.src = slide.src;
+      lbCurrentSrc = slide.src;
+      if (slide.nativePixels) lbOverlay.classList.add('lb-native');
+      else lbOverlay.classList.remove('lb-native');
+      updateLightboxNavUI();
+      preloadAdjacentLightboxSlides();
+    }
+
+    function lightboxGalleryStep(delta) {
+      if (lbGallerySlides.length < 2) return;
+      applyLightboxSlide(lbGalleryIndex + delta);
+    }
 
     function lightboxFilenameFromAlt(alt) {
       const base = (String(alt || 'poster').trim() || 'poster')
@@ -5873,26 +6047,28 @@
 
     function openPosterLightbox(src, alt, opts) {
       opts = opts || {};
+      lbGalleryFetchSession++;
+      const fetchSession = lbGalleryFetchSession;
+      const baseAlt = String(alt || '').trim();
+      const stem = lightboxStemFromTitle(baseAlt);
+
       const nativePixels =
         opts.nativePixels !== false &&
         typeof src === 'string' &&
         src.indexOf('/api/plex/thumb') !== -1;
 
-      if (nativePixels) lbOverlay.classList.add('lb-native');
-      else lbOverlay.classList.remove('lb-native');
+      lbGallerySlides = [
+        {
+          src,
+          alt: baseAlt ? baseAlt + ' — Library poster' : 'Library poster',
+          nativePixels,
+          fileStem: stem + '-plex-poster',
+        },
+      ];
+      lbGalleryIndex = 0;
 
-      lbImg.onload = function () {
-        lbImg.onload = null;
-        /* Sizing is CSS-driven (fit viewport); do not set intrinsic pixel width/height. */
-        lbImg.style.width = '';
-        lbImg.style.height = '';
-        lbImg.style.maxWidth = '';
-        lbImg.style.maxHeight = '';
-      };
+      applyLightboxSlide(0);
 
-      lbImg.alt = alt || '';
-      lbImg.src = src;
-      lbCurrentSrc = src;
       lbHint.hidden = false;
       lbHint.textContent = nativePixels
         ? 'Scaled to fit the window; full resolution via Download / Copy. Right-click image for Save image as…'
@@ -5913,6 +6089,52 @@
       if (lbImg.complete && lbImg.naturalWidth > 0) {
         lbImg.onload();
       }
+
+      const fg = opts.fanartGallery;
+      if (fg && (fg.tmdbId > 0 || (fg.ratingKey && String(fg.ratingKey).trim() !== ''))) {
+        const qs =
+          fg.tmdbId > 0
+            ? 'tmdbId=' + encodeURIComponent(String(fg.tmdbId))
+            : 'ratingKey=' + encodeURIComponent(String(fg.ratingKey).trim());
+        try {
+          console.debug('[plexdash] fanart prefetch request', { qs, fetchSession });
+        } catch (_) {}
+        apiJson('/api/fanart-movie/prefetch?' + qs)
+          .then((data) => {
+            if (fetchSession !== lbGalleryFetchSession || !lbOverlay.classList.contains('lb-open')) return;
+            const items = (data && data.items) || [];
+            let extra = 0;
+            items.forEach((it, idx) => {
+              if (!it || !it.url) return;
+              const kindPart = String(it.kind || 'art').replace(/[^a-z0-9-]+/gi, '-').toLowerCase();
+              lbGallerySlides.push({
+                src: it.url,
+                alt: (baseAlt ? baseAlt + ' — ' : '') + (it.label || it.kind || 'Fanart'),
+                nativePixels: false,
+                fileStem: stem + '-fanart-' + kindPart + '-' + (idx + 1),
+              });
+              extra++;
+            });
+            updateLightboxNavUI();
+            preloadAdjacentLightboxSlides();
+            if (extra > 0) {
+              lbHint.hidden = false;
+              const baseHint = lbGallerySlides[0].nativePixels
+                ? 'Scaled to fit the window; full resolution via Download / Copy. '
+                : '';
+              lbHint.textContent =
+                baseHint +
+                '← → or side arrows: ' +
+                lbGallerySlides.length +
+                ' images (library poster + ' +
+                extra +
+                ' fan art). Copy / Download use the image shown.';
+            }
+          })
+          .catch((err) => {
+            console.warn('[plexdash] fanart prefetch failed', err);
+          });
+      }
     }
     function closePosterLightbox() {
       document.body.style.overflow = lbBodyOverflowPrev;
@@ -5925,6 +6147,12 @@
       lbImg.style.height = '';
       lbImg.style.maxWidth = '';
       lbImg.style.maxHeight = '';
+      lbGallerySlides = [];
+      lbGalleryIndex = 0;
+      lbGalleryFetchSession++;
+      if (lbPrevBtn) lbPrevBtn.hidden = true;
+      if (lbNextBtn) lbNextBtn.hidden = true;
+      if (lbCounterEl) lbCounterEl.hidden = true;
       if (lbReturnToMovieInfo && typeof window._resumeMovieInfoAfterLightbox === 'function') {
         window._resumeMovieInfoAfterLightbox();
       }
@@ -5934,8 +6162,33 @@
       if (e.target === lbOverlay || e.target === lbImg) closePosterLightbox();
     });
     document.getElementById('posterLightboxClose').addEventListener('click', closePosterLightbox);
+    if (lbPrevBtn) {
+      lbPrevBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        lightboxGalleryStep(-1);
+      });
+    }
+    if (lbNextBtn) {
+      lbNextBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        lightboxGalleryStep(1);
+      });
+    }
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && lbOverlay.classList.contains('lb-open')) closePosterLightbox();
+      if (!lbOverlay.classList.contains('lb-open')) return;
+      if (e.key === 'Escape') {
+        closePosterLightbox();
+        return;
+      }
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        lightboxGalleryStep(-1);
+        return;
+      }
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        lightboxGalleryStep(1);
+      }
     });
     lbDownloadBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -5946,7 +6199,8 @@
         const a = document.createElement('a');
         const obj = URL.createObjectURL(blob);
         a.href = obj;
-        a.download = lightboxFilenameFromAlt(lbImg.alt);
+        const cur = lbGallerySlides[lbGalleryIndex];
+        a.download = lightboxFilenameFromAlt((cur && cur.fileStem) || lbImg.alt);
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -7652,6 +7906,9 @@
 
     document.getElementById('movieGenreClearBtn').addEventListener('click', () => {
       selectedDashboardGenres.clear();
+      const gp = loadGenreBarPrefs();
+      gp.included = [];
+      saveGenreBarPrefs(gp);
       document.querySelectorAll('#movieGenreTags .movie-genre-tag').forEach((el) => el.classList.remove('is-active'));
       updateDashboardGenreClearBtn();
       filterMovieCards();

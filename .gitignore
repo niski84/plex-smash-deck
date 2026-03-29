@@ -11,6 +11,7 @@ server.lock
 # Local secrets
 .env
 .env.*
+!.env.example
 
 # App data (snapshots, settings, caches — keep structure locally, not in git)
 data/movie-snapshots/
