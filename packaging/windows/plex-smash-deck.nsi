@@ -62,7 +62,8 @@ Section "Install Core Files" SecCore
   FileOpen $0 "$INSTDIR\run-plex-smash-deck.bat" w
   FileWrite $0 "@echo off$\r$\n"
   FileWrite $0 "cd /d %~dp0$\r$\n"
-  FileWrite $0 "start \"\" /min plex-dashboard.exe$\r$\n"
+  ; Non-empty start title avoids NSIS quoting issues with $\"$\" for an empty title
+  FileWrite $0 "start $\"PlexSmashDeck$\" /min plex-dashboard.exe$\r$\n"
   FileClose $0
 
   FileOpen $0 "$INSTDIR\start-hidden.vbs" w
