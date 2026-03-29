@@ -21,7 +21,7 @@ On GitHub or in your editor, open the same files under **`docs/*.md`**.
 ## Prerequisites
 
 - **Plex** with a movie library you can reach from the machine running the dashboard.
-- **Go 1.21+** if you build from source, or a [pre-built binary](https://github.com/niski84/plex-smash-deck/releases).
+- **Go 1.22+** if you build from source, a [pre-built binary](https://github.com/niski84/plex-smash-deck/releases), or a **[container image](container.md)** (GHCR).
 - A **[TMDB](https://www.themoviedb.org/settings/api) API key** for discovery, filmography, and poster art.
 - **Radarr** (optional) and an **LG TV** on the same LAN (optional; only needed for those features).
 
@@ -70,6 +70,10 @@ go run ./cmd/plex-dashboard
 ```
 
 Or run a built binary the same way you would any other executable (again with cwd at the project root, or next to a valid `web/plex-dashboard` tree if you package it that way).
+
+### Docker
+
+Use **`docker compose`** (see repo root **`docker-compose.yml`**) or **`docker run`** with a published image from **GHCR** — full commands, volumes, and LAN notes are in **[container.md](container.md)**.
 
 The default URL is **`http://localhost:8081`** (or **`http://127.0.0.1:8081`**) when `PORT` is unset.
 

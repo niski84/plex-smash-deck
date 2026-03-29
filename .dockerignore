@@ -1,0 +1,34 @@
+# Git / IDE
+.git
+.github
+.vscode
+.idea
+
+# Secrets and local env
+.env
+.env.*
+!.env.example
+
+# Runtime noise (host)
+server.log
+server.pid
+server.port
+server.lock
+
+# Large or host-only data (mount a volume at /app/data instead)
+data/
+
+# Node / tests
+node_modules
+test-results
+playwright-report
+docs/demo-frames
+
+# Binaries built on host
+plex-dashboard
+snapshot-cli
+dist
+
+# Images not needed in UI container
+images
+docs/images
