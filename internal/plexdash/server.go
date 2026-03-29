@@ -565,12 +565,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/playlists/by-genre-rating", s.handleCreatePlaylistByGenreRating)
 	mux.HandleFunc("/api/playlists/random-play", s.handleCreateAndPlayRandomPlaylist)
 
-	// Serve static dashboard UI (path resolved so the binary works when cwd is not the repo root).
-	root, err := DashboardWebRoot()
-	if err != nil {
-		root = filepath.Clean("web/plex-dashboard")
-	}
-	mux.Handle("/", http.FileServer(http.Dir(root)))
+	// Static UI: disk (repo / beside binary) or embedded in the binary (see EnsureDashboardUI).
+	mux.Handle("/", DashboardFileServer())
 
 	return requestLogMiddleware(mux)
 }
