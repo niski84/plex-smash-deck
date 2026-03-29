@@ -1636,7 +1636,7 @@
             <option value="random" title="Shuffled order is kept for 24 hours or until you reload the movie list; switching sort and back does not reshuffle.">Random</option>
           </select>
           <label for="movieDecadeSelect" class="muted" style="font-size:12px;white-space:nowrap;">Decade</label>
-          <select id="movieDecadeSelect" class="movies-rating-filter" title="Show only titles whose release year falls in this decade (1970s–2030s+)." data-testid="movie-decade-select">
+          <select id="movieDecadeSelect" class="movies-rating-filter" title="Show only titles whose release year falls in this decade. Listed decades match years present in your loaded library." data-testid="movie-decade-select">
             <option value="">All decades</option>
           </select>
         </div>
@@ -3480,16 +3480,21 @@
       if (!sel) return;
       const prefs = loadMovieSortPrefs();
       const prev = sel.value || prefs.decade || '';
-      const yNow = new Date().getFullYear();
-      const maxY = moviesLibraryFull.reduce((mx, m) => Math.max(mx, movieYearN(m)), 0);
-      let maxDec = Math.max(2030, Math.floor(yNow / 10) * 10);
-      if (maxY > 0) maxDec = Math.max(maxDec, Math.floor(maxY / 10) * 10);
+
+      const decadeStarts = new Set();
+      for (const m of moviesLibraryFull || []) {
+        const y = movieYearN(m);
+        if (!Number.isFinite(y) || y <= 0) continue;
+        decadeStarts.add(Math.floor(y / 10) * 10);
+      }
+      const decades = [...decadeStarts].sort((a, b) => a - b);
+
       sel.innerHTML = '';
       const opt0 = document.createElement('option');
       opt0.value = '';
       opt0.textContent = 'All decades';
       sel.appendChild(opt0);
-      for (let d = 1970; d <= maxDec; d += 10) {
+      for (const d of decades) {
         const o = document.createElement('option');
         o.value = String(d);
         o.textContent = `${d}s`;
