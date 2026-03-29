@@ -523,6 +523,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/fanart-banner/cache-status", s.handleFanartBannerCacheStatus)
 	mux.HandleFunc("/api/fanart-banner/cache/invalidate", s.handleFanartBannerCacheInvalidate)
 	mux.HandleFunc("/api/fanart-banner/log", s.handleFanartBannerLog)
+	mux.HandleFunc("/api/fanart-movie/cache-file", s.handleFanartMovieCacheFile)
+	mux.HandleFunc("/api/fanart-movie/prefetch", s.handleFanartMoviePrefetch)
 	mux.HandleFunc("/api/movies/sync-recent", s.handleMoviesSyncRecent)
 	mux.HandleFunc("/api/movies/play", s.handleMoviesPlay)
 	mux.HandleFunc("/api/movies", s.handleMovies)

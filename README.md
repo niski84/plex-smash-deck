@@ -44,7 +44,7 @@ After the hover delay, the panel merges **TMDB vote average** with **OMDb** (IMD
 - A **free [TMDB API account](https://www.themoviedb.org/settings/api)** — used for discovery, filmography lookups, and poster art
 - An **LG Smart TV** on the same local network (for direct playback; everything else works without it)
 - [Radarr](https://radarr.video) (optional, for one-click movie adds)
-- Go 1.21+ to build from source, or grab a [pre-built binary](https://github.com/niski84/plex-smash-deck/releases)
+- Go 1.22+ to build from source, or grab a [pre-built binary](https://github.com/niski84/plex-smash-deck/releases) / [container image](docs/container.md)
 
 ## Quick start
 
@@ -57,6 +57,10 @@ go run ./cmd/plex-dashboard
 ```
 
 All settings can also be saved through the Settings tab in the UI — no restart needed.
+
+### Docker
+
+Portable **linux/amd64** and **linux/arm64** images are published to **GitHub Container Registry** on every **`v*`** tag (same trigger as release binaries): `ghcr.io/<owner>/<repo>:<tag>` and `:latest`. The image runs as a non-root user and keeps persistent state under **`/app/data`** (use a volume or bind mount). See **[docs/container.md](docs/container.md)** for `docker run`, Compose, and security notes. **No extra registry account** is required to pull public images; CI uses `GITHUB_TOKEN` to push.
 
 ## Documentation
 
@@ -71,6 +75,7 @@ User guides live in **[docs/](docs/)** as Markdown. Read them in the repo, or op
 | [docs/02-discovery.md](docs/02-discovery.md) | Discovery jobs, TMDB, cache, Radarr |
 | [docs/03-snapshots-settings-troubleshooting.md](docs/03-snapshots-settings-troubleshooting.md) | Snapshots, Settings, playlists, FAQ |
 | [docs/04-background-health-checks.md](docs/04-background-health-checks.md) | Background connectivity probes (45s / 4m) vs `/api/health` |
+| [docs/container.md](docs/container.md) | Docker / GHCR images, Compose, volumes, LAN access |
 
 ## Configuration
 
@@ -103,7 +108,7 @@ export PLEX_DASHBOARD_ENV_FILE=/path/to/your/main/plex-dashboard/.env
 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o plex-dashboard ./cmd/plex-dashboard
 ```
 
-Pre-built binaries for Linux, macOS, and Windows are attached to every [GitHub Release](https://github.com/niski84/plex-smash-deck/releases) via CI.
+Pre-built binaries for Linux, macOS, and Windows are attached to every [GitHub Release](https://github.com/niski84/plex-smash-deck/releases) via CI. **Container images** (multi-arch) are pushed to **ghcr.io** on the same version tags; see [docs/container.md](docs/container.md).
 
 ### Windows installer (NSIS)
 
@@ -123,6 +128,8 @@ Tagged releases now also publish a Windows NSIS installer (`*-windows-x64-setup.
 Go standard library backend, vanilla JS frontend, single binary. No web framework, no JavaScript framework, no database. Movie metadata is cached in memory and on disk so Plex takes as few hits as possible.
 
 ```
+Dockerfile              — multi-stage image (non-root, health check)
+docker-compose.yml      — local Compose stack + named volume for /app/data
 images/                 — README dashboard screenshots ([`manifest.json`](images/manifest.json))
 docs/images/           — README doc figures; `{name}.meta.json` per `{name}.png` (same generator)
 cmd/plex-dashboard/     — entry point
