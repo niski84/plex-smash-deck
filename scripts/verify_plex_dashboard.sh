@@ -31,6 +31,19 @@ HEALTH_JSON="$(curl -fsS "${BASE_URL}/api/health")"
 echo "$HEALTH_JSON" | rg '"success"\s*:\s*true' >/dev/null
 echo "[ok] health endpoint"
 
+echo "[verify] checking /api/connectivity"
+CONN_JSON=""
+for _ in {1..30}; do
+  CONN_JSON="$(curl -fsS "${BASE_URL}/api/connectivity")"
+  if echo "$CONN_JSON" | rg -q '"updatedAt"\s*:\s*"[0-9]{4}-'; then
+    break
+  fi
+  sleep 0.2
+done
+echo "$CONN_JSON" | rg '"success"\s*:\s*true' >/dev/null
+echo "$CONN_JSON" | rg '"checks"\s*:\s*\[' >/dev/null
+echo "[ok] connectivity endpoint"
+
 echo "[verify] checking /api/movies"
 MOVIES_JSON="$(curl -fsS "${BASE_URL}/api/movies?limit=5")"
 echo "$MOVIES_JSON" | rg '"success"\s*:\s*true' >/dev/null

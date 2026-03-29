@@ -45,6 +45,16 @@ type Config struct {
 	// zero value means midnight, which is a valid choice.
 	SnapshotDisabled bool
 	SnapshotHour     int
+
+	// Fanart.tv hero banner (optional). When enabled and no custom HeroBannerURL,
+	// the dashboard loads wide movie art from fanart.tv (TMDB id required), with
+	// disk cache under data/fanart-banner-cache/.
+	FanartEnabled            bool
+	FanartAPIKey             string
+	FanartClientKey          string // optional project client key (higher API limits)
+	FanartBannerCacheMaxMB   int    // total disk budget for downloaded banner images
+	BannerArtRefresh         string // 5m|10m|30m|1h|3h|8h|24h|48h|1w|once
+	BannerRotateInterval     string // same vocabulary; "once" = do not auto-rotate title
 }
 
 func LoadConfig() (Config, error) {
@@ -74,15 +84,21 @@ func LoadConfig() (Config, error) {
 		RadarrAPIKey:       os.Getenv("RADARR_API_KEY"),
 		RadarrRootFolder:   os.Getenv("RADARR_ROOT_FOLDER"),
 		RadarrProfileID:    getenvInt("RADARR_PROFILE_ID", 1),
-		LGTVAddr:           os.Getenv("LGTV_ADDR"),
-		LGTVClientKey:      os.Getenv("LGTV_CLIENT_KEY"),
-		LGTVIPControlKey:   firstNonEmptyEnv("LGTV_IP_CONTROL_KEY", "TV_KEYCODE"),
+		LGTVAddr:               os.Getenv("LGTV_ADDR"),
+		LGTVClientKey:          os.Getenv("LGTV_CLIENT_KEY"),
+		LGTVIPControlKey:       firstNonEmptyEnv("LGTV_IP_CONTROL_KEY", "TV_KEYCODE"),
+		FanartAPIKey:           os.Getenv("FANART_API_KEY"),
+		FanartClientKey:        os.Getenv("FANART_CLIENT_KEY"),
+		FanartBannerCacheMaxMB: getenvInt("FANART_BANNER_CACHE_MAX_MB", 0),
+		BannerArtRefresh:       getenv("BANNER_ART_REFRESH", ""),
+		BannerRotateInterval:   getenv("BANNER_ROTATE_INTERVAL", ""),
 	}
 
 	// Source from .env first, then fill missing values from persisted settings.
 	stored, err := loadPersistedConfig(defaultSettingsPath())
 	if err == nil {
 		mergeMissingConfig(&cfg, stored)
+		mergeFanartBannerCacheMax(&cfg, stored)
 	}
 	if strings.TrimSpace(cfg.AppDisplayName) == "" {
 		cfg.AppDisplayName = "plex-smash-deck"
@@ -97,7 +113,38 @@ func LoadConfig() (Config, error) {
 	if cfg.HeroBannerHeight <= 0 {
 		cfg.HeroBannerHeight = 140
 	}
+	if cfg.FanartBannerCacheMaxMB <= 0 {
+		cfg.FanartBannerCacheMaxMB = 200
+	}
+	if strings.TrimSpace(cfg.BannerArtRefresh) == "" {
+		cfg.BannerArtRefresh = "1h"
+	}
+	if strings.TrimSpace(cfg.BannerRotateInterval) == "" {
+		cfg.BannerRotateInterval = "30m"
+	}
+	applyFanartEnvOverrides(&cfg)
 	return cfg, nil
+}
+
+// applyFanartEnvOverrides lets .env force fanart on/off after merge with persisted settings.
+func applyFanartEnvOverrides(cfg *Config) {
+	ev := strings.TrimSpace(os.Getenv("FANART_BANNER_ENABLED"))
+	if ev == "" {
+		return
+	}
+	switch strings.ToLower(ev) {
+	case "1", "true", "yes", "on":
+		cfg.FanartEnabled = true
+	case "0", "false", "no", "off":
+		cfg.FanartEnabled = false
+	}
+}
+
+// mergeFanartBannerCacheMax applies persisted cache size when set.
+func mergeFanartBannerCacheMax(dst *Config, src Config) {
+	if src.FanartBannerCacheMaxMB > 0 {
+		dst.FanartBannerCacheMaxMB = src.FanartBannerCacheMaxMB
+	}
 }
 
 func getenv(key, fallback string) string {
@@ -281,4 +328,19 @@ func mergeMissingConfig(dst *Config, src Config) {
 	// explicit choice (enabled=true via !Disabled=false, hour=0=midnight).
 	dst.SnapshotDisabled = src.SnapshotDisabled
 	dst.SnapshotHour = src.SnapshotHour
+
+	dst.FanartEnabled = src.FanartEnabled
+	if dst.FanartAPIKey == "" {
+		dst.FanartAPIKey = src.FanartAPIKey
+	}
+	if dst.FanartClientKey == "" {
+		dst.FanartClientKey = src.FanartClientKey
+	}
+	// FanartBannerCacheMaxMB: see mergeFanartBannerCacheMax after mergeMissingConfig.
+	if strings.TrimSpace(src.BannerArtRefresh) != "" {
+		dst.BannerArtRefresh = src.BannerArtRefresh
+	}
+	if strings.TrimSpace(src.BannerRotateInterval) != "" {
+		dst.BannerRotateInterval = src.BannerRotateInterval
+	}
 }

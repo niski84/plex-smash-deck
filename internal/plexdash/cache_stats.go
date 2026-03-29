@@ -157,8 +157,11 @@ func (s *Server) handleSettingsCaches(w http.ResponseWriter, r *http.Request) {
 
 	s.streamProbeMu.Lock()
 	ps := s.plexStreamCache
-	probeAt := s.lastStreamProbeAt
 	s.streamProbeMu.Unlock()
+	var probeAt time.Time
+	if t, err := time.Parse(time.RFC3339, strings.TrimSpace(ps.ProbedAt)); err == nil {
+		probeAt = t
+	}
 	streamExtra := strings.TrimSpace(ps.Level + " — " + ps.Message)
 	streamExtra = strings.Trim(strings.TrimSpace(streamExtra), "—")
 	streamExtra = strings.TrimSpace(streamExtra)
