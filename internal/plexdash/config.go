@@ -40,6 +40,11 @@ type Config struct {
 	// Env: LGTV_IP_CONTROL_KEY, or TV_KEYCODE for compatibility with smash-deck .env.
 	LGTVIPControlKey string
 
+	// TVDevices is the list of configured TV/streaming devices.
+	// This replaces the single LGTVAddr/LGTVClientKey/LGTVIPControlKey fields.
+	// Old single-TV env vars are auto-migrated into this list on startup (see migrateLegacyLGTV).
+	TVDevices []TVDevice
+
 	// Snapshot schedule. SnapshotDisabled=false (zero) means enabled — correct
 	// default without needing special handling. SnapshotHour is 0–23 UTC;
 	// zero value means midnight, which is a valid choice.
@@ -123,7 +128,30 @@ func LoadConfig() (Config, error) {
 		cfg.BannerRotateInterval = "30m"
 	}
 	applyFanartEnvOverrides(&cfg)
+	migrateLegacyLGTV(&cfg)
 	return cfg, nil
+}
+
+// migrateLegacyLGTV converts old single-TV env vars into a TVDevice entry so that
+// existing .env files keep working without any user action.
+func migrateLegacyLGTV(cfg *Config) {
+	if len(cfg.TVDevices) > 0 {
+		return // already has explicit devices; nothing to migrate
+	}
+	addr := strings.TrimSpace(cfg.LGTVAddr)
+	if addr == "" {
+		return // no legacy TV configured
+	}
+	cfg.TVDevices = []TVDevice{
+		{
+			ID:           "lgtv-legacy",
+			Name:         cfg.TargetClientName,
+			Manufacturer: "lg",
+			Addr:         addr,
+			ClientKey:    strings.TrimSpace(cfg.LGTVClientKey),
+			IPControlKey: strings.TrimSpace(cfg.LGTVIPControlKey),
+		},
+	}
 }
 
 // applyFanartEnvOverrides lets .env force fanart on/off after merge with persisted settings.
@@ -323,6 +351,9 @@ func mergeMissingConfig(dst *Config, src Config) {
 	}
 	if dst.LGTVIPControlKey == "" {
 		dst.LGTVIPControlKey = src.LGTVIPControlKey
+	}
+	if len(dst.TVDevices) == 0 {
+		dst.TVDevices = src.TVDevices
 	}
 	// Snapshot schedule: stored value always wins since zero-value is a valid
 	// explicit choice (enabled=true via !Disabled=false, hour=0=midnight).

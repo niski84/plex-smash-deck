@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -152,22 +153,40 @@ func writeOMDbFullCache(c cachedOMDbFull) {
 	_ = os.Rename(tmp, p)
 }
 
+// averageScore10 computes a robust combined rating (0-10 scale) using trimmed
+// mean to resist outliers from politically-motivated or bot-driven votes:
+//
+//	1-2 scores → simple average
+//	3 scores   → median
+//	4+ scores  → drop highest and lowest, average the rest
 func averageScore10(entries []OMDbRatingEntry) float64 {
-	if len(entries) == 0 {
-		return 0
-	}
-	var sum float64
-	n := 0
+	var scores []float64
 	for _, e := range entries {
 		if e.Score10 > 0 {
-			sum += e.Score10
-			n++
+			scores = append(scores, e.Score10)
 		}
 	}
-	if n == 0 {
+	if len(scores) == 0 {
 		return 0
 	}
-	return sum / float64(n)
+	sort.Float64s(scores)
+	if len(scores) <= 2 {
+		var sum float64
+		for _, s := range scores {
+			sum += s
+		}
+		return sum / float64(len(scores))
+	}
+	if len(scores) == 3 {
+		return scores[1] // median
+	}
+	// 4+ scores: trim highest and lowest, average the rest.
+	trimmed := scores[1 : len(scores)-1]
+	var sum float64
+	for _, s := range trimmed {
+		sum += s
+	}
+	return sum / float64(len(trimmed))
 }
 
 func parseOMDbJSONToDetail(imdbID string, body []byte) cachedOMDbFull {

@@ -59,6 +59,25 @@ Do this on the TV with the **Magic Remote** (or equivalent with number keys):
 
 If your TV never shows extra options, it may already allow LAN control, or you may need **Developer Mode** (next section) for advanced tooling — that is separate from day‑to‑day playback.
 
+### Network IP Control (code 82888)
+
+LG TVs have a separate **Network IP Control** feature that allows external control via **Telnet (port 9761)**, UDP, or commercial AV systems. This is distinct from SSAP port 3001 — plex‑smash‑deck uses SSAP for playback, but some integrators and automation setups rely on IP Control.
+
+**To access the IP Control Setup menu (webOS 22 and earlier):**
+
+1. Open **Settings**, highlight **Network** (or **Connection**) — do **not** enter it yet.
+2. Using the **numeric keypad**, quickly enter **`82888`**.
+3. A hidden sub‑menu should appear with options to:
+   - Toggle **Network IP Control** → **On**
+   - Generate an **8‑character encryption key**
+   - Enable **Wake on LAN**
+
+**Important notes:**
+
+- **webOS 23+** — Recent firmware updates (e.g. version 13.43.97 and later) may have disabled the 82888 shortcut. If it does nothing, try disabling **Deep Sleep** via integrator / commercial settings first, or look for the IP Control option in the TV's **Hospitality / Installer** mode if available.
+- **Older models** — On some sets, entering **`828`** followed by **OK** while **holding** the Settings button may also open the IP Control menu.
+- **Generated key** — Once Network IP Control is on, use the 8‑character key shown in that menu as your **IP Control Key** in plex‑smash‑deck's Settings → TV Devices form (the **IP Control Key** field). Third‑party drivers (Companion, RTI, Savant, etc.) use the same key.
+
 ### Developer Mode (optional, official LG path)
 
 LG documents **Developer Mode** for webOS developers (install **Developer Mode** from the LG Content Store, sign in with an LG developer account, enable dev mode, **Key Server**, etc.). That path is mainly for installing and debugging apps, not strictly required for SSAP pairing — but some households already use it for other home‑brew tools.

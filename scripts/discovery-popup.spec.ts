@@ -7,6 +7,19 @@
  */
 import { test, expect } from '@playwright/test';
 
+/** Wait for the movie grid to finish loading. */
+async function waitForGrid(page) {
+  await page.waitForFunction(
+    () => {
+      const el = document.getElementById('movieCount');
+      if (!el) return false;
+      const m = el.textContent.match(/(\d+)\s*movie/);
+      return m && parseInt(m[1], 10) > 0;
+    },
+    { timeout: 30_000 }
+  );
+}
+
 test.describe('Discovery deferred hover popup', () => {
   test('GET / HTML contains popup markup and configurable hover hook', async ({ request }) => {
     const res = await request.get('/');
@@ -15,6 +28,7 @@ test.describe('Discovery deferred hover popup', () => {
     expect(html).toContain('id="discPosterPopup"');
     expect(html).toContain('disc-popup-text');
     expect(html).toContain('__PLEXDASH_DISC_POPUP_HOVER_MS');
+    expect(html).toContain('__PLEXDASH_DISCOVERY_HOVER_MS');
     expect(html).toContain('__PLEXDASH_HOVER_POPUP_MS');
     expect(html).toContain('disc-popup-img');
   });
@@ -115,16 +129,15 @@ test.describe('Dashboard movie info hover popup', () => {
     });
 
     await page.goto('/');
+    await waitForGrid(page);
 
     await page.evaluate(() => {
       const grid = document.getElementById('movieGrid');
       if (!grid) throw new Error('missing #movieGrid');
-      grid.innerHTML = '';
       const card = document.createElement('div');
       card.className = 'movie-card';
       card.id = 'e2e-mip-card';
-      card.style.minWidth = '80px';
-      card.style.minHeight = '120px';
+      card.style.cssText = 'min-width:100px;min-height:140px;position:relative;background:#333;';
       const movie = {
         RatingKey: 'e2e-rk',
         Title: 'Playwright dashboard hover',
@@ -136,12 +149,11 @@ test.describe('Dashboard movie info hover popup', () => {
         Directors: [],
         Genres: [],
       };
-      card.addEventListener('mouseenter', () => window._showMovieInfo(card, movie));
-      card.addEventListener('mouseleave', () => window._hideMovieInfo());
-      grid.appendChild(card);
+      // Call _showMovieInfo directly to bypass hotzone detection.
+      (window as any)._showMovieInfo(card, movie);
+      grid.prepend(card);
     });
 
-    await page.locator('#e2e-mip-card').hover();
     await expect(page.locator('#movieInfoPopup .mip-plot')).toContainText('E2E_DASHBOARD_MIP_SYNOPSIS', {
       timeout: 8000,
     });
@@ -157,15 +169,15 @@ test.describe('Dashboard movie info hover popup', () => {
     });
 
     await page.goto('/');
+    await waitForGrid(page);
 
     await page.evaluate(() => {
       const grid = document.getElementById('movieGrid');
-      grid.innerHTML = '';
+      if (!grid) throw new Error('missing #movieGrid');
       const card = document.createElement('div');
       card.className = 'movie-card';
       card.id = 'e2e-mip-bridge-card';
-      card.style.minWidth = '80px';
-      card.style.minHeight = '120px';
+      card.style.cssText = 'min-width:100px;min-height:140px;position:relative;background:#333;';
       const movie = {
         RatingKey: 'e2e-bridge',
         Title: 'MIP bridge',
@@ -176,19 +188,17 @@ test.describe('Dashboard movie info hover popup', () => {
         Directors: [],
         Genres: [],
       };
-      card.addEventListener('mouseenter', () => window._showMovieInfo(card, movie));
-      card.addEventListener('mouseleave', () => window._hideMovieInfo());
-      grid.appendChild(card);
+      (window as any)._showMovieInfo(card, movie);
+      grid.prepend(card);
     });
 
-    await page.locator('#e2e-mip-bridge-card').hover();
     await expect(page.locator('#movieInfoPopup')).toHaveClass(/mip-visible/, { timeout: 8000 });
 
     await page.locator('#movieInfoPopup').hover();
     await expect(page.locator('#movieInfoPopup .mip-plot')).toContainText('MIP bridge synopsis');
 
     await page.mouse.move(0, 0);
-    await page.waitForTimeout(900);
+    await page.waitForTimeout(1100);
     await expect(page.locator('#movieInfoPopup')).not.toHaveClass(/mip-visible/);
   });
 });

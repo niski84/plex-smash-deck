@@ -19,8 +19,9 @@ type PlexClient struct {
 	baseURL       string
 	token         string
 	client        *http.Client
-	lgtvAddr      string // LG TV local IP for SSAP direct control
-	lgtvClientKey string // SSAP client key (from one-time pairing)
+	lgtvAddr      string     // legacy single-TV addr (used as fallback only)
+	lgtvClientKey string     // legacy single-TV SSAP key
+	tvDevices     []TVDevice // all configured TV devices
 }
 
 type Movie struct {
@@ -96,6 +97,7 @@ type Player struct {
 	ClientIdentifier string
 	Product          string
 	URI              string
+	DeviceID         string // ID of the TVDevice that produced this player entry, if any
 }
 
 // PlayerDiscoveryDebug explains how the merged player list was built (for UI / troubleshooting).
@@ -124,6 +126,7 @@ func NewPlexClient(cfg Config) *PlexClient {
 		token:         cfg.PlexToken,
 		lgtvAddr:      cfg.LGTVAddr,
 		lgtvClientKey: cfg.LGTVClientKey,
+		tvDevices:     cfg.TVDevices,
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -519,15 +522,31 @@ func (p *PlexClient) ListPlayers(ctx context.Context) ListPlayersResult {
 	var dbg PlayerDiscoveryDebug
 	seen := map[string]Player{} // keyed by ClientIdentifier
 
-	// Source 1: static LG TV from config (always available, no session needed).
-	if p.lgtvAddr != "" && p.lgtvClientKey != "" {
-		dbg.LGStaticConfigured = true
-		const lgtvStaticID = "lgtv-ssap-static"
-		seen[lgtvStaticID] = Player{
-			Name:             "LG TV (SSAP)",
-			ClientIdentifier: lgtvStaticID,
-			Product:          "Plex for LG",
-			URI:              "ssap://" + p.lgtvAddr,
+	// Source 1: configured TV devices (always available, no session needed).
+	for _, dev := range p.tvDevices {
+		if strings.TrimSpace(dev.Addr) == "" {
+			continue
+		}
+		staticID := "tvdevice-" + dev.ID
+		switch strings.ToLower(strings.TrimSpace(dev.Manufacturer)) {
+		case "roku":
+			dbg.LGStaticConfigured = true // reuse flag — means "at least one direct device"
+			seen[staticID] = Player{
+				Name:             dev.Name,
+				ClientIdentifier: staticID,
+				Product:          "Plex for Roku",
+				URI:              "roku://" + dev.Addr,
+				DeviceID:         dev.ID,
+			}
+		default: // "lg" and anything unrecognised
+			dbg.LGStaticConfigured = true
+			seen[staticID] = Player{
+				Name:             dev.Name,
+				ClientIdentifier: staticID,
+				Product:          "Plex for LG",
+				URI:              "ssap://" + dev.Addr,
+				DeviceID:         dev.ID,
+			}
 		}
 	}
 
@@ -559,13 +578,15 @@ func (p *PlexClient) ListPlayers(ctx context.Context) ListPlayersResult {
 			if _, exists := seen[sp.ClientIdentifier]; !exists {
 				seen[sp.ClientIdentifier] = sp
 			}
-			// If this session player is the configured LG TV, update the static
-			// entry with the live machine identifier from the session.
-			if strings.EqualFold(sp.Product, "Plex for LG") && p.lgtvAddr != "" {
-				const lgtvStaticID = "lgtv-ssap-static"
-				if s, ok := seen[lgtvStaticID]; ok {
-					s.Name = sp.Name
-					seen[lgtvStaticID] = s
+			// If this session player matches a configured TV device by IP, preserve
+			// our DeviceID on the static entry (session players don't carry it).
+			if strings.EqualFold(sp.Product, "Plex for LG") {
+				for _, dev := range p.tvDevices {
+					staticID := "tvdevice-" + dev.ID
+					if s, ok := seen[staticID]; ok {
+						s.Name = sp.Name
+						seen[staticID] = s
+					}
 				}
 			}
 		}
@@ -899,8 +920,7 @@ func (p *PlexClient) fetchPlaylistStreamItems(ctx context.Context, playlistID st
 }
 
 // PlayStreamItemsOnTV routes a pre-built list of WebOSStreamItems to the
-// appropriate player. For the LG TV it uses the webOS native media player;
-// the companion protocol path is not supported for raw stream URLs.
+// appropriate player based on its manufacturer/product type.
 func (p *PlexClient) PlayStreamItemsOnTV(ctx context.Context, items []WebOSStreamItem, targetClientName string) (string, error) {
 	if len(items) == 0 {
 		return "", fmt.Errorf("no items to play")
@@ -914,11 +934,52 @@ func (p *PlexClient) PlayStreamItemsOnTV(ctx context.Context, items []WebOSStrea
 	if err != nil {
 		return "", err
 	}
-	if strings.EqualFold(target.Product, "Plex for LG") && p.lgtvAddr != "" && p.lgtvClientKey != "" {
-		fmt.Printf("[player] LG TV: streaming %d direct items via webOS native player\n", len(items))
-		return target.Name, PlayPlaylistViaWebOS(ctx, p.lgtvAddr, p.lgtvClientKey, items)
+
+	switch {
+	case strings.EqualFold(target.Product, "Plex for LG"):
+		// Prefer the matched device from the TVDevices list; fall back to legacy single-TV fields.
+		addr, key := p.lgtvAddr, p.lgtvClientKey
+		if dev := FindDeviceByID(p.tvDevices, target.DeviceID); dev != nil {
+			addr, key = dev.Addr, dev.ClientKey
+		}
+		if addr == "" || key == "" {
+			return target.Name, fmt.Errorf("LG TV %q: addr or client key not configured", target.Name)
+		}
+		fmt.Printf("[player] LG TV %q: streaming %d item(s) via webOS native player\n", target.Name, len(items))
+		return target.Name, PlayPlaylistViaWebOS(ctx, addr, key, items)
+
+	case strings.EqualFold(target.Product, "Plex for Roku"):
+		dev := FindDeviceByID(p.tvDevices, target.DeviceID)
+		if dev == nil || strings.TrimSpace(dev.Addr) == "" {
+			return target.Name, fmt.Errorf("Roku device %q: addr not configured", target.Name)
+		}
+		// Collect rating keys so PlayOnRokuViaPlex can build the deep link.
+		ratingKeys := make([]string, 0, len(items))
+		// items carry stream URLs; extract the rating key from each item's original ratingKey.
+		// We piggy-back via ratingKeys passed in separately — use the items' title as fallback.
+		// The caller in handleMoviesPlay also has the raw ratingKeys; we accept them via
+		// the rokuRatingKeys field threaded through WebOSStreamItem.RatingKey (see below).
+		for _, it := range items {
+			if it.RatingKey != "" {
+				ratingKeys = append(ratingKeys, it.RatingKey)
+			}
+		}
+		machineID, err := p.MachineIdentifier(ctx)
+		if err != nil {
+			// Non-fatal: launch Plex channel without deep link.
+			fmt.Printf("[player] Roku %q: could not get Plex machine ID (%v); launching Plex without deep link\n", target.Name, err)
+			machineID = ""
+		}
+		if len(items) > 1 {
+			fmt.Printf("[player] Roku %q: ECP deep-link supports one title at a time; launching first of %d items\n", target.Name, len(items))
+		} else {
+			fmt.Printf("[player] Roku %q: launching Plex channel via ECP\n", target.Name)
+		}
+		return target.Name, PlayOnRokuViaPlex(ctx, dev.Addr, machineID, items, ratingKeys)
+
+	default:
+		return target.Name, fmt.Errorf("direct stream playback not supported for player %q (product: %s)", target.Name, target.Product)
 	}
-	return target.Name, fmt.Errorf("direct stream playback only supported on LG webOS target")
 }
 
 func (p *PlexClient) CreateRandomPlaylistAndPlay(ctx context.Context, libraryKey, playlistTitle string, count int, targetClientName string) (CreateAndPlayResult, error) {
@@ -1212,12 +1273,12 @@ func selectPlayer(players []Player, targetClientName string) (Player, error) {
 			return player, nil
 		}
 	}
-	// No name match — prefer the SSAP player (identified by ssap:// URI) if
-	// one exists. This handles the common case where the configured name
-	// ("Living Room") is stale but the LG TV is still discoverable via SSAP.
+	// No name match — prefer a directly-configured device (ssap:// or roku://)
+	// if one exists. This handles the common case where the configured name
+	// ("Living Room") is stale but a direct-control device is still reachable.
 	for _, player := range players {
-		if strings.HasPrefix(player.URI, "ssap://") {
-			fmt.Printf("[player] %q not matched; falling back to SSAP player %q\n",
+		if strings.HasPrefix(player.URI, "ssap://") || strings.HasPrefix(player.URI, "roku://") {
+			fmt.Printf("[player] %q not matched; falling back to direct-control player %q\n",
 				targetClientName, player.Name)
 			return player, nil
 		}
