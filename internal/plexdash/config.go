@@ -51,6 +51,10 @@ type Config struct {
 	SnapshotDisabled bool
 	SnapshotHour     int
 
+	// TVLibraryKey is the Plex library section key for the TV show library (env: PLEX_TV_LIBRARY_KEY).
+	// When empty, TV show features are hidden in the UI.
+	TVLibraryKey string
+
 	// Fanart.tv hero banner (optional). When enabled and no custom HeroBannerURL,
 	// the dashboard loads wide movie art from fanart.tv (TMDB id required), with
 	// disk cache under data/fanart-banner-cache/.
@@ -89,6 +93,7 @@ func LoadConfig() (Config, error) {
 		RadarrAPIKey:       os.Getenv("RADARR_API_KEY"),
 		RadarrRootFolder:   os.Getenv("RADARR_ROOT_FOLDER"),
 		RadarrProfileID:    getenvInt("RADARR_PROFILE_ID", 1),
+		TVLibraryKey:           os.Getenv("PLEX_TV_LIBRARY_KEY"),
 		LGTVAddr:               os.Getenv("LGTV_ADDR"),
 		LGTVClientKey:          os.Getenv("LGTV_CLIENT_KEY"),
 		LGTVIPControlKey:       firstNonEmptyEnv("LGTV_IP_CONTROL_KEY", "TV_KEYCODE"),
@@ -373,5 +378,8 @@ func mergeMissingConfig(dst *Config, src Config) {
 	}
 	if strings.TrimSpace(src.BannerRotateInterval) != "" {
 		dst.BannerRotateInterval = src.BannerRotateInterval
+	}
+	if dst.TVLibraryKey == "" {
+		dst.TVLibraryKey = src.TVLibraryKey
 	}
 }

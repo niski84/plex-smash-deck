@@ -3,6 +3,7 @@ package plexdash
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"math"
@@ -61,6 +62,11 @@ type Server struct {
 	mlMovies   []Movie
 	mlCachedAt time.Time
 	mlKey      string // library key the cache was built for
+
+	tvMu       sync.RWMutex
+	tvShows    []Show
+	tvCachedAt time.Time
+	tvKey      string // library key the tv cache was built for
 
 	discJobs *discoveryJobStore
 
@@ -319,6 +325,39 @@ func (s *Server) invalidateMovieListCache() {
 	s.invalidatePlexStreamProbe()
 }
 
+// cachedListShows returns the in-memory show list, fetching from Plex when needed.
+func (s *Server) cachedListShows(ctx context.Context) ([]Show, error) {
+	cfg := s.snapshot()
+	s.tvMu.RLock()
+	if s.tvKey == cfg.TVLibraryKey && len(s.tvShows) > 0 {
+		shows := s.tvShows
+		s.tvMu.RUnlock()
+		return shows, nil
+	}
+	s.tvMu.RUnlock()
+
+	client := NewPlexClient(cfg)
+	shows, err := client.ListShows(ctx, cfg.TVLibraryKey)
+	if err != nil {
+		return nil, err
+	}
+
+	s.tvMu.Lock()
+	s.tvShows = shows
+	s.tvCachedAt = time.Now()
+	s.tvKey = cfg.TVLibraryKey
+	s.tvMu.Unlock()
+
+	return shows, nil
+}
+
+// invalidateShowListCache forces the next cachedListShows call to fetch fresh data.
+func (s *Server) invalidateShowListCache() {
+	s.tvMu.Lock()
+	s.tvShows = nil
+	s.tvMu.Unlock()
+}
+
 func (s *Server) invalidatePlexStreamProbe() {
 	s.streamProbeMu.Lock()
 	s.streamNextProbeAt = time.Time{}
@@ -521,6 +560,13 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/settings/caches", s.handleSettingsCaches)
 	mux.HandleFunc("/api/settings", s.handleSettings)
 	// Register /api/movies/* before /api/movies so path matching is unambiguous across Go versions.
+	mux.HandleFunc("/api/shows/hover-meta", s.handleShowsHoverMeta)
+	mux.HandleFunc("/api/shows/cache-status", s.handleShowsCacheStatus)
+	mux.HandleFunc("/api/shows/play", s.handleShowsPlay)
+	mux.HandleFunc("/api/shows", s.handleShows)
+	mux.HandleFunc("/api/seasons", s.handleSeasons)
+	mux.HandleFunc("/api/episodes", s.handleEpisodes)
+	mux.HandleFunc("/api/plex/episode-thumb", s.handlePlexEpisodeThumb)
 	mux.HandleFunc("/api/movies/hover-meta", s.handleMoviesHoverMeta)
 	mux.HandleFunc("/api/movies/cache-status", s.handleMovieCacheStatus)
 	mux.HandleFunc("/api/branding/fanart-banner/file", s.handleBrandingFanartBannerFile)
@@ -975,6 +1021,289 @@ func (s *Server) handleMovieCacheStatus(w http.ResponseWriter, r *http.Request) 
 	}
 	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: out})
 }
+
+// ── TV Show handlers ──────────────────────────────────────────────────────────
+
+// handleShows: GET /api/shows[?nocache=1]
+func (s *Server) handleShows(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+		return
+	}
+	cfg := s.snapshot()
+	if strings.TrimSpace(cfg.TVLibraryKey) == "" {
+		respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"tvEnabled": false}})
+		return
+	}
+	if r.URL.Query().Get("nocache") == "1" {
+		s.invalidateShowListCache()
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 40*time.Second)
+	defer cancel()
+	shows, err := s.cachedListShows(ctx)
+	if err != nil {
+		respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: err.Error()})
+		return
+	}
+	respondJSON(w, http.StatusOK, apiResponse{
+		Success: true,
+		Data: map[string]any{
+			"tvEnabled": true,
+			"count":     len(shows),
+			"shows":     shows,
+		},
+	})
+}
+
+// handleShowsCacheStatus: GET /api/shows/cache-status
+func (s *Server) handleShowsCacheStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+		return
+	}
+	cfg := s.snapshot()
+	if strings.TrimSpace(cfg.TVLibraryKey) == "" {
+		respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"tvEnabled": false}})
+		return
+	}
+	s.tvMu.RLock()
+	cachedCount := len(s.tvShows)
+	cachedAt := s.tvCachedAt
+	cacheKey := s.tvKey
+	s.tvMu.RUnlock()
+	out := map[string]any{
+		"tvEnabled":       true,
+		"cachedCount":     cachedCount,
+		"libraryKey":      cfg.TVLibraryKey,
+		"cacheKeyMatches": cacheKey == cfg.TVLibraryKey,
+	}
+	if cachedCount > 0 && !cachedAt.IsZero() {
+		out["cachedAtISO"] = cachedAt.UTC().Format(time.RFC3339)
+	}
+	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: out})
+}
+
+// handleShowsHoverMeta: GET /api/shows/hover-meta?ratingKey=…
+func (s *Server) handleShowsHoverMeta(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+		return
+	}
+	rk := strings.TrimSpace(r.URL.Query().Get("ratingKey"))
+	if rk == "" {
+		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "ratingKey required"})
+		return
+	}
+	cfg := s.snapshot()
+	client := NewPlexClient(cfg)
+	if !client.IsConfigured() {
+		respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"contentRating": "", "tmdbId": 0}})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+	defer cancel()
+	endpoint := fmt.Sprintf("%s/library/metadata/%s?includeGuids=1", cfg.PlexBaseURL, rk)
+	body, err := client.get(ctx, endpoint)
+	if err != nil {
+		respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"contentRating": "", "tmdbId": 0}})
+		return
+	}
+	var root showContainer
+	if xmlErr := xml.Unmarshal(body, &root); xmlErr != nil || len(root.Directories) == 0 {
+		respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"contentRating": "", "tmdbId": 0}})
+		return
+	}
+	d := root.Directories[0]
+	respondJSON(w, http.StatusOK, apiResponse{
+		Success: true,
+		Data: map[string]any{
+			"contentRating": strings.TrimSpace(d.ContentRating),
+			"tmdbId":        plexExternalIDsFromDirectory(d),
+		},
+	})
+}
+
+// handleSeasons: GET /api/seasons?showKey=…
+func (s *Server) handleSeasons(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+		return
+	}
+	showKey := strings.TrimSpace(r.URL.Query().Get("showKey"))
+	if showKey == "" {
+		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "showKey required"})
+		return
+	}
+	cfg := s.snapshot()
+	client := NewPlexClient(cfg)
+	if !client.IsConfigured() {
+		respondJSON(w, http.StatusServiceUnavailable, apiResponse{Success: false, Error: "plex not configured"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	seasons, err := client.ListSeasons(ctx, showKey)
+	if err != nil {
+		respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: err.Error()})
+		return
+	}
+	respondJSON(w, http.StatusOK, apiResponse{
+		Success: true,
+		Data: map[string]any{
+			"count":   len(seasons),
+			"seasons": seasons,
+		},
+	})
+}
+
+// handleEpisodes: GET /api/episodes?seasonKey=…
+func (s *Server) handleEpisodes(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+		return
+	}
+	seasonKey := strings.TrimSpace(r.URL.Query().Get("seasonKey"))
+	if seasonKey == "" {
+		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "seasonKey required"})
+		return
+	}
+	cfg := s.snapshot()
+	client := NewPlexClient(cfg)
+	if !client.IsConfigured() {
+		respondJSON(w, http.StatusServiceUnavailable, apiResponse{Success: false, Error: "plex not configured"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	episodes, err := client.ListEpisodes(ctx, seasonKey)
+	if err != nil {
+		respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: err.Error()})
+		return
+	}
+	respondJSON(w, http.StatusOK, apiResponse{
+		Success: true,
+		Data: map[string]any{
+			"count":    len(episodes),
+			"episodes": episodes,
+		},
+	})
+}
+
+// handleShowsPlay: POST /api/shows/play — play an episode via existing playback infrastructure.
+func (s *Server) handleShowsPlay(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+		return
+	}
+	var req struct {
+		Items []struct {
+			RatingKey string `json:"ratingKey"`
+			PartKey   string `json:"partKey"`
+			Container string `json:"container"`
+			Title     string `json:"title"`
+			PartSize  int64  `json:"partSize"`
+		} `json:"items"`
+		ClientName string `json:"clientName"`
+		Transport  string `json:"transport"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "invalid JSON: " + err.Error()})
+		return
+	}
+	if len(req.Items) == 0 {
+		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "items array is empty"})
+		return
+	}
+	cfg := s.snapshot()
+	streamItems := make([]WebOSStreamItem, 0, len(req.Items))
+	for _, item := range req.Items {
+		mc := item.Container
+		if mc == "" {
+			mc = "mp4"
+		}
+		streamItems = append(streamItems, WebOSStreamItem{
+			StreamURL: cfg.PlexBaseURL + item.PartKey + "?X-Plex-Token=" + cfg.PlexToken,
+			Title:     item.Title,
+			Container: mc,
+			Size:      item.PartSize,
+			RatingKey: item.RatingKey,
+		})
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	client := NewPlexClient(cfg)
+	clientName := strings.TrimSpace(req.ClientName)
+	if clientName == "" {
+		clientName = cfg.TargetClientName
+	}
+	transport := strings.ToLower(strings.TrimSpace(req.Transport))
+	titles := make([]string, len(req.Items))
+	for i, it := range req.Items {
+		titles[i] = it.Title
+	}
+	if transport == "companion" {
+		if len(req.Items) != 1 {
+			respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "companion transport supports exactly one episode per request"})
+			return
+		}
+		rk := strings.TrimSpace(req.Items[0].RatingKey)
+		if rk == "" {
+			respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "ratingKey is required"})
+			return
+		}
+		lp := client.ListPlayers(ctx)
+		player, err := SelectPlayerForCompanion(lp.Players, clientName)
+		if err != nil {
+			respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: err.Error()})
+			return
+		}
+		if err := client.playMovieOnClient(ctx, player, rk); err != nil {
+			respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: err.Error()})
+			return
+		}
+		s.recordLocalPlayback(player.Name, titles, "show_play_companion", "", false)
+		respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"count": 1, "target": player.Name, "transport": "companion"}})
+		return
+	}
+	targetName, err := client.PlayStreamItemsOnTV(ctx, streamItems, clientName)
+	if err != nil {
+		respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: err.Error()})
+		return
+	}
+	s.recordLocalPlayback(targetName, titles, "show_play", "", false)
+	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"count": len(streamItems), "target": targetName}})
+}
+
+// handlePlexEpisodeThumb proxies a Plex episode thumbnail by its raw path.
+// The path is the Plex thumb attribute value (e.g. /library/metadata/…/thumb/…).
+func (s *Server) handlePlexEpisodeThumb(w http.ResponseWriter, r *http.Request) {
+	key := r.URL.Query().Get("key")
+	if key == "" {
+		http.NotFound(w, r)
+		return
+	}
+	// Security: must start with /library/ and contain no path traversal.
+	if !strings.HasPrefix(key, "/library/") || strings.Contains(key, "..") {
+		http.Error(w, "invalid key", http.StatusBadRequest)
+		return
+	}
+	cfg := s.snapshot()
+	thumbURL := cfg.PlexBaseURL + key + "?X-Plex-Token=" + cfg.PlexToken
+	// Use a hash of the key as the cache filename since the key contains slashes.
+	safe := url.QueryEscape(strings.TrimPrefix(key, "/library/"))
+	if len(safe) > 200 {
+		safe = safe[len(safe)-200:]
+	}
+	cachePath := filepath.Join("data", "plex-episode-thumb-cache", safe+".jpg")
+	if serveCachedPosterFile(w, cachePath, "image/jpeg") {
+		return
+	}
+	if !serveOrCachePoster(w, thumbURL, cachePath, "image/jpeg") {
+		http.NotFound(w, r)
+	}
+}
+
+// ── End TV Show handlers ──────────────────────────────────────────────────────
 
 // pickMovieForBannerPoster chooses a library title for the dashboard hero when
 // no custom banner URL is set: highest ViewCount, else first with a rating key.
