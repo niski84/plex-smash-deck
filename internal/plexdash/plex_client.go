@@ -1615,3 +1615,280 @@ type resourceDevice struct {
 type resourceConnection struct {
 	URI string `xml:"uri,attr"`
 }
+
+// ── TV Show domain types ──────────────────────────────────────────────────────
+
+type Show struct {
+	RatingKey         string
+	Title             string
+	Year              int
+	TMDBID            int
+	Summary           string
+	Studio            string
+	Genres            []string
+	Actors            []string
+	ContentRating     string
+	SeasonCount       int
+	EpisodeCount      int
+	AddedAtEpoch      int64
+	LastViewedAtEpoch int64
+	ViewCount         int
+	Rating            float64
+}
+
+type Season struct {
+	RatingKey     string
+	ShowRatingKey string
+	Index         int // season number (1-based; 0 = Specials)
+	Title         string
+	EpisodeCount  int
+	Year          int
+}
+
+type Episode struct {
+	RatingKey       string
+	ShowRatingKey   string
+	SeasonRatingKey string
+	SeasonIndex     int
+	EpisodeIndex    int
+	Title           string
+	AiredAt         int64  // unix seconds (parsed from originallyAvailableAt YYYY-MM-DD)
+	DurationMillis  int64
+	ViewCount       int
+	ViewOffset      int64  // ms resume position
+	Summary         string
+	Thumb           string // Plex path e.g. /library/metadata/…/thumb/…
+	PartKey         string
+	FileContainer   string
+	PartSize        int64
+}
+
+// ── TV XML structs ────────────────────────────────────────────────────────────
+
+// directory maps <Directory> elements returned for shows and seasons.
+type directory struct {
+	RatingKey       string          `xml:"ratingKey,attr"`
+	Type            string          `xml:"type,attr"`
+	Guid            string          `xml:"guid,attr"`
+	GuidElems       []plexVideoGuid `xml:"Guid"`
+	Title           string          `xml:"title,attr"`
+	Year            string          `xml:"year,attr"`
+	AddedAt         string          `xml:"addedAt,attr"`
+	LastViewedAt    string          `xml:"lastViewedAt,attr"`
+	ViewCount       string          `xml:"viewCount,attr"`
+	Rating          string          `xml:"rating,attr"`
+	ContentRating   string          `xml:"contentRating,attr"`
+	Summary         string          `xml:"summary,attr"`
+	Studio          string          `xml:"studio,attr"`
+	ChildCount      string          `xml:"childCount,attr"`  // season count on shows
+	LeafCount       string          `xml:"leafCount,attr"`   // episode count on shows
+	Index           string          `xml:"index,attr"`       // season number on seasons
+	ParentRatingKey string          `xml:"parentRatingKey,attr"`
+	Roles           []mediaTag      `xml:"Role"`
+	Genres          []mediaTag      `xml:"Genre"`
+}
+
+// showContainer is the top-level XML response for a TV library section.
+type showContainer struct {
+	XMLName     xml.Name    `xml:"MediaContainer"`
+	Directories []directory `xml:"Directory"`
+}
+
+// episodeVideo maps <Video> children of a season (episodes include TV-specific attrs).
+type episodeVideo struct {
+	RatingKey             string          `xml:"ratingKey,attr"`
+	GrandparentRatingKey  string          `xml:"grandparentRatingKey,attr"`
+	ParentRatingKey       string          `xml:"parentRatingKey,attr"`
+	ParentIndex           string          `xml:"parentIndex,attr"` // season number
+	Index                 string          `xml:"index,attr"`       // episode number
+	Title                 string          `xml:"title,attr"`
+	OriginallyAvailableAt string          `xml:"originallyAvailableAt,attr"` // YYYY-MM-DD
+	Duration              string          `xml:"duration,attr"`
+	ViewCount             string          `xml:"viewCount,attr"`
+	ViewOffset            string          `xml:"viewOffset,attr"`
+	Summary               string          `xml:"summary,attr"`
+	Thumb                 string          `xml:"thumb,attr"`
+	Medias                []videoMedia    `xml:"Media"`
+}
+
+// episodeContainer is the XML response for season children (episodes).
+type episodeContainer struct {
+	XMLName xml.Name       `xml:"MediaContainer"`
+	Videos  []episodeVideo `xml:"Video"`
+}
+
+// plexExternalIDsFromDirectory extracts TMDB id from a show/season <Directory> element.
+func plexExternalIDsFromDirectory(d directory) (tmdbID int) {
+	sources := []string{strings.TrimSpace(d.Guid)}
+	for _, g := range d.GuidElems {
+		sources = append(sources, strings.TrimSpace(g.ID))
+	}
+	for _, s := range sources {
+		if s == "" {
+			continue
+		}
+		if x := parseTMDBIDFromPlexGuid(s); x > 0 {
+			return x
+		}
+	}
+	return 0
+}
+
+func showFromDirectory(d directory) Show {
+	year, _ := strconv.Atoi(d.Year)
+	addedAt, _ := strconv.ParseInt(strings.TrimSpace(d.AddedAt), 10, 64)
+	lastViewedAt, _ := strconv.ParseInt(d.LastViewedAt, 10, 64)
+	viewCount, _ := strconv.Atoi(d.ViewCount)
+	rating, _ := strconv.ParseFloat(d.Rating, 64)
+	seasonCount, _ := strconv.Atoi(d.ChildCount)
+	episodeCount, _ := strconv.Atoi(d.LeafCount)
+	return Show{
+		RatingKey:         d.RatingKey,
+		Title:             d.Title,
+		Year:              year,
+		TMDBID:            plexExternalIDsFromDirectory(d),
+		Summary:           d.Summary,
+		Studio:            d.Studio,
+		Genres:            tagsToStrings(d.Genres),
+		Actors:            tagsToStrings(d.Roles),
+		ContentRating:     strings.TrimSpace(d.ContentRating),
+		SeasonCount:       seasonCount,
+		EpisodeCount:      episodeCount,
+		AddedAtEpoch:      addedAt,
+		LastViewedAtEpoch: lastViewedAt,
+		ViewCount:         viewCount,
+		Rating:            rating,
+	}
+}
+
+func seasonFromDirectory(d directory, showRatingKey string) Season {
+	idx, _ := strconv.Atoi(d.Index)
+	year, _ := strconv.Atoi(d.Year)
+	leafCount, _ := strconv.Atoi(d.LeafCount)
+	return Season{
+		RatingKey:     d.RatingKey,
+		ShowRatingKey: showRatingKey,
+		Index:         idx,
+		Title:         d.Title,
+		EpisodeCount:  leafCount,
+		Year:          year,
+	}
+}
+
+func episodeFromVideo(v episodeVideo) Episode {
+	seasonIdx, _ := strconv.Atoi(v.ParentIndex)
+	epIdx, _ := strconv.Atoi(v.Index)
+	dur, _ := strconv.ParseInt(v.Duration, 10, 64)
+	vc, _ := strconv.Atoi(v.ViewCount)
+	vo, _ := strconv.ParseInt(v.ViewOffset, 10, 64)
+
+	var airedAt int64
+	if v.OriginallyAvailableAt != "" {
+		if t, err := time.Parse("2006-01-02", v.OriginallyAvailableAt); err == nil {
+			airedAt = t.Unix()
+		}
+	}
+
+	var partKey, fileContainer string
+	var partSize int64
+	for _, media := range v.Medias {
+		if len(media.Parts) == 0 {
+			continue
+		}
+		sz, _ := strconv.ParseInt(media.Parts[0].Size, 10, 64)
+		if sz > partSize {
+			partSize = sz
+			partKey = media.Parts[0].Key
+			fileContainer = media.Container
+		}
+	}
+
+	return Episode{
+		RatingKey:       v.RatingKey,
+		ShowRatingKey:   v.GrandparentRatingKey,
+		SeasonRatingKey: v.ParentRatingKey,
+		SeasonIndex:     seasonIdx,
+		EpisodeIndex:    epIdx,
+		Title:           v.Title,
+		AiredAt:         airedAt,
+		DurationMillis:  dur,
+		ViewCount:       vc,
+		ViewOffset:      vo,
+		Summary:         v.Summary,
+		Thumb:           v.Thumb,
+		PartKey:         partKey,
+		FileContainer:   fileContainer,
+		PartSize:        partSize,
+	}
+}
+
+// ── TV Plex API methods ───────────────────────────────────────────────────────
+
+// ListShows fetches all shows from a Plex TV library section.
+func (p *PlexClient) ListShows(ctx context.Context, libraryKey string) ([]Show, error) {
+	endpoint := fmt.Sprintf("%s/library/sections/%s/all?includeGuids=1", p.baseURL, libraryKey)
+	body, err := p.get(ctx, endpoint)
+	if err != nil {
+		return nil, err
+	}
+	var root showContainer
+	if err := xml.Unmarshal(body, &root); err != nil {
+		return nil, fmt.Errorf("decode show list: %w", err)
+	}
+	shows := make([]Show, 0, len(root.Directories))
+	for _, d := range root.Directories {
+		if d.Type != "show" && d.Type != "" {
+			continue
+		}
+		shows = append(shows, showFromDirectory(d))
+	}
+	sort.Slice(shows, func(i, j int) bool {
+		return strings.ToLower(shows[i].Title) < strings.ToLower(shows[j].Title)
+	})
+	return shows, nil
+}
+
+// ListSeasons fetches all seasons for a show.
+func (p *PlexClient) ListSeasons(ctx context.Context, showRatingKey string) ([]Season, error) {
+	endpoint := fmt.Sprintf("%s/library/metadata/%s/children", p.baseURL, showRatingKey)
+	body, err := p.get(ctx, endpoint)
+	if err != nil {
+		return nil, err
+	}
+	var root showContainer // seasons are also <Directory> elements
+	if err := xml.Unmarshal(body, &root); err != nil {
+		return nil, fmt.Errorf("decode season list: %w", err)
+	}
+	seasons := make([]Season, 0, len(root.Directories))
+	for _, d := range root.Directories {
+		if d.Type != "season" && d.Type != "" {
+			continue
+		}
+		seasons = append(seasons, seasonFromDirectory(d, showRatingKey))
+	}
+	sort.Slice(seasons, func(i, j int) bool {
+		return seasons[i].Index < seasons[j].Index
+	})
+	return seasons, nil
+}
+
+// ListEpisodes fetches all episodes for a season.
+func (p *PlexClient) ListEpisodes(ctx context.Context, seasonRatingKey string) ([]Episode, error) {
+	endpoint := fmt.Sprintf("%s/library/metadata/%s/children", p.baseURL, seasonRatingKey)
+	body, err := p.get(ctx, endpoint)
+	if err != nil {
+		return nil, err
+	}
+	var root episodeContainer
+	if err := xml.Unmarshal(body, &root); err != nil {
+		return nil, fmt.Errorf("decode episode list: %w", err)
+	}
+	episodes := make([]Episode, 0, len(root.Videos))
+	for _, v := range root.Videos {
+		episodes = append(episodes, episodeFromVideo(v))
+	}
+	sort.Slice(episodes, func(i, j int) bool {
+		return episodes[i].EpisodeIndex < episodes[j].EpisodeIndex
+	})
+	return episodes, nil
+}
