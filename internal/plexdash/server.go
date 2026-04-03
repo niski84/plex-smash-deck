@@ -103,6 +103,10 @@ type Server struct {
 	// Ring buffer of fanart banner activity for Settings UI (newest appended last).
 	fanartLogMu sync.Mutex
 	fanartLog   []FanartLogEntry
+
+	// Stream cache: progressive download proxy for in-browser playback.
+	streamCacheMu   sync.RWMutex
+	streamDownloads map[string]*streamDownload
 }
 
 // FanartLogEntry is one line shown on the Settings tab fanart activity log.
@@ -194,9 +198,10 @@ func resolveDashboardWebRoot() (string, error) {
 func NewServer(cfg Config, client *PlexClient) *Server {
 	_ = client
 	s := &Server{
-		cfg:          cfg,
-		settingsPath: defaultSettingsPath(),
-		discJobs:     newDiscoveryJobStore(),
+		cfg:             cfg,
+		settingsPath:    defaultSettingsPath(),
+		discJobs:        newDiscoveryJobStore(),
+		streamDownloads: make(map[string]*streamDownload),
 	}
 	s.loadPlaybackState()
 	return s
@@ -534,6 +539,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/players", s.handlePlayers)
 	mux.HandleFunc("/api/plex/companion/control", s.handlePlexCompanionControl)
 	mux.HandleFunc("/api/lg/volume", s.handleLgVolume)
+	mux.HandleFunc("/api/tv-devices/", s.handleTVDevice)
+	mux.HandleFunc("/api/tv-devices", s.handleTVDevices)
 	mux.HandleFunc("/api/playback/status", s.handlePlaybackStatus)
 	mux.HandleFunc("/api/discovery/person-suggest", s.handleDiscoveryPersonSuggest)
 	mux.HandleFunc("/api/discovery/collaborators", s.handleDiscoveryCollaborators)
@@ -564,6 +571,13 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/playlists/by-people", s.handleCreatePlaylistByPeople)
 	mux.HandleFunc("/api/playlists/by-genre-rating", s.handleCreatePlaylistByGenreRating)
 	mux.HandleFunc("/api/playlists/random-play", s.handleCreateAndPlayRandomPlaylist)
+
+	// Stream cache: in-browser playback proxy with progressive download.
+	mux.HandleFunc("/api/stream/preload", s.handleStreamPreload)
+	mux.HandleFunc("/api/stream/status/", s.handleStreamStatus)
+	mux.HandleFunc("/api/stream/cache/", s.handleStreamCacheDelete)
+	mux.HandleFunc("/api/stream/cache", s.handleStreamCacheList)
+	mux.HandleFunc("/api/stream/", s.handleStream)
 
 	// Static UI: disk (repo / beside binary) or embedded in the binary (see EnsureDashboardUI).
 	mux.Handle("/", DashboardFileServer())
@@ -1174,6 +1188,7 @@ func (s *Server) handleMoviesPlay(w http.ResponseWriter, r *http.Request) {
 			Title:     item.Title,
 			Container: mimeContainer,
 			Size:      item.PartSize,
+			RatingKey: item.RatingKey,
 		})
 	}
 
@@ -2064,11 +2079,173 @@ func jsonAnyToVolumePercent(v any) (int, error) {
 	return n, nil
 }
 
+// handleTVDevices handles GET (list) and POST (create) for /api/tv-devices.
+func (s *Server) handleTVDevices(w http.ResponseWriter, r *http.Request) {
+	cfg := s.snapshot()
+	switch r.Method {
+	case http.MethodGet:
+		devices := cfg.TVDevices
+		if devices == nil {
+			devices = []TVDevice{}
+		}
+		respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: devices})
+	case http.MethodPost:
+		var req TVDevice
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "invalid JSON: " + err.Error()})
+			return
+		}
+		req.Name = strings.TrimSpace(req.Name)
+		req.Addr = strings.TrimSpace(req.Addr)
+		req.Manufacturer = strings.TrimSpace(req.Manufacturer)
+		if req.Name == "" || req.Addr == "" {
+			respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "name and addr are required"})
+			return
+		}
+		if req.Manufacturer == "" {
+			req.Manufacturer = "lg"
+		}
+		req.ID = GenerateDeviceID()
+		cfg.TVDevices = append(cfg.TVDevices, req)
+		if err := SavePersistedConfig(s.settingsPath, cfg); err != nil {
+			respondJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: err.Error()})
+			return
+		}
+		s.replaceConfig(cfg)
+		fmt.Printf("[API] POST /api/tv-devices created device id=%s name=%q addr=%s\n", req.ID, req.Name, req.Addr)
+		respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: req})
+	default:
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+	}
+}
+
+// handleTVDevice handles PUT (update), DELETE, and POST /{id}/pair for /api/tv-devices/{id}.
+func (s *Server) handleTVDevice(w http.ResponseWriter, r *http.Request) {
+	// Path: /api/tv-devices/{id} or /api/tv-devices/{id}/pair
+	path := strings.TrimPrefix(r.URL.Path, "/api/tv-devices/")
+	parts := strings.SplitN(path, "/", 2)
+	deviceID := parts[0]
+	subaction := ""
+	if len(parts) == 2 {
+		subaction = parts[1]
+	}
+	if deviceID == "" {
+		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "device ID required"})
+		return
+	}
+
+	cfg := s.snapshot()
+
+	// POST /{id}/pair — initiate LG SSAP pairing and return the client key.
+	if subaction == "pair" && r.Method == http.MethodPost {
+		dev := FindDeviceByID(cfg.TVDevices, deviceID)
+		if dev == nil {
+			respondJSON(w, http.StatusNotFound, apiResponse{Success: false, Error: "device not found"})
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+		defer cancel()
+		fmt.Printf("[API] POST /api/tv-devices/%s/pair addr=%s\n", deviceID, dev.Addr)
+		clientKey, err := PairLGTV(ctx, dev.Addr)
+		if err != nil {
+			respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: "pairing failed: " + err.Error()})
+			return
+		}
+		// Persist the obtained client key back into the device.
+		for i := range cfg.TVDevices {
+			if cfg.TVDevices[i].ID == deviceID {
+				cfg.TVDevices[i].ClientKey = clientKey
+				break
+			}
+		}
+		if err := SavePersistedConfig(s.settingsPath, cfg); err != nil {
+			respondJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: err.Error()})
+			return
+		}
+		s.replaceConfig(cfg)
+		respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"clientKey": clientKey}})
+		return
+	}
+
+	switch r.Method {
+	case http.MethodPut:
+		var req TVDevice
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "invalid JSON: " + err.Error()})
+			return
+		}
+		found := false
+		for i := range cfg.TVDevices {
+			if cfg.TVDevices[i].ID == deviceID {
+				req.ID = deviceID // preserve ID
+				if strings.TrimSpace(req.Manufacturer) == "" {
+					req.Manufacturer = cfg.TVDevices[i].Manufacturer
+				}
+				cfg.TVDevices[i] = req
+				found = true
+				break
+			}
+		}
+		if !found {
+			respondJSON(w, http.StatusNotFound, apiResponse{Success: false, Error: "device not found"})
+			return
+		}
+		if err := SavePersistedConfig(s.settingsPath, cfg); err != nil {
+			respondJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: err.Error()})
+			return
+		}
+		s.replaceConfig(cfg)
+		fmt.Printf("[API] PUT /api/tv-devices/%s updated name=%q\n", deviceID, req.Name)
+		respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: req})
+	case http.MethodDelete:
+		newDevices := cfg.TVDevices[:0:0]
+		found := false
+		for _, d := range cfg.TVDevices {
+			if d.ID == deviceID {
+				found = true
+				continue
+			}
+			newDevices = append(newDevices, d)
+		}
+		if !found {
+			respondJSON(w, http.StatusNotFound, apiResponse{Success: false, Error: "device not found"})
+			return
+		}
+		cfg.TVDevices = newDevices
+		if err := SavePersistedConfig(s.settingsPath, cfg); err != nil {
+			respondJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: err.Error()})
+			return
+		}
+		s.replaceConfig(cfg)
+		fmt.Printf("[API] DELETE /api/tv-devices/%s\n", deviceID)
+		respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"deleted": true}})
+	default:
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+	}
+}
+
 func (s *Server) handleLgVolume(w http.ResponseWriter, r *http.Request) {
 	cfg := s.snapshot()
-	addr := strings.TrimSpace(cfg.LGTVAddr)
-	ssapKey := strings.TrimSpace(cfg.LGTVClientKey)
-	ipKey := strings.TrimSpace(cfg.LGTVIPControlKey)
+
+	// Resolve device: prefer ?device=<id> param, fall back to first LG device, then legacy fields.
+	deviceID := strings.TrimSpace(r.URL.Query().Get("device"))
+	var addr, ssapKey, ipKey string
+	if dev := FindDeviceByID(cfg.TVDevices, deviceID); dev != nil {
+		addr = strings.TrimSpace(dev.Addr)
+		ssapKey = strings.TrimSpace(dev.ClientKey)
+		ipKey = strings.TrimSpace(dev.IPControlKey)
+	} else if len(cfg.TVDevices) > 0 {
+		// Fall back to first configured device.
+		first := cfg.TVDevices[0]
+		addr = strings.TrimSpace(first.Addr)
+		ssapKey = strings.TrimSpace(first.ClientKey)
+		ipKey = strings.TrimSpace(first.IPControlKey)
+	} else {
+		// Legacy single-TV fields.
+		addr = strings.TrimSpace(cfg.LGTVAddr)
+		ssapKey = strings.TrimSpace(cfg.LGTVClientKey)
+		ipKey = strings.TrimSpace(cfg.LGTVIPControlKey)
+	}
 	lgVolumeOK := addr != "" && (ipKey != "" || ssapKey != "")
 
 	switch r.Method {

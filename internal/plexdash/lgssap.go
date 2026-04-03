@@ -248,11 +248,13 @@ func ssapRegister(conn *ssapConn, clientKey string) error {
 }
 
 // WebOSStreamItem describes one video item for the webOS native media player.
+// RatingKey is optional and used by non-webOS protocols (e.g. Roku ECP deep links).
 type WebOSStreamItem struct {
 	StreamURL string
 	Title     string
 	Container string // "mp4", "mkv", "avi", etc.
 	Size      int64
+	RatingKey string // Plex rating key; used for Roku deep-link content ID
 }
 
 // PlayPlaylistViaWebOS streams a playlist of Plex items through the LG webOS
