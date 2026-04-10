@@ -1,0 +1,110 @@
+<div x-data="showGrid()" x-init="init()" class="space-y-4">
+
+  <!-- Show list view -->
+  <div x-show="!currentShow">
+    <!-- Controls -->
+    <div class="flex flex-wrap gap-2 items-center mb-3">
+      <input x-model.debounce.300="searchQuery" @input="applySort()" type="search"
+             placeholder="Search shows…"
+             class="input input-sm bg-zinc-900 border-zinc-700 text-zinc-100 placeholder-zinc-500 flex-1 min-w-48 focus:border-zinc-500 focus:outline-none"/>
+      <select x-model="sortMode" @change="applySort()" class="select select-sm bg-zinc-900 border-zinc-700 text-zinc-100 focus:outline-none">
+        <option value="titleAsc">Title A–Z</option>
+        <option value="plexAddedDesc">Recently added</option>
+        <option value="ratingDesc">Highest rated</option>
+        <option value="seasonCountDesc">Most seasons</option>
+      </select>
+      <button @click="load(true)" class="btn btn-sm btn-ghost text-zinc-400 hover:text-zinc-200" :disabled="loading">
+        <span x-show="!loading">↻ Refresh</span>
+        <span x-show="loading" class="loading loading-spinner loading-xs"></span>
+      </button>
+    </div>
+
+    <!-- Status -->
+    <div class="text-xs text-zinc-500 mb-2 min-h-4">
+      <span x-show="filteredShows.length>0" x-text="filteredShows.length+' shows'+(filteredShows.length!==shows.length?' (filtered)':'')"></span>
+      <span x-show="shows.length===0&&!loading" class="italic">No TV shows loaded — check TV Library Key in Settings</span>
+      <span x-show="error" class="text-rose-400" x-text="'Error: '+error"></span>
+    </div>
+
+    <!-- Show grid -->
+    <div class="grid grid-cols-[repeat(auto-fill,minmax(108px,1fr))] gap-2">
+      <template x-for="show in filteredShows" :key="show.RatingKey">
+        <div class="show-card" @click="drillIn(show)" :title="show.Title">
+          <div class="show-card-poster">
+            <img :src="thumbUrl(show.RatingKey)" :alt="show.Title" loading="lazy" @error="$event.target.style.opacity='.3'"/>
+          </div>
+          <div class="px-1.5 py-1">
+            <p class="show-card-title text-zinc-200" x-text="show.Title"></p>
+            <p class="show-card-meta" x-text="showMeta(show)"></p>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- Drill-down view: show → seasons → episodes -->
+  <div x-show="currentShow">
+    <!-- Back + show title -->
+    <div class="flex items-center gap-3 mb-4">
+      <button @click="back()" class="btn btn-sm btn-ghost text-zinc-400 hover:text-zinc-100">← Back</button>
+      <div class="flex items-center gap-3 min-w-0">
+        <img :src="currentShow ? thumbUrl(currentShow.RatingKey) : ''" class="w-10 rounded shrink-0" style="aspect-ratio:2/3;object-fit:cover"/>
+        <div class="min-w-0">
+          <p class="font-semibold text-zinc-100 truncate" x-text="currentShow?.Title"></p>
+          <p class="text-xs text-zinc-500" x-text="currentShow ? showMeta(currentShow) : ''"></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Season tabs -->
+    <div x-show="loadingSeasons" class="flex items-center gap-2 text-zinc-500 text-xs mb-3">
+      <span class="loading loading-spinner loading-xs"></span> Loading seasons…
+    </div>
+    <div x-show="seasons.length>0 && !loadingSeasons" class="flex flex-wrap gap-1.5 mb-4">
+      <template x-for="season in seasons" :key="season.RatingKey">
+        <button
+          @click="selectSeason(season)"
+          class="season-pill"
+          :class="currentSeason && currentSeason.RatingKey===season.RatingKey ? 'is-active' : ''"
+          x-text="seasonLabel(season)"
+          :title="season.EpisodeCount ? season.EpisodeCount+' ep' : ''"
+        ></button>
+      </template>
+    </div>
+
+    <!-- Episode grid -->
+    <div x-show="loadingEpisodes" class="flex items-center gap-2 text-zinc-500 text-xs">
+      <span class="loading loading-spinner loading-xs"></span> Loading episodes…
+    </div>
+    <div x-show="episodes.length>0 && !loadingEpisodes" class="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
+      <template x-for="ep in episodes" :key="ep.RatingKey">
+        <div class="episode-card group" @click="playEpisode(ep)" :title="'Play: '+ep.Title">
+          <div class="episode-card-thumb">
+            <template x-if="ep.Thumb">
+              <img :src="episodeThumbUrl(ep.Thumb)" :alt="ep.Title" loading="lazy" @error="$event.target.style.opacity='.3'"/>
+            </template>
+            <div x-show="!ep.Thumb" class="w-full h-full bg-zinc-800 flex items-center justify-center text-zinc-600 text-xs">No thumb</div>
+            <!-- Play overlay -->
+            <div class="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto">
+              <span class="text-white text-2xl">▶</span>
+            </div>
+          </div>
+          <div class="episode-card-info">
+            <p class="episode-card-title text-zinc-200" x-text="ep.EpisodeIndex+'. '+ep.Title"></p>
+            <div class="episode-card-meta">
+              <span class="text-zinc-500" x-text="fmtDuration(ep.DurationMillis)"></span>
+              <span x-show="ep.AiredAt" class="text-zinc-600" x-text="fmtAirYear(ep.AiredAt)"></span>
+              <span x-show="ep.ViewCount>0" class="ep-watched-pip" :title="'Watched '+ep.ViewCount+'×'"></span>
+            </div>
+            <!-- In-progress bar -->
+            <div x-show="ep.ViewOffset>0 && ep.DurationMillis>0 && ep.ViewCount===0" class="ep-progress mt-1">
+              <div class="ep-progress-fill" :style="'width:'+progressPct(ep)+'%'"></div>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+    <div x-show="episodes.length===0 && !loadingEpisodes && currentSeason" class="text-center py-8 text-zinc-600 text-sm italic">No episodes found</div>
+  </div>
+
+</div>

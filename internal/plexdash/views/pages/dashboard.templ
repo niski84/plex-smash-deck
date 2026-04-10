@@ -1,0 +1,157 @@
+package pages
+
+import (
+	"plex-dashboard/internal/plexdash/views"
+	"plex-dashboard/internal/plexdash/views/components"
+)
+
+templ Dashboard(pbVM components.PlaybackVM, settingsVM components.SettingsVM) {
+	@views.Layout("Plex Dashboard") {
+		<div
+			x-data="{ tab: localStorage.getItem('pd-tab') || 'dashboard' }"
+			class="flex flex-col min-h-screen"
+		>
+			<!-- Top bar: tabs + connectivity + theme toggle -->
+			<header class="flex items-center gap-2 px-4 pt-3 pb-3 border-b border-white/8 bg-zinc-900/70 backdrop-blur-md sticky top-0 z-10">
+				<span class="font-semibold text-zinc-300 mr-2 text-sm">Plex</span>
+				<div class="flex gap-1 flex-wrap">
+					<button
+						@click="tab='dashboard'; localStorage.setItem('pd-tab', tab)"
+						:class="tab==='dashboard' ? 'pd-tab-active' : 'pd-tab-inactive'"
+						class="btn btn-sm"
+					>Dashboard</button>
+					<button
+						@click="tab='playlists'; localStorage.setItem('pd-tab', tab)"
+						:class="tab==='playlists' ? 'pd-tab-active' : 'pd-tab-inactive'"
+						class="btn btn-sm"
+					>Playlists</button>
+					<button
+						@click="tab='discovery'; localStorage.setItem('pd-tab', tab)"
+						:class="tab==='discovery' ? 'pd-tab-active' : 'pd-tab-inactive'"
+						class="btn btn-sm"
+					>Discovery</button>
+					<button
+						@click="tab='snapshots'; localStorage.setItem('pd-tab', tab)"
+						:class="tab==='snapshots' ? 'pd-tab-active' : 'pd-tab-inactive'"
+						class="btn btn-sm"
+					>Snapshots</button>
+					<button
+						@click="tab='settings'; localStorage.setItem('pd-tab', tab)"
+						:class="tab==='settings' ? 'pd-tab-active' : 'pd-tab-inactive'"
+						class="btn btn-sm"
+					>Settings</button>
+					<button
+						@click="tab='help'; localStorage.setItem('pd-tab', tab)"
+						:class="tab==='help' ? 'pd-tab-active' : 'pd-tab-inactive'"
+						class="btn btn-sm"
+					>Help</button>
+				</div>
+				@components.Topbar(components.TopbarVM{AppName: "Plex Dashboard"})
+			</header>
+
+			<!-- Main content area -->
+			<main class="flex-1 p-4 md:p-6 max-w-[1600px] mx-auto w-full">
+				<!-- Dashboard tab -->
+				<div x-show="tab==='dashboard'" class="space-y-4">
+					<!-- Hero banner -->
+					<div
+						x-data="heroBanner()"
+						x-init="init()"
+						x-show="active"
+						x-cloak
+						class="relative cursor-pointer"
+						@mouseenter="onBannerMouseenter()"
+						@mouseleave="onBannerMouseleave()"
+					>
+						<!-- Image container — overflow:hidden clips the poster, popup is outside this -->
+						<div class="rounded-xl overflow-hidden relative" style="height: 160px; border: 1px solid #2d3b64">
+							<img
+								:src="imageUrl"
+								class="w-full h-full object-cover"
+								@error="active=false"
+							/>
+							<div class="absolute inset-0" style="background: linear-gradient(to right, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.3) 50%, rgba(0,0,0,0.1) 100%), linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 60%)"></div>
+							<!-- Title overlay bottom-left -->
+							<div x-show="movie" class="absolute bottom-0 left-0 p-3 space-y-0.5">
+								<p class="text-sm font-semibold text-white leading-snug drop-shadow" x-text="movie ? movie.title + (movie.year ? ' (' + movie.year + ')' : '') : ''"></p>
+								<div class="flex items-center gap-2 text-xs text-white/70">
+									<span x-show="movie && movie.rating" x-text="movie ? '★ ' + (movie.rating||0).toFixed(1) : ''"></span>
+									<span x-show="movie && movie.durationMs" x-text="movie ? fmtDuration(movie.durationMs) : ''"></span>
+								</div>
+							</div>
+						</div>
+						<!-- Hover details popup — rendered BELOW banner, not inside overflow:hidden -->
+						<div
+							x-show="popupVisible && movie"
+							x-cloak
+							@mouseenter="onPopupMouseenter()"
+							@mouseleave="onPopupMouseleave()"
+							@click.stop
+							class="absolute left-0 z-50 rounded-xl shadow-2xl p-4 backdrop-blur-sm mt-2"
+							style="top: 100%; width: min(420px, 100%); background: rgba(15,18,30,0.97); border: 1px solid rgba(255,255,255,0.12)"
+						>
+							<template x-if="movie">
+								<div class="flex gap-3">
+									<img
+										:src="thumbUrl()"
+										:alt="movie.title"
+										class="w-[72px] min-w-[72px] rounded object-cover self-start"
+										style="aspect-ratio:2/3"
+									/>
+									<div class="flex-1 min-w-0 space-y-1.5">
+										<p class="text-sm font-semibold text-zinc-100 leading-snug" x-text="movie.title + (movie.year ? ' (' + movie.year + ')' : '')"></p>
+										<div class="flex flex-wrap gap-2 text-xs">
+											<span x-show="movie.rating" x-text="'★ ' + (movie.rating||0).toFixed(1)" class="text-amber-400"></span>
+											<span x-show="movie.durationMs" class="text-zinc-400" x-text="fmtDuration(movie.durationMs)"></span>
+										</div>
+										<p
+											x-show="movie.summary"
+											class="text-xs text-zinc-400 leading-relaxed"
+											x-text="movie.summary"
+										></p>
+										<div x-show="(movie.actors||[]).length > 0" class="text-xs text-zinc-500">
+											<span class="text-zinc-600">Cast: </span>
+											<span x-text="(movie.actors||[]).slice(0,3).join(', ')"></span>
+										</div>
+										<button @click="playBanner()" class="btn btn-xs btn-gold w-full mt-1">▶ Play on TV</button>
+									</div>
+								</div>
+							</template>
+						</div>
+					</div>
+					<!-- Player card row (narrow) -->
+					<div class="max-w-sm">
+						@components.PlayerCard(pbVM)
+					</div>
+					<!-- Full-width movie grid -->
+					@components.MovieGrid()
+				</div>
+
+				<!-- Playlists tab -->
+				<div x-show="tab==='playlists'" x-cloak>
+					@components.Playlists()
+				</div>
+
+				<!-- Discovery tab -->
+				<div x-show="tab==='discovery'" x-cloak>
+					@components.Discovery()
+				</div>
+
+				<!-- Snapshots tab -->
+				<div x-show="tab==='snapshots'" x-cloak>
+					@components.Snapshots()
+				</div>
+
+				<!-- Settings tab -->
+				<div x-show="tab==='settings'" x-cloak>
+					@components.Settings(settingsVM)
+				</div>
+
+				<!-- Help tab -->
+				<div x-show="tab==='help'" x-cloak>
+					@components.Help()
+				</div>
+			</main>
+		</div>
+	}
+}

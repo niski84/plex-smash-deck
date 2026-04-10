@@ -107,7 +107,16 @@ func (s *Server) startStreamDownload(ratingKey string) (*streamDownload, error) 
 	s.streamCacheMu.Lock()
 	defer s.streamCacheMu.Unlock()
 
-	// Already downloading?
+	// Cancel any other in-progress downloads — only one at a time to avoid wasting bandwidth.
+	for rk, existing := range s.streamDownloads {
+		if rk != ratingKey {
+			fmt.Printf("[stream-cache] cancelling download for %q (new request for %q)\n", rk, ratingKey)
+			existing.cancel()
+			delete(s.streamDownloads, rk)
+		}
+	}
+
+	// Already downloading this one?
 	if dl, ok := s.streamDownloads[ratingKey]; ok {
 		return dl, nil
 	}
@@ -700,7 +709,10 @@ func (s *Server) handleStreamCacheList(w http.ResponseWriter, r *http.Request) {
 		RatingKey string `json:"ratingKey"`
 		FileName  string `json:"fileName"`
 		Size      int64  `json:"size"`
+		TotalSize int64  `json:"totalSize"`
 		Complete  bool   `json:"complete"`
+		Title     string `json:"title,omitempty"`
+		CachedAt  string `json:"cachedAt,omitempty"` // RFC3339 mtime of completed file
 	}
 	var items []cacheEntry
 	var totalBytes int64
@@ -717,25 +729,44 @@ func (s *Server) handleStreamCacheList(w http.ResponseWriter, r *http.Request) {
 		ext := filepath.Ext(name)
 		rk := strings.TrimSuffix(name, ext)
 		totalBytes += info.Size()
-		items = append(items, cacheEntry{
+		entry := cacheEntry{
 			RatingKey: rk,
 			FileName:  name,
 			Size:      info.Size(),
+			TotalSize: info.Size(),
 			Complete:  true,
-		})
+			CachedAt:  info.ModTime().UTC().Format(time.RFC3339),
+		}
+		if m, ok := s.findMovieByRatingKey(rk); ok {
+			if m.Year > 0 {
+				entry.Title = fmt.Sprintf("%s (%d)", m.Title, m.Year)
+			} else {
+				entry.Title = m.Title
+			}
+		}
+		items = append(items, entry)
 	}
 
 	// Include active downloads.
 	s.streamCacheMu.RLock()
 	for rk, dl := range s.streamDownloads {
-		cached, _, complete, _ := dl.progress()
+		cached, total, complete, _ := dl.progress()
 		if !complete {
-			items = append(items, cacheEntry{
+			entry := cacheEntry{
 				RatingKey: rk,
 				FileName:  rk + "." + dl.container,
 				Size:      cached,
+				TotalSize: total,
 				Complete:  false,
-			})
+			}
+			if m, ok := s.findMovieByRatingKey(rk); ok {
+				if m.Year > 0 {
+					entry.Title = fmt.Sprintf("%s (%d)", m.Title, m.Year)
+				} else {
+					entry.Title = m.Title
+				}
+			}
+			items = append(items, entry)
 			totalBytes += cached
 		}
 	}

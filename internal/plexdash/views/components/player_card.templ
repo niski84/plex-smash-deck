@@ -1,0 +1,127 @@
+package components
+
+import "fmt"
+
+// PlaybackVM is the view model for the now-playing / target player card.
+type PlaybackVM struct {
+	Target          string
+	PrimaryFrom     string
+	SummaryLine     string
+	Titles          []string
+	SessionTitle    string
+	SessionPlayer   string
+	SessionState    string
+	ProgressPercent float64
+	Stale           bool
+}
+
+templ PlayerCard(vm PlaybackVM) {
+	<div
+		id="player-card"
+		x-data="playerCard()"
+		x-init="init()"
+		class="card bg-zinc-900/60 border border-white/10 rounded-2xl p-5 space-y-3"
+	>
+		<!-- Target + status badge -->
+		<div class="flex items-start justify-between gap-4">
+			<div class="flex-1 min-w-0">
+				<p class="font-mono text-xs uppercase tracking-widest text-zinc-500 mb-1">Target Player</p>
+				<p
+					class="text-sm font-semibold text-zinc-200 truncate"
+					x-text="targetName || { vm.Target }"
+				></p>
+			</div>
+			<div class="shrink-0">
+				<span
+					x-show="primaryFrom === 'plex_session'"
+					class="badge badge-success badge-sm gap-1"
+				>
+					<span class="h-1.5 w-1.5 rounded-full bg-emerald-300 animate-pulse"></span>
+					<span x-text="sessionState || 'playing'"></span>
+				</span>
+				<span x-show="primaryFrom === 'local_send' && !localStale" class="badge badge-info badge-sm">Sent</span>
+				<span x-show="primaryFrom !== 'plex_session' && !(primaryFrom === 'local_send' && !localStale)" class="badge badge-ghost badge-sm text-zinc-500">Idle</span>
+			</div>
+		</div>
+
+		<!-- Live Plex session -->
+		<div x-show="primaryFrom === 'plex_session'" class="space-y-1">
+			<p class="text-sm text-zinc-100 font-medium truncate" x-text="sessionTitle"></p>
+			<p class="text-xs text-zinc-500" x-text="sessionPlayer"></p>
+			<div x-show="progressPercent > 0" class="mt-2 h-1.5 w-full rounded-full bg-zinc-800">
+				<div class="h-1.5 rounded-full bg-emerald-500 transition-all" :style="'width:' + progressPercent + '%'"></div>
+			</div>
+			<div class="flex items-center justify-between text-xs text-zinc-500 mt-1">
+				<span x-show="remainingLabel" x-text="remainingLabel" class="text-zinc-400"></span>
+				<span x-show="predictedEndTime" x-text="predictedEndTime"></span>
+			</div>
+		</div>
+
+		<!-- Just-finished banner (auto-hides 2 min after session ends) -->
+		<div x-show="showJustFinished" class="rounded-lg bg-zinc-800/60 px-3 py-2 space-y-0.5">
+			<p class="text-xs text-zinc-500">Just finished</p>
+			<p class="text-sm text-zinc-300 truncate" x-text="_lastSessionTitle"></p>
+		</div>
+
+		<!-- Local send (app queue) -->
+		<div x-show="primaryFrom === 'local_send' && localTitles.length > 0" class="space-y-1">
+			<div class="flex gap-3 items-start">
+				<img
+					x-show="localPoster"
+					:src="localPoster"
+					alt=""
+					class="w-10 rounded shrink-0 object-cover"
+					style="aspect-ratio:2/3"
+				/>
+				<div class="min-w-0">
+					<p class="text-sm text-zinc-100 font-medium truncate" x-text="localTitles[0]"></p>
+					<p x-show="localTitles.length > 1" class="text-xs text-zinc-500" x-text="'+ ' + (localTitles.length - 1) + ' more in queue'"></p>
+					<p x-show="localStale" class="text-xs text-amber-500/80 mt-1">Queue sent &gt;45 min ago</p>
+				</div>
+			</div>
+		</div>
+
+		<!-- Idle / fallback -->
+		<p
+			x-show="primaryFrom !== 'plex_session' && !(primaryFrom === 'local_send' && localTitles.length > 0)"
+			class="text-xs text-zinc-600 leading-relaxed"
+		>
+			{ vm.SummaryLine }
+		</p>
+
+		<!-- Player selector -->
+		<div x-show="players.length > 0" class="space-y-1">
+			<p class="text-xs text-zinc-500">Target Player</p>
+			<select
+				x-model="selectedPlayer"
+				class="select select-sm w-full bg-zinc-950 border-zinc-700 text-zinc-100 focus:outline-none"
+			>
+				<option value="">Select player…</option>
+				<template x-for="p in players" :key="p.Name || p">
+					<option :value="p.Name || p" x-text="(p.Name || p) + (targetName && (p.Name || p) === targetName ? ' ★' : '')"></option>
+				</template>
+			</select>
+		</div>
+
+		<!-- Companion controls -->
+		<div class="flex items-center gap-0.5 flex-wrap">
+			<button @click="control('skipPrev')" class="btn btn-xs btn-ghost text-zinc-400 hover:text-zinc-100 px-1.5" title="Previous">⏮</button>
+			<button @click="control('stepBack')" class="btn btn-xs btn-ghost text-zinc-400 hover:text-zinc-100 px-1.5" title="Step Back">⏪</button>
+			<button @click="control('pause')" class="btn btn-xs btn-ghost text-zinc-400 hover:text-zinc-100 px-1.5" title="Pause">⏸</button>
+			<button @click="control('play')" class="btn btn-xs btn-ghost text-zinc-400 hover:text-zinc-100 px-1.5" title="Play">▶</button>
+			<button @click="control('stop')" class="btn btn-xs btn-ghost text-zinc-400 hover:text-zinc-100 px-1.5" title="Stop">⏹</button>
+			<button @click="control('stepForward')" class="btn btn-xs btn-ghost text-zinc-400 hover:text-zinc-100 px-1.5" title="Step Forward">⏩</button>
+			<button @click="control('skipNext')" class="btn btn-xs btn-ghost text-zinc-400 hover:text-zinc-100 px-1.5" title="Next">⏭</button>
+			<button @click="refreshPlayback()" class="btn btn-xs btn-ghost text-zinc-600 hover:text-zinc-300 px-1.5 ml-auto" title="Refresh status">↻</button>
+			<span
+				x-show="controlStatus"
+				x-text="controlStatus"
+				class="text-xs ml-1"
+				:class="controlStatus === 'OK' ? 'text-emerald-400' : 'text-rose-400'"
+			></span>
+		</div>
+	</div>
+}
+
+// unused — kept so buildPlaybackVM in beta_handlers.go compiles
+var _ = fmt.Sprintf

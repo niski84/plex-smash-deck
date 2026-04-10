@@ -259,6 +259,20 @@ func (s *Server) handleSettingsCaches(w http.ResponseWriter, r *http.Request) {
 	}
 	caches = append(caches, stEntry)
 
+	scBytes, scN, scNewest, scEx, err := statDirectory(streamCacheDir)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: err.Error()})
+		return
+	}
+	caches = append(caches, cacheEntryDisk(
+		"streamCache",
+		"Stream file cache",
+		"directory",
+		streamCacheDir,
+		"Full-file downloads for in-browser playback proxy. Manage from the Stream Cache panel on this tab.",
+		scBytes, scN, scNewest, scEx,
+	))
+
 	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{
 		"workingDirectory": cwd,
 		"caches":           caches,

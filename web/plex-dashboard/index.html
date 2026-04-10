@@ -348,6 +348,65 @@
     }
     .now-playing-bar .np-label { opacity: 0.72; margin-right: 8px; font-weight: 600; letter-spacing: 0.02em; }
     .now-playing-bar.err { border-color: rgba(248, 113, 113, 0.45); color: #fecaca; }
+    .now-playing-bar.np-has-data { cursor: pointer; position: relative; overflow: visible; }
+    /* ── Now-Playing inline card (Target Player section) ────────── */
+    .np-card-entry {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      margin-top: 10px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      cursor: pointer;
+      transition: background 0.15s;
+      flex-basis: 100%;
+    }
+    .np-card-entry:hover { background: rgba(255,255,255,0.09); }
+    .np-card-poster {
+      width: 46px;
+      min-width: 46px;
+      height: 68px;
+      object-fit: cover;
+      border-radius: 4px;
+      background: rgba(255,255,255,0.07);
+      flex-shrink: 0;
+    }
+    .np-card-body { flex: 1; min-width: 0; }
+    .np-card-badge {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-bottom: 4px;
+    }
+    .np-card-badge.playing  { background: rgba(52,211,153,0.18); color: #34d399; border: 1px solid rgba(52,211,153,0.3); }
+    .np-card-badge.paused   { background: rgba(251,191,36,0.18);  color: #fbbf24; border: 1px solid rgba(251,191,36,0.3); }
+    .np-card-badge.local    { background: rgba(96,165,250,0.18);  color: #60a5fa; border: 1px solid rgba(96,165,250,0.3); }
+    .np-card-badge.finished { background: rgba(148,163,184,0.14); color: #94a3b8; border: 1px solid rgba(148,163,184,0.25); }
+    .np-card-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #e2e8f0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 3px;
+    }
+    .np-card-time { font-size: 11px; color: #8b93a8; line-height: 1.4; }
+    .np-card-progress-wrap {
+      height: 3px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+    .np-card-progress-bar { height: 100%; background: #60a5fa; border-radius: 2px; transition: width 0.5s ease; }
+    .np-card-progress-bar.finished { background: #94a3b8; }
     .tab-btn {
       position: relative;
       overflow: hidden;
@@ -423,6 +482,9 @@
     }
     button.smash-active::after {
       animation: smash-ring 280ms ease-out;
+    }
+    @keyframes gridSpinAnim {
+      to { transform: rotate(360deg); }
     }
     @keyframes smash-bounce {
       0% { transform: translateY(0) scale(1); }
@@ -1170,6 +1232,38 @@
       pointer-events: auto;
       display: flex;
     }
+    .mip-close-btn {
+      display: none;
+      position: absolute;
+      top: 8px; right: 8px;
+      background: rgba(22,30,55,0.95);
+      border: 1px solid #3b4a78;
+      border-radius: 50%;
+      width: 30px; height: 30px;
+      font-size: 16px; line-height: 1;
+      color: #c8d7ff;
+      cursor: pointer;
+      align-items: center; justify-content: center;
+      z-index: 1; flex-shrink: 0; padding: 0;
+    }
+    #discPosterPopup .disc-popup-close-btn {
+      display: none;
+      position: absolute;
+      top: 8px; right: 8px;
+      background: rgba(22,30,55,0.95);
+      border: 1px solid #3b4a78;
+      border-radius: 50%;
+      width: 26px; height: 26px;
+      font-size: 14px; line-height: 1;
+      color: #c8d7ff;
+      cursor: pointer;
+      align-items: center; justify-content: center;
+      z-index: 1; padding: 0;
+    }
+    @media (pointer: coarse) {
+      .mip-close-btn { display: flex; }
+      #discPosterPopup .disc-popup-close-btn { display: flex; }
+    }
     .mip-layout { display: flex; gap: 14px; align-items: flex-start; flex: 1 1 auto; min-height: 0; }
     .mip-poster {
       width: clamp(88px, 16vw, 148px);
@@ -1891,6 +1985,7 @@
   <div id="posterLightboxHint">Right-click image for Save image as...</div>
 </div>
   <div id="discPosterPopup" aria-live="polite">
+    <button type="button" class="disc-popup-close-btn" aria-label="Close preview">✕</button>
     <div class="disc-popup-poster-col">
       <div class="disc-popup-poster-loading" hidden>Loading poster…</div>
       <img class="disc-popup-img" src="" alt="" />
@@ -1898,6 +1993,7 @@
     <div class="disc-popup-text"></div>
   </div>
   <div id="movieInfoPopup">
+    <button type="button" class="mip-close-btn" aria-label="Close details">✕</button>
     <div class="mip-layout">
       <img class="mip-poster" src="" alt="" />
       <div class="mip-body">
@@ -1961,7 +2057,17 @@
           <input type="range" id="lgVolumeSlider" data-testid="lg-volume-slider" min="0" max="100" value="0" style="flex:1;min-width:120px;max-width:280px;" />
           <span id="lgVolumeLabel" class="muted" data-testid="lg-volume-label" style="min-width:4.5em;">—</span>
         </div>
-        <p id="playbackHintLine" class="muted small" style="flex-basis:100%;margin:8px 0 0 0;line-height:1.45;" aria-live="polite"></p>
+        <div id="npCardEntry" class="np-card-entry" hidden>
+          <img class="np-card-poster" id="npCardPoster" src="" alt="" />
+          <div class="np-card-body">
+            <div class="np-card-badge local" id="npCardBadge">📺 Sent to TV</div>
+            <div class="np-card-title" id="npCardTitle"></div>
+            <div class="np-card-time" id="npCardTime"></div>
+            <div class="np-card-progress-wrap" id="npCardProgressWrap" hidden>
+              <div class="np-card-progress-bar" id="npCardProgressBar" style="width:0%"></div>
+            </div>
+          </div>
+        </div>
         <div id="plexCompanionRow" class="row" data-testid="plex-companion-row" style="flex-basis:100%;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px;">
           <span class="muted" style="font-size:12px;line-height:1.4;">Plex companion controls (pause/skip/seek) use the Plex remote API. They are hidden when the selected target is <strong>LG TV (SSAP)</strong> — use the TV remote for that player.</span>
           <button type="button" id="ccPauseBtn" data-testid="cc-pause">Pause</button>
@@ -2095,6 +2201,12 @@
           <option value="ratingDesc">Highest rating</option>
         </select>
         <span id="showCount" class="movies-count-badge" style="margin-left:8px;" data-testid="show-count">0 shows</span>
+      </div>
+      <div id="gridUpdatingBanner" hidden style="display:none!important;">
+        <svg style="flex-shrink:0;animation:gridSpinAnim 0.9s linear infinite;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+        </svg>
+        Updating grid…
       </div>
       <div id="movieGrid" class="movies-grid" data-testid="movie-list"></div>
       <button id="backToTop" title="Back to top" aria-label="Scroll to top">&#8679;</button>
@@ -2653,6 +2765,23 @@
         </div>
       </div>
 
+      <div class="settings-group settings-group--stream-cache">
+        <div class="settings-group-head">
+          <span class="settings-group-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z"/><path d="M12 8v4l3 3"/></svg></span>
+          <h4>Stream Cache</h4>
+          <span class="settings-group-eyebrow">Pre-fetched files</span>
+        </div>
+        <p class="muted small" style="margin:0 0 8px 0;max-width:52rem;line-height:1.45;">
+          When you hit <strong>Cache</strong> on a movie, the server downloads the full file locally so your TV streams from disk rather than buffering from Plex. Only <strong>one download runs at a time</strong> — starting a new one cancels any existing download. Files stay until you delete them here.
+        </p>
+        <div class="row" style="margin-bottom:6px;gap:8px;">
+          <button type="button" id="streamCacheRefreshBtn">Refresh</button>
+          <button type="button" id="streamCacheClearAllBtn" style="background:#7b2020;border-color:#a33;">Clear All</button>
+          <span id="streamCacheStatus" class="muted small"></span>
+        </div>
+        <div id="streamCacheList" style="max-width:56rem;"></div>
+      </div>
+
       <div class="settings-group settings-group--data">
         <div class="settings-group-head">
           <span class="settings-group-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3 3 7 3s7-1.3 7-3V6"/><path d="M5 12v6c0 1.7 3 3 7 3s7-1.3 7-3v-6"/></svg></span>
@@ -2878,14 +3007,19 @@
     /** Full library from last API/cache load; sort/decade only change the displayed slice `moviesAll`. */
     let moviesLibraryFull = [];
     let moviesAll = [];
-    let allCardData = []; // [{movie, el, searchText}] — grows as the grid scrolls
+    /** Filtered subset of moviesAll for current search/genre/rating/decade; null = show all. */
+    let moviesDisplayFiltered = null;
+    let allCardData = []; // [{movie, el}] — grows as the grid scrolls
     let moviesMaterializedCount = 0;
-    let moviesMaterializePromise = null;
+    // Cached DOM refs for elements queried on every scroll tick / filter cycle.
+    // Populated once after DOMContentLoaded; never re-queried.
+    let _elMovieGrid = null;
+    let _elMovieSearch = null;
+    let _elMovieCount = null;
+    let _elGridBanner = null;
     /** Last /api/connectivity payload — used to color movie file sizes vs Plex sample throughput. */
     let lastConnectivityData = null;
     let movieGridScrollBusy = false;
-    /** True when #movieGrid DOM order was reordered for an active search (restore library order when cleared). */
-    let movieGridOrderIsSearchSorted = false;
     let discoveredPlayers = [];
 
     function selectedPlayerDeviceID() {
@@ -2936,7 +3070,73 @@
       }
     }
     const MOVIE_GRID_INITIAL = 100;
-    const MOVIE_GRID_CHUNK = 120;
+    const MOVIE_GRID_CHUNK = 200;
+
+    /** Returns the list to render: filtered subset when a filter is active, full list otherwise. */
+    function currentDisplayList() {
+      return moviesDisplayFiltered !== null ? moviesDisplayFiltered : moviesAll;
+    }
+
+    /** Build search text blob for a movie (used during in-memory filtering). */
+    function buildMovieSearchBlob(movie) {
+      return [
+        movie.Title,
+        String(movie.Year || ''),
+        ...dashboardCreditNameList(movie.Actors),
+        ...dashboardCreditNameList(movie.Directors),
+      ].join(' ').toLowerCase();
+    }
+
+    /** Cached search blobs keyed by RatingKey — rebuilt once when moviesAll changes. */
+    let _searchBlobCache = new Map();
+    function warmSearchBlobCache() {
+      _searchBlobCache = new Map();
+      for (const m of moviesAll) {
+        _searchBlobCache.set(m.RatingKey, buildMovieSearchBlob(m));
+      }
+    }
+    function cachedSearchBlob(movie) {
+      const cached = _searchBlobCache.get(movie.RatingKey);
+      return cached !== undefined ? cached : buildMovieSearchBlob(movie);
+    }
+
+    /**
+     * Background idle prefetch: after each render chunk, schedule the next one
+     * via requestIdleCallback so the browser fills the grid while idle.
+     * Cancelled whenever the display list changes (filter/sort/reset).
+     */
+    let _prefetchIdleHandle = null;
+    let _prefetchForList = null;
+    function cancelPrefetch() {
+      if (_prefetchIdleHandle !== null) {
+        if (window.cancelIdleCallback) window.cancelIdleCallback(_prefetchIdleHandle);
+        else clearTimeout(_prefetchIdleHandle);
+        _prefetchIdleHandle = null;
+      }
+      _prefetchForList = null;
+    }
+    function schedulePrefetch() {
+      cancelPrefetch();
+      const list = currentDisplayList();
+      if (moviesMaterializedCount >= list.length) return;
+      _prefetchForList = list;
+      const schedule = window.requestIdleCallback
+        ? (fn) => window.requestIdleCallback(fn, { timeout: 800 })
+        : (fn) => setTimeout(fn, 60);
+      _prefetchIdleHandle = schedule(async () => {
+        _prefetchIdleHandle = null;
+        if (currentDisplayList() !== _prefetchForList) return; // list changed, abort
+        if (movieGridScrollBusy) { schedulePrefetch(); return; }
+        movieGridScrollBusy = true;
+        try {
+          await materializeMoreMovies(MOVIE_GRID_CHUNK);
+        } finally {
+          movieGridScrollBusy = false;
+        }
+        schedulePrefetch(); // chain next chunk
+      });
+    }
+
     let searchDebounceTimer = null;
     const selectedMovieKeys = new Set();
     /** Genre bubbles on Dashboard: OR match (title shown if it has any selected genre). */
@@ -3062,7 +3262,12 @@
         bannerImg.src = src;
         const m = d.movie || {};
         if (movieLine) {
-          movieLine.textContent = `Now showing: ${m.title || ''}${m.year ? ' (' + m.year + ')' : ''}${d.source === 'fanart' ? ' · fanart.tv' : ''}`;
+          let label = `${m.title || ''}${m.year ? ' (' + m.year + ')' : ''}`;
+          if (m.relatedToTitle && m.relatedViaActor) {
+            label += ` · because you watched ${m.relatedToTitle} — also starring ${m.relatedViaActor}`;
+          }
+          if (d.source === 'fanart') label += ' · fanart.tv';
+          movieLine.textContent = label;
           movieLine.hidden = false;
         }
         return true;
@@ -3221,6 +3426,7 @@
         } else {
           setTimeout(runFanartInBackground, 0);
         }
+        if (fanartBannerPollTimer) { clearInterval(fanartBannerPollTimer); fanartBannerPollTimer = null; }
         fanartBannerPollTimer = setInterval(async () => {
           try {
             await refreshFanartBannerOnce();
@@ -3260,35 +3466,201 @@
     let lgVolumePollSuppressUntil = 0;
     let lgVolumePostDebounceTimer = null;
 
+    // Last-fetched playback status — used by the now-playing hover popup.
+    let npLastStatus = null;
+
     async function loadPlaybackStatus() {
-      const el = document.getElementById('nowPlayingText');
+      const el  = document.getElementById('nowPlayingText');
       const bar = document.getElementById('nowPlayingBar');
-      const hint = document.getElementById('playbackHintLine');
       if (!el || !bar) return;
       try {
         const d = await apiJson('/api/playback/status');
-        const line = d.summaryLine || '—';
-        el.textContent = line;
-        if (hint) {
-          hint.textContent = line;
-          hint.className = d.plexSessionsError ? 'small err' : 'muted small';
+        npLastStatus = d;
+
+        // Build top-bar label from structured data — never show raw summaryLine.
+        const resolved = npResolveState();
+        const hasData  = !!resolved;
+        let displayLabel;
+        if (resolved) {
+          if (resolved.kind === 'session') {
+            const sess = resolved.sess;
+            const title = sess.grandparentTitle
+              ? `${sess.grandparentTitle} — ${sess.title}`
+              : (sess.title || '');
+            displayLabel = (sess.playerState === 'paused' ? '⏸ ' : '▶ ') + title;
+          } else {
+            const title = resolved.rawTitle || 'Sent to TV';
+            displayLabel = resolved.finished ? 'Last watched: ' + title : '📺 ' + title;
+          }
+        } else {
+          displayLabel = '—';
         }
+
         const hasErr = !!d.plexSessionsError;
-        el.className = hasErr ? 'err' : 'muted';
+        el.textContent = displayLabel;
+        el.className   = hasErr ? 'err' : 'muted';
         bar.classList.toggle('err', hasErr);
         bar.title = hasErr ? String(d.plexSessionsError) : '';
+        npUpdateCardEntry();
       } catch (err) {
-        const msg = 'Playback status unavailable: ' + err.message;
-        el.textContent = msg;
-        if (hint) {
-          hint.textContent = msg;
-          hint.className = 'small err';
-        }
+        npLastStatus = null;
+        el.textContent = 'Playback status unavailable';
         el.className = 'err';
         bar.classList.add('err');
         bar.title = err.message;
+        npUpdateCardEntry();
       }
     }
+
+    // ── Now-playing hover popup ─────────────────────────────────────────────
+
+    /** Find a loaded movie by its title string (handles "Title (Year)" format). */
+    function npFindMovie(titleStr) {
+      const lib = moviesLibraryFull.length ? moviesLibraryFull : moviesAll;
+      if (!lib || !lib.length || !titleStr) return null;
+      const m = titleStr.match(/^(.+?)\s*\((\d{4})\)\s*$/);
+      const parsedTitle = (m ? m[1].trim() : titleStr.trim()).toLowerCase();
+      const parsedYear  = m ? parseInt(m[2], 10) : 0;
+      if (parsedYear) {
+        const found = lib.find(mv => mv.Title && mv.Title.toLowerCase() === parsedTitle && mv.Year === parsedYear);
+        if (found) return found;
+      }
+      return lib.find(mv => mv.Title && mv.Title.toLowerCase() === parsedTitle) || null;
+    }
+
+    function npFmtDuration(ms) {
+      const s = Math.max(0, Math.floor(ms / 1000));
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      if (h > 0) return `${h}h ${m}m`;
+      return `${m}m`;
+    }
+
+    /**
+     * Returns the effective "now playing" data object for popup rendering.
+     * Normalises the three API states (plex_session / local_send / idle-with-localSend)
+     * into a single shape and enforces the duration-based auto-clear rule:
+     * if elapsed time > 105% of the movie's runtime → return null (entry is cleared).
+     */
+    function npResolveState() {
+      const d = npLastStatus;
+      if (!d) return null;
+
+      if (d.primaryFrom === 'plex_session' && d.primary) {
+        return { kind: 'session', sess: d.primary };
+      }
+
+      // Both 'local_send' (≤45 min) and 'idle' (>45 min but localSend exists) go
+      // through the same duration-based logic.
+      const ls = d.localSend;
+      if (!ls || !ls.sentAt) return null;
+
+      const rawTitle  = (ls.titles || [])[0] || '';
+      const ratingKey = (ls.ratingKeys || [])[0] || '';
+      // Try library lookup for duration; fall back gracefully if not loaded yet.
+      const movie    = npFindMovie(rawTitle);
+      const elapsed  = Date.now() - new Date(ls.sentAt).getTime();
+      const duration = movie ? (movie.DurationMillis || 0) : 0;
+
+      // If the movie has run past its runtime, show as "finished" (still hoverable).
+      const finished = duration > 0 && elapsed > duration * 1.05;
+
+      return { kind: 'local', ls, movie, rawTitle, ratingKey, elapsed, duration, finished };
+    }
+
+    /** Render the always-visible now-playing mini-card in the Target Player section. */
+    function npUpdateCardEntry() {
+      const card         = document.getElementById('npCardEntry');
+      const poster       = document.getElementById('npCardPoster');
+      const badge        = document.getElementById('npCardBadge');
+      const titleEl      = document.getElementById('npCardTitle');
+      const timeEl       = document.getElementById('npCardTime');
+      const progressWrap = document.getElementById('npCardProgressWrap');
+      const progressBar  = document.getElementById('npCardProgressBar');
+      if (!card) return;
+
+      const state = npResolveState();
+      if (!state) { card.hidden = true; return; }
+
+      card.hidden = false;
+
+      if (state.kind === 'session') {
+        const sess = state.sess;
+        const displayTitle = sess.grandparentTitle
+          ? `${sess.grandparentTitle} — ${sess.title}`
+          : (sess.title || '');
+        const movie = npFindMovie(sess.title || '');
+        const rk = movie ? movie.RatingKey : null;
+        poster.src = rk ? '/api/plex/thumb?ratingKey=' + encodeURIComponent(rk) : '';
+        poster.hidden = !rk;
+        badge.textContent = sess.playerState === 'paused' ? '⏸ Paused' : '▶ Now Playing';
+        badge.className   = 'np-card-badge ' + (sess.playerState === 'paused' ? 'paused' : 'playing');
+        titleEl.textContent = displayTitle + (sess.year ? ` (${sess.year})` : '');
+        if (sess.durationMs > 0 && sess.viewOffsetMs >= 0) {
+          const remaining = Math.max(0, sess.durationMs - sess.viewOffsetMs);
+          const pct = Math.min(100, (sess.viewOffsetMs / sess.durationMs) * 100);
+          timeEl.textContent = `${npFmtDuration(sess.viewOffsetMs)} / ${npFmtDuration(sess.durationMs)} · ${npFmtDuration(remaining)} left`;
+          progressBar.style.width = pct + '%';
+          progressWrap.hidden = false;
+        } else {
+          timeEl.textContent = sess.playerName ? `on ${sess.playerName}` : '';
+          progressWrap.hidden = true;
+        }
+        card._npMovie = movie;
+      } else {
+        const { ls, movie, rawTitle, ratingKey, elapsed, duration, finished } = state;
+        const rk = ratingKey || (movie ? movie.RatingKey : null);
+        poster.src = rk ? '/api/plex/thumb?ratingKey=' + encodeURIComponent(rk) : '';
+        poster.hidden = !rk;
+        titleEl.textContent = rawTitle;
+        if (finished) {
+          badge.textContent = '⏹ Finished';
+          badge.className   = 'np-card-badge finished';
+          timeEl.textContent = `Watched ${Math.round(elapsed / 60000)} min ago` + (ls.target ? ` · ${ls.target}` : '');
+          progressWrap.hidden = true;
+        } else if (duration > 0) {
+          badge.textContent = '📺 Sent to TV';
+          badge.className   = 'np-card-badge local';
+          const remaining = Math.max(0, duration - elapsed);
+          const pct = Math.min(100, (elapsed / duration) * 100);
+          timeEl.textContent = `Started ${Math.round(elapsed / 60000)} min ago · ~${npFmtDuration(remaining)} remaining`;
+          if (ls.target) timeEl.textContent += ` · ${ls.target}`;
+          progressBar.style.width = pct + '%';
+          progressWrap.hidden = false;
+        } else {
+          badge.textContent = '📺 Sent to TV';
+          badge.className   = 'np-card-badge local';
+          timeEl.textContent = `Started ${Math.round(elapsed / 60000)} min ago · position not tracked`;
+          if (ls.target) timeEl.textContent += ` · ${ls.target}`;
+          progressWrap.hidden = true;
+        }
+        if (!finished && (ls.queueLength || 0) > 1) timeEl.textContent += ` + ${ls.queueLength - 1} more`;
+        // Build minimal movie object for info popup if library entry not found yet.
+        if (movie) {
+          card._npMovie = movie;
+        } else if (ratingKey) {
+          const m = rawTitle.match(/^(.+?)\s*\((\d{4})\)\s*$/);
+          card._npMovie = { RatingKey: ratingKey, Title: m ? m[1].trim() : rawTitle, Year: m ? parseInt(m[2]) : 0 };
+        } else {
+          card._npMovie = null;
+        }
+      }
+    }
+
+    // Wire hover on the card entry → open full movie info popup (no play buttons).
+    (function () {
+      const card = document.getElementById('npCardEntry');
+      if (!card) return;
+      card.addEventListener('mouseenter', () => {
+        const movie = card._npMovie;
+        if (movie && typeof window._showMovieInfo === 'function') {
+          window._showMovieInfo(card, movie, { immediate: true, noPlay: true });
+        }
+      });
+      card.addEventListener('mouseleave', () => {
+        if (typeof window._hideMovieInfo === 'function') window._hideMovieInfo();
+      });
+    })();
 
     function startPlaybackPoll() {
       if (playbackPollTimer) clearInterval(playbackPollTimer);
@@ -3464,6 +3836,97 @@
           status.textContent = `Failed: ${err.message}`;
           status.className = 'muted small err';
         }
+      }
+    }
+
+    // ── Stream Cache panel ───────────────────────────────────────────────────────
+
+    async function refreshStreamCache() {
+      const listEl = document.getElementById('streamCacheList');
+      const statusEl = document.getElementById('streamCacheStatus');
+      if (!listEl) return;
+      if (statusEl) { statusEl.textContent = 'Loading…'; statusEl.className = 'muted small'; }
+      try {
+        const data = await apiJson('/api/stream/cache');
+        const items = (data && data.items) || [];
+        const totalBytes = (data && data.totalBytes) || 0;
+
+        if (items.length === 0) {
+          listEl.innerHTML = '<p class=”muted small” style=”margin:4px 0;”>No files in stream cache.</p>';
+          if (statusEl) { statusEl.textContent = 'Empty.'; statusEl.className = 'muted small'; }
+          return;
+        }
+
+        // Sort: in-progress first, then completed by cachedAt desc.
+        items.sort((a, b) => {
+          if (!a.complete && b.complete) return -1;
+          if (a.complete && !b.complete) return 1;
+          return (b.cachedAt || '').localeCompare(a.cachedAt || '');
+        });
+
+        const rows = items.map(item => {
+          const title = item.title || item.ratingKey;
+          let sizeStr, statusStr, progressHtml = '';
+          if (item.complete) {
+            sizeStr = formatCacheBytes(item.size);
+            const age = item.cachedAt ? formatCacheInstant(item.cachedAt) : '—';
+            statusStr = `<span style=”color:#5c9e5c;”>Cached</span> &nbsp;·&nbsp; ${sizeStr} &nbsp;·&nbsp; ${age}`;
+          } else {
+            const pct = item.totalSize > 0 ? Math.round(item.size / item.totalSize * 100) : 0;
+            const cachedStr = formatCacheBytes(item.size);
+            const totalStr = item.totalSize > 0 ? formatCacheBytes(item.totalSize) : '?';
+            statusStr = `<span style=”color:#c8a832;”>Downloading</span> &nbsp;·&nbsp; ${cachedStr} / ${totalStr}`;
+            progressHtml = `<div style=”margin-top:4px;height:4px;background:#333;border-radius:2px;max-width:320px;”>
+              <div style=”height:4px;background:#c8a832;border-radius:2px;width:${pct}%;transition:width .5s;”></div>
+            </div>`;
+          }
+          return `<div style=”display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid #2a2a2a;”>
+            <div style=”flex:1;min-width:0;”>
+              <div style=”font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;” title=”${escapeHtmlAttr(title)}”>${escapeHtmlAttr(title)}</div>
+              <div class=”muted small” style=”margin-top:2px;”>${statusStr}</div>
+              ${progressHtml}
+            </div>
+            <button type=”button” class=”snap-refresh-btn” style=”flex-shrink:0;padding:3px 10px;font-size:12px;”
+              onclick=”deleteStreamCacheItem(${JSON.stringify(item.ratingKey)}, this)”>Delete</button>
+          </div>`;
+        });
+
+        listEl.innerHTML = rows.join('');
+        if (statusEl) {
+          statusEl.textContent = `${items.length} file${items.length !== 1 ? 's' : ''} · ${formatCacheBytes(totalBytes)} total`;
+          statusEl.className = 'muted small';
+        }
+      } catch (err) {
+        listEl.innerHTML = `<p class=”muted small err”>Failed to load: ${escapeHtmlAttr(err.message)}</p>`;
+        if (statusEl) { statusEl.textContent = `Error: ${err.message}`; statusEl.className = 'muted small err'; }
+      }
+    }
+
+    async function deleteStreamCacheItem(ratingKey, btn) {
+      if (btn) { btn.disabled = true; btn.textContent = '…'; }
+      try {
+        await fetch(`/api/stream/cache/${encodeURIComponent(ratingKey)}`, { method: 'DELETE' });
+        await refreshStreamCache();
+      } catch (err) {
+        if (btn) { btn.disabled = false; btn.textContent = 'Delete'; }
+        alert(`Delete failed: ${err.message}`);
+      }
+    }
+
+    async function clearAllStreamCache() {
+      const statusEl = document.getElementById('streamCacheStatus');
+      try {
+        const data = await apiJson('/api/stream/cache');
+        const items = (data && data.items) || [];
+        if (items.length === 0) { await refreshStreamCache(); return; }
+        if (!confirm(`Delete all ${items.length} cached file${items.length !== 1 ? 's' : ''}?`)) return;
+        if (statusEl) { statusEl.textContent = 'Deleting…'; statusEl.className = 'muted small'; }
+        await Promise.all(items.map(item =>
+          fetch(`/api/stream/cache/${encodeURIComponent(item.ratingKey)}`, { method: 'DELETE' }).catch(() => {})
+        ));
+        await refreshStreamCache();
+      } catch (err) {
+        if (statusEl) { statusEl.textContent = `Error: ${err.message}`; statusEl.className = 'muted small err'; }
       }
     }
 
@@ -3656,7 +4119,13 @@
       img.onerror = () => { img.style.display = 'none'; };
       img.addEventListener('click', (e) => {
         e.stopPropagation();
-        openPosterLightbox(thumbUrl, movie.Title);
+        const tmdb = Number(movie.TMDBID != null ? movie.TMDBID : movie.tmdbId);
+        const rk   = movie.RatingKey ? String(movie.RatingKey).trim() : '';
+        openPosterLightbox(thumbUrl, movie.Title, {
+          nativePixels: true,
+          resumeMovieInfo: true,
+          fanartGallery: (tmdb > 0 || rk) ? { tmdbId: tmdb > 0 ? tmdb : 0, ratingKey: rk } : null,
+        });
       });
       poster.appendChild(img);
 
@@ -3743,16 +4212,37 @@
         window._hideMovieInfo();
       });
 
+      // Touch: tap card to show/dismiss the info popup (no hover needed on mobile)
+      let _mipTouchStartX = 0, _mipTouchStartY = 0;
+      card.addEventListener('touchstart', (e) => {
+        _mipTouchStartX = e.touches[0].clientX;
+        _mipTouchStartY = e.touches[0].clientY;
+      }, { passive: true });
+      card.addEventListener('touchend', (e) => {
+        const dx = e.changedTouches[0].clientX - _mipTouchStartX;
+        const dy = e.changedTouches[0].clientY - _mipTouchStartY;
+        if (Math.hypot(dx, dy) > 10) return; // scroll, not tap
+        e.preventDefault();
+        const popupEl = document.getElementById('movieInfoPopup');
+        const openForThis = popupEl && popupEl.classList.contains('mip-visible') && typeof window._movieInfoAnchoredTo === 'function' && window._movieInfoAnchoredTo(card);
+        if (openForThis) {
+          if (typeof window._hideMovieInfoImmediate === 'function') window._hideMovieInfoImmediate();
+        } else {
+          if (typeof window._showMovieInfo === 'function') window._showMovieInfo(card, movie, { immediate: true });
+        }
+      }, { passive: false });
+
       return card;
     }
 
     function resetMovieGridState(movies, opts) {
       opts = opts || {};
       moviesAll = movies || [];
+      moviesDisplayFiltered = null;
       allCardData = [];
       moviesMaterializedCount = 0;
-      moviesMaterializePromise = null;
-      movieGridOrderIsSearchSorted = false;
+      cancelPrefetch();
+      warmSearchBlobCache();
       if (!opts.keepGenreFilter) {
         selectedDashboardGenres.clear();
         const gp = loadGenreBarPrefs();
@@ -4122,24 +4612,20 @@
       sortMoviesList(list, mode);
       resetMovieGridState(list, { keepGenreFilter: !!opts.keepGenreFilter });
       await materializeMoreMovies(MOVIE_GRID_INITIAL);
-      filterMovieCardsSync();
       refreshAllMovieStreamHints();
       refreshDashboardGenreTagsFromLibrary();
+      filterMovieCards();
     }
 
     function materializeMovieRange(start, end) {
+      const list = currentDisplayList();
       const grid = document.getElementById('movieGrid');
       const frag = document.createDocumentFragment();
       for (let j = start; j < end; j++) {
-        const movie = moviesAll[j];
+        const movie = list[j];
+        if (!movie) continue;
         const el = buildMovieCard(movie);
-        const searchText = [
-          movie.Title,
-          String(movie.Year || ''),
-          ...dashboardCreditNameList(movie.Actors),
-          ...dashboardCreditNameList(movie.Directors),
-        ].join(' ').toLowerCase();
-        allCardData.push({ movie, el, searchText, orderIndex: j });
+        allCardData.push({ movie, el });
         frag.appendChild(el);
       }
       grid.appendChild(frag);
@@ -4148,48 +4634,33 @@
     }
 
     async function materializeMoreMovies(chunk) {
-      if (moviesMaterializedCount >= moviesAll.length) return;
+      const list = currentDisplayList();
+      if (moviesMaterializedCount >= list.length) return;
       const start = moviesMaterializedCount;
-      const end = Math.min(start + chunk, moviesAll.length);
+      const end = Math.min(start + chunk, list.length);
       materializeMovieRange(start, end);
       await new Promise(r => setTimeout(r, 0));
-    }
-
-    async function ensureAllMoviesMaterialized() {
-      if (moviesMaterializedCount >= moviesAll.length) return;
-      if (moviesMaterializePromise) return moviesMaterializePromise;
-      moviesMaterializePromise = (async () => {
-        while (moviesMaterializedCount < moviesAll.length) {
-          await materializeMoreMovies(MOVIE_GRID_CHUNK);
-        }
-      })();
-      try {
-        await moviesMaterializePromise;
-      } finally {
-        moviesMaterializePromise = null;
-      }
     }
 
     async function onMovieGridScrollLoad() {
       const dash = document.getElementById('tab-dashboard');
       if (!dash || !dash.classList.contains('active')) return;
-      if (movieGridScrollBusy || moviesMaterializedCount >= moviesAll.length) return;
+      if (movieGridScrollBusy || moviesMaterializedCount >= currentDisplayList().length) return;
       const grid = document.getElementById('movieGrid');
       if (!grid) return;
       const inIframe = window.self !== window.top;
       if (inIframe) {
         // Grid-contained scroll: load more when near the bottom of the grid's scroll
-        if (grid.scrollHeight - grid.scrollTop - grid.clientHeight > 400) return;
+        if (grid.scrollHeight - grid.scrollTop - grid.clientHeight > 600) return;
       } else {
         // Page scroll: load more when grid bottom is near the viewport bottom
         const vh = window.innerHeight || document.documentElement.clientHeight || 0;
         const rect = grid.getBoundingClientRect();
-        if (rect.bottom > vh + 400) return;
+        if (rect.bottom > vh + 600) return;
       }
       movieGridScrollBusy = true;
       try {
         await materializeMoreMovies(MOVIE_GRID_CHUNK);
-        filterMovieCardsSync();
       } finally {
         movieGridScrollBusy = false;
       }
@@ -4302,82 +4773,92 @@
       }
     }
 
-    function filterMovieCardsSync() {
-      const grid = document.getElementById('movieGrid');
+    /**
+     * Filter moviesAll in memory → moviesDisplayFiltered, then rebuild the grid
+     * from scratch with only matching movies (progressive rendering).
+     * No DOM hidden-card approach: only matching movies are ever rendered.
+     */
+    function filterMovieCards() {
+      const grid = _elMovieGrid || document.getElementById('movieGrid');
       if (!grid) return;
-      const q = (document.getElementById('movieSearch')?.value || '').trim().toLowerCase();
+      const q = ((_elMovieSearch || document.getElementById('movieSearch'))?.value || '').trim().toLowerCase();
       const scope = dashboardMovieSearchScope();
       const genreOn = genreFilterActive();
-      const decadeOn = decadeFilterActive();
       const ratingMin = dashboardMinRatingFilter();
       const ratingOn = ratingMin > 0;
-      let shown = 0;
-      for (const entry of allCardData) {
-        const genreOk = moviePassesGenreFilters(entry.movie);
-        const textOk = !q || movieMatchesDashboardSearch(entry.movie, entry.searchText, q, scope);
-        const ratingOk = movieMeetsRatingFilter(entry.movie);
-        const matches = genreOk && textOk && ratingOk;
-        entry.el.hidden = !matches;
-        if (matches) shown++;
-      }
-      if (q) {
-        const visible = allCardData.filter(function (e) { return !e.el.hidden; });
-        visible.sort(function (a, b) {
-          const ra = searchMatchRank(a.movie, q);
-          const rb = searchMatchRank(b.movie, q);
-          if (ra !== rb) return ra - rb;
-          return (a.movie.Title || '').localeCompare(b.movie.Title || '', undefined, { sensitivity: 'base' });
-        });
-        visible.forEach(function (e) { grid.appendChild(e.el); });
-        movieGridOrderIsSearchSorted = true;
-        (window.self !== window.top ? grid : window).scrollTo({ top: 0, behavior: 'smooth' });
-      } else if (movieGridOrderIsSearchSorted) {
-        var sorted = allCardData.slice().sort(function (a, b) {
-          return (a.orderIndex ?? 0) - (b.orderIndex ?? 0);
-        });
-        sorted.forEach(function (e) { grid.appendChild(e.el); });
-        movieGridOrderIsSearchSorted = false;
-        (window.self !== window.top ? grid : window).scrollTo({ top: 0, behavior: 'smooth' });
-      } else if (genreOn || ratingOn || decadeOn) {
-        // Genre/rating/decade filter changed: scroll to top so the user sees filtered results from the start.
-        (window.self !== window.top ? grid : window).scrollTo({ top: 0, behavior: 'smooth' });
-      }
-      updateMovieCountDisplay(q, shown, genreOn, ratingOn, decadeOn);
-    }
+      const decadeOn = decadeFilterActive();
+      const hasFilter = !!(q || genreOn || ratingOn || decadeOn);
 
-    // Show/hide materialized cards. When there is a search query, the full library
-    // is materialized first so matches are not limited to the first scroll chunk.
-    function filterMovieCards() {
-      const q = (document.getElementById('movieSearch')?.value || '').trim().toLowerCase();
-      const needFullLibrary = !!(q || genreFilterActive() || dashboardMinRatingFilter() > 0 || decadeFilterActive());
-      const run = async () => {
-        try {
-          if (needFullLibrary) await ensureAllMoviesMaterialized();
-        } catch (err) {
-          console.error('[Plex Dashboard] filterMovieCards materialize', err);
+      if (!hasFilter) {
+        // No filter: show full sorted library
+        if (moviesDisplayFiltered !== null) {
+          cancelPrefetch();
+          moviesDisplayFiltered = null;
+          grid.innerHTML = '';
+          allCardData = [];
+          moviesMaterializedCount = 0;
+          materializeMovieRange(0, Math.min(MOVIE_GRID_INITIAL, moviesAll.length));
+          schedulePrefetch();
         }
-        requestAnimationFrame(() => filterMovieCardsSync());
-      };
-      if (needFullLibrary) void run();
-      else requestAnimationFrame(() => filterMovieCardsSync());
+        updateMovieCountDisplay('', moviesAll.length, false, false, false);
+        return;
+      }
+
+      // Filter moviesAll in memory — uses cached blobs, no DOM touching
+      let filtered = moviesAll.filter(movie => {
+        if (!moviePassesGenreFilters(movie)) return false;
+        if (!movieMeetsRatingFilter(movie)) return false;
+        if (q) {
+          const blob = cachedSearchBlob(movie);
+          if (!movieMatchesDashboardSearch(movie, blob, q, scope)) return false;
+        }
+        return true;
+      });
+
+      // Sort by search rank when query is active
+      if (q) {
+        filtered.sort((a, b) => {
+          const ra = searchMatchRank(a, q);
+          const rb = searchMatchRank(b, q);
+          if (ra !== rb) return ra - rb;
+          return (a.Title || '').localeCompare(b.Title || '', undefined, { sensitivity: 'base' });
+        });
+      }
+
+      cancelPrefetch();
+      moviesDisplayFiltered = filtered;
+
+      // Rebuild grid with first chunk of matching movies
+      grid.innerHTML = '';
+      allCardData = [];
+      moviesMaterializedCount = 0;
+      materializeMovieRange(0, Math.min(MOVIE_GRID_INITIAL, filtered.length));
+
+      updateMovieCountDisplay(q, filtered.length, genreOn, ratingOn, decadeOn);
+      (window.self !== window.top ? grid : window).scrollTo({ top: 0, behavior: 'smooth' });
+      schedulePrefetch();
     }
 
     function updateMovieCountDisplay(q, shown, genreOn, ratingOn, decadeOn) {
+      const countEl = _elMovieCount || document.getElementById('movieCount');
+      if (!countEl) return;
       const total = moviesAll.length;
       const filtering = !!(q || genreOn || ratingOn || decadeOn);
+      const mat = moviesMaterializedCount;
       if (!filtering) {
-        const mat = moviesMaterializedCount;
         if (mat < total && mat > 0) {
-          document.getElementById('movieCount').textContent =
-            `${total} movies · showing ${mat} (scroll grid for more)`;
+          countEl.textContent = `${total} movies · loaded ${mat} (scroll for more)`;
         } else {
-          document.getElementById('movieCount').textContent = `${total} movies`;
+          countEl.textContent = `${total} movies`;
         }
         return;
       }
       const s = shown !== undefined ? shown : total;
-      document.getElementById('movieCount').textContent =
-        (s < total) ? `${s} of ${total} movies` : `${s} movies`;
+      if (mat < s) {
+        countEl.textContent = `${s} of ${total} movies · loaded ${mat} (scroll for more)`;
+      } else {
+        countEl.textContent = (s < total) ? `${s} of ${total} movies` : `${s} movies`;
+      }
     }
 
     function deriveGenreListFromMovies(movies) {
@@ -4410,12 +4891,7 @@
       await materializeMoreMovies(MOVIE_GRID_INITIAL);
       refreshAllMovieStreamHints();
       refreshDashboardGenreTagsFromLibrary(); // restores selectedDashboardGenres from localStorage
-      if (genreFilterActive()) {
-        // Genre selections were restored from prefs — materialize full library and filter.
-        filterMovieCards();
-      } else {
-        filterMovieCardsSync();
-      }
+      filterMovieCards(); // applies active genre/search/rating filters (or shows all if none)
       await applyHeaderBranding();
     }
 
@@ -5809,7 +6285,7 @@
        * @param {string} [title]
        * @param {string} [overview]
        */
-      window._showPosterPopup = function (anchorEl, thumbSrc, title, overview) {
+      window._showPosterPopup = function (anchorEl, thumbSrc, title, overview, opts) {
         clearHideTimer();
         if (showTimer) {
           clearTimeout(showTimer);
@@ -5892,8 +6368,20 @@
             setPosterPending(false);
             reveal();
           }
-        }, HOVER_MS);
+        }, (opts && opts.immediate) ? 0 : HOVER_MS);
       };
+
+      // Close button for touch devices
+      const discCloseBtn = popup.querySelector('.disc-popup-close-btn');
+      if (discCloseBtn) {
+        discCloseBtn.addEventListener('click', () => {
+          if (typeof window._hidePosterPopup === 'function') window._hidePosterPopup();
+        });
+        discCloseBtn.addEventListener('touchend', (e) => {
+          e.preventDefault();
+          if (typeof window._hidePosterPopup === 'function') window._hidePosterPopup();
+        }, { passive: false });
+      }
 
       window._hidePosterPopup = function () {
         if (showTimer) {
@@ -6545,7 +7033,7 @@
             mipPlot.style.display = summary ? '' : 'none';
           }
 
-          if (mipPlayRow && movie.RatingKey && movie.PartKey) {
+          if (mipPlayRow && movie.RatingKey && movie.PartKey && !opts.noPlay) {
             mipPlayRow.hidden = false;
             if (mipPlayTv) {
               mipPlayTv.onclick = (e) => {
@@ -6608,8 +7096,18 @@
             mipPoster.onerror = () => { reveal(); };
             if (mipPoster.complete) reveal();
           }
-        }, SHOW_MS);
+        }, opts.immediate ? 0 : SHOW_MS);
       };
+
+      // Close button for touch devices
+      const mipCloseBtn = popup.querySelector('.mip-close-btn');
+      if (mipCloseBtn) {
+        mipCloseBtn.addEventListener('click', () => hideMovieInfoImmediate());
+        mipCloseBtn.addEventListener('touchend', (e) => {
+          e.preventDefault();
+          hideMovieInfoImmediate();
+        }, { passive: false });
+      }
 
       window._hideMovieInfo = function () {
         if (showTimer) { clearTimeout(showTimer); showTimer = null; }
@@ -6664,6 +7162,34 @@
       banner.addEventListener('mouseleave', () => {
         if (typeof window._hideMovieInfo === 'function') window._hideMovieInfo();
       });
+      // Touch: tap banner to toggle movie info popup
+      let _heroBannerTouchStartX = 0, _heroBannerTouchStartY = 0;
+      banner.addEventListener('touchstart', (e) => {
+        _heroBannerTouchStartX = e.touches[0].clientX;
+        _heroBannerTouchStartY = e.touches[0].clientY;
+      }, { passive: true });
+      banner.addEventListener('touchend', (e) => {
+        const dx = e.changedTouches[0].clientX - _heroBannerTouchStartX;
+        const dy = e.changedTouches[0].clientY - _heroBannerTouchStartY;
+        if (Math.hypot(dx, dy) > 10) return;
+        e.preventDefault();
+        const popupEl = document.getElementById('movieInfoPopup');
+        const openForBanner = popupEl && popupEl.classList.contains('mip-visible') && typeof window._movieInfoAnchoredTo === 'function' && window._movieInfoAnchoredTo(banner);
+        if (openForBanner) {
+          if (typeof window._hideMovieInfoImmediate === 'function') window._hideMovieInfoImmediate();
+          return;
+        }
+        let movie = null;
+        if (banner.classList.contains('hero-banner--fanart') && window.__plexdashFanartBannerMovie) {
+          movie = bannerPayloadToMovie(window.__plexdashFanartBannerMovie);
+        } else if (window.__plexdashHeroBannerPlexMovie) {
+          movie = window.__plexdashHeroBannerPlexMovie;
+        }
+        if (!movie || !movie.RatingKey) return;
+        if (typeof window._showMovieInfo === 'function') {
+          window._showMovieInfo(banner, movie, { showPlay: true, immediate: true });
+        }
+      }, { passive: false });
     }());
 
     // ── Poster lightbox ──────────────────────────────────────────────────────
@@ -7200,6 +7726,38 @@
           window._hidePosterPopup();
         }
       });
+
+      // Touch: tap poster or title to show popup immediately
+      let _discTouchStartX = 0, _discTouchStartY = 0;
+      tr.addEventListener('touchstart', (e) => {
+        _discTouchStartX = e.touches[0].clientX;
+        _discTouchStartY = e.touches[0].clientY;
+      }, { passive: true });
+      tr.addEventListener('touchend', (e) => {
+        const dx = e.changedTouches[0].clientX - _discTouchStartX;
+        const dy = e.changedTouches[0].clientY - _discTouchStartY;
+        if (Math.hypot(dx, dy) > 10) return;
+        const item = discoveryData[idx];
+        if (!item) return;
+        const target = e.target;
+        const posterEl = tr.querySelector('.disc-poster, .disc-poster-missing');
+        const titleEl = tr.querySelector('.disc-title');
+        const onPosterOrTitle = (posterEl && (target === posterEl || posterEl.contains(target))) ||
+                                (titleEl && (target === titleEl || titleEl.contains(target)));
+        if (!onPosterOrTitle) return;
+        e.preventDefault();
+        const discPop = document.getElementById('discPosterPopup');
+        const popVisible = discPop && discPop.classList.contains('pp-visible');
+        if (popVisible) {
+          if (typeof window._hidePosterPopup === 'function') window._hidePosterPopup();
+          return;
+        }
+        const anchor = (posterEl && (target === posterEl || posterEl.contains(target))) ? posterEl : titleEl;
+        const displaySrc = discoveryPosterDisplayFromItem(item);
+        if (typeof window._showPosterPopup === 'function') {
+          window._showPosterPopup(anchor, displaySrc, item.title, item.overview, { immediate: true });
+        }
+      }, { passive: false });
     }
 
     function appendDiscoveryRowsRange(start, end) {
@@ -8058,8 +8616,8 @@
     let connectivityPollTimer = null;
 
     const CONNECTIVITY_HISTORY_KEY = 'plexdash.connectivity.history.v1';
-    const CONNECTIVITY_HISTORY_MAX_SAMPLES = 12000;
-    const CONNECTIVITY_HISTORY_MAX_AGE_MS = 120 * 24 * 60 * 60 * 1000; // 120 days
+    const CONNECTIVITY_HISTORY_MAX_SAMPLES = 300;   // safety cap; tiered compaction keeps it well below this
+    const CONNECTIVITY_HISTORY_MAX_AGE_MS = 48 * 60 * 60 * 1000; // 48 hours total window
     const CONN_HIST_DAY_MS = 24 * 60 * 60 * 1000;
     let lastConnHistServerU = '';
 
@@ -8075,13 +8633,77 @@
       }
     }
 
-    function saveConnectivityHistory(state) {
-      const now = Date.now();
-      let samples = (state.samples || []).filter((s) => s && typeof s.t === 'number' && now - s.t < CONNECTIVITY_HISTORY_MAX_AGE_MS);
-      if (samples.length > CONNECTIVITY_HISTORY_MAX_SAMPLES) {
-        samples = samples.slice(-CONNECTIVITY_HISTORY_MAX_SAMPLES);
+    /**
+     * Merge an array of raw samples into a single representative sample at timestamp t.
+     * Latency values are averaged; levels and overall take the worst seen in the bucket.
+     */
+    function mergeConnSamples(samples, t) {
+      const lvlRank = { ok: 0, warn: 1, error: 2, skip: -1 };
+      const worst = (a, b) => lvlRank[b] > lvlRank[a] ? b : a;
+      const avg = (arr) => arr.length ? Math.round(arr.reduce((s, v) => s + v, 0) / arr.length) : null;
+
+      const merged = { t, u: samples[samples.length - 1].u, o: 'ok', c: {}, smb: null, sl: 'skip', stm: null };
+      const msByCheck = {}, smbList = [], stmList = [];
+
+      for (const s of samples) {
+        merged.o = worst(merged.o, s.o || 'ok');
+        for (const [id, ck] of Object.entries(s.c || {})) {
+          if (!merged.c[id]) merged.c[id] = { l: 'ok' };
+          merged.c[id].l = worst(merged.c[id].l, ck.l || 'ok');
+          if (ck.ms != null) { msByCheck[id] = msByCheck[id] || []; msByCheck[id].push(ck.ms); }
+        }
+        if (s.smb != null) smbList.push(s.smb);
+        if (s.stm != null) stmList.push(s.stm);
+        if (s.sl) merged.sl = worst(merged.sl, s.sl);
       }
-      localStorage.setItem(CONNECTIVITY_HISTORY_KEY, JSON.stringify({ v: 1, samples }));
+      for (const id of Object.keys(merged.c)) {
+        merged.c[id].ms = avg(msByCheck[id] || []);
+      }
+      if (smbList.length) merged.smb = Math.round(smbList.reduce((a, b) => a + b, 0) / smbList.length * 100) / 100;
+      if (stmList.length) merged.stm = avg(stmList);
+      return merged;
+    }
+
+    /**
+     * Tiered compaction: keep raw samples for the last 2 hours, collapse older
+     * samples into one averaged point per hour (up to 48h). Storage stays ~25KB.
+     */
+    function compactConnHistory(samples) {
+      const now = Date.now();
+      const TWO_H = 2 * 60 * 60 * 1000;
+      const HOUR_MS = 60 * 60 * 1000;
+      const recent = [];
+      const hourBuckets = new Map();
+
+      for (const s of samples) {
+        if (!s || typeof s.t !== 'number') continue;
+        const age = now - s.t;
+        if (age > CONNECTIVITY_HISTORY_MAX_AGE_MS) continue; // discard beyond 48h
+        if (age < TWO_H) {
+          recent.push(s);
+        } else {
+          const key = Math.floor(s.t / HOUR_MS);
+          if (!hourBuckets.has(key)) hourBuckets.set(key, []);
+          hourBuckets.get(key).push(s);
+        }
+      }
+
+      const hourly = [];
+      for (const [key, bucket] of hourBuckets) {
+        hourly.push(mergeConnSamples(bucket, key * HOUR_MS));
+      }
+      hourly.sort((a, b) => a.t - b.t);
+      return [...hourly, ...recent];
+    }
+
+    function saveConnectivityHistory(state) {
+      const samples = compactConnHistory(state.samples || []);
+      try {
+        localStorage.setItem(CONNECTIVITY_HISTORY_KEY, JSON.stringify({ v: 1, samples }));
+      } catch {
+        // Quota still exceeded after compaction (storage shared with other large keys).
+        // Connectivity history is non-critical — silently skip rather than crash the UI.
+      }
     }
 
     function hydrateConnHistDedupe() {
@@ -8845,6 +9467,7 @@
         syncSettingsGenreBarFields();
         renderConnectivityHistoryChart();
         refreshSettingsCaches();
+        refreshStreamCache();
         updateFanartCacheHint();
         loadFanartBannerActivityLog();
         fanartLogPollTimer = setInterval(loadFanartBannerActivityLog, 8000);
@@ -8866,6 +9489,38 @@
     startLgVolumePoll();
     startPlaybackPoll();
     startConnectivityPoll();
+
+    // Cache hot-path DOM elements once after all initialization is complete.
+    _elMovieGrid   = document.getElementById('movieGrid');
+    _elMovieSearch = document.getElementById('movieSearch');
+    _elMovieCount  = document.getElementById('movieCount');
+    _elGridBanner  = document.getElementById('gridUpdatingBanner');
+
+    // Pause all background pollers when the tab is hidden; resume when it
+    // becomes visible again. Prevents unnecessary network traffic and CPU
+    // usage while the user is in a different tab or the display is off.
+    function _pauseAllPollers() {
+      if (playbackPollTimer)     { clearInterval(playbackPollTimer);     playbackPollTimer = null; }
+      if (connectivityPollTimer) { clearInterval(connectivityPollTimer); connectivityPollTimer = null; }
+      if (libraryCachePollTimer) { clearInterval(libraryCachePollTimer); libraryCachePollTimer = null; }
+      if (fanartBannerPollTimer) { clearInterval(fanartBannerPollTimer); fanartBannerPollTimer = null; }
+      if (lgVolumePollTimer)     { clearTimeout(lgVolumePollTimer);      lgVolumePollTimer = null; }
+      if (_discoveryPollTimer)   { clearTimeout(_discoveryPollTimer);    _discoveryPollTimer = null; }
+    }
+    function _resumeAllPollers() {
+      startPlaybackPoll();
+      startConnectivityPoll();
+      startLibraryCachePoll();
+    }
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        _pauseAllPollers();
+      } else {
+        _resumeAllPollers();
+      }
+    });
+    // Belt-and-suspenders: clear all timers if the page is unloaded.
+    window.addEventListener('pagehide', _pauseAllPollers);
     loadPlaylists();
     loadHelpDocs();
     wirePersonAutocomplete();
@@ -8880,7 +9535,12 @@
     }
     if (document.getElementById('tab-settings')?.classList.contains('active')) {
       refreshSettingsCaches();
+      refreshStreamCache();
     }
+    const streamCacheRefreshBtn = document.getElementById('streamCacheRefreshBtn');
+    if (streamCacheRefreshBtn) streamCacheRefreshBtn.addEventListener('click', refreshStreamCache);
+    const streamCacheClearAllBtn = document.getElementById('streamCacheClearAllBtn');
+    if (streamCacheClearAllBtn) streamCacheClearAllBtn.addEventListener('click', clearAllStreamCache);
     wireDiscoveryTableSort();
     wireDiscoveryTableActions();
     wireDiscoveryInfiniteScroll();
@@ -8994,31 +9654,30 @@
     const settingsGenreBarResetBtn = document.getElementById('settingsGenreBarResetBtn');
     if (settingsGenreBarResetBtn) settingsGenreBarResetBtn.addEventListener('click', resetGenreBarPrefsToDefaults);
 
-    document.getElementById('movieSelectAllBtn').addEventListener('click', async () => {
-      await ensureAllMoviesMaterialized();
-      // Only operates on currently-visible cards so it respects the active search filter.
-      const visible = allCardData.filter(e => !e.el.hidden);
-      const allSelected = visible.every(e => selectedMovieKeys.has(e.movie.RatingKey));
-      visible.forEach(({ movie, el }) => {
+    document.getElementById('movieSelectAllBtn').addEventListener('click', () => {
+      // Operates on the full filtered list (all matching movies, not just rendered ones)
+      const list = currentDisplayList();
+      const allSelected = list.every(m => selectedMovieKeys.has(m.RatingKey));
+      for (const movie of list) {
         const rk = movie.RatingKey;
-        if (allSelected) {
-          selectedMovieKeys.delete(rk);
-          el.classList.remove('mc-selected');
-        } else {
-          selectedMovieKeys.add(rk);
-          el.classList.add('mc-selected');
-        }
+        if (allSelected) selectedMovieKeys.delete(rk);
+        else selectedMovieKeys.add(rk);
+      }
+      // Update checkboxes on rendered cards
+      for (const { movie, el } of allCardData) {
+        const checked = selectedMovieKeys.has(movie.RatingKey);
+        el.classList.toggle('mc-selected', checked);
         const chk = el.querySelector('input[type="checkbox"]');
-        if (chk) chk.checked = !allSelected;
-      });
+        if (chk) chk.checked = checked;
+      }
       updatePlaySelectedBtn();
     });
 
     document.getElementById('moviePlaySelectedBtn').addEventListener('click', () => {
       if (selectedMovieKeys.size === 0) return;
-      const items = allCardData
-        .filter(e => selectedMovieKeys.has(e.movie.RatingKey))
-        .map(e => movieToStreamItem(e.movie));
+      const items = currentDisplayList()
+        .filter(m => selectedMovieKeys.has(m.RatingKey))
+        .map(m => movieToStreamItem(m));
       playMovieItems(items, true);
     });
 
@@ -10089,6 +10748,33 @@
 
       initTVMode();
     })();
+
+    // ── Mobile / touch: dismiss popups when tapping outside ──────────────────
+    (function () {
+      document.addEventListener('touchend', (e) => {
+        const mipPopup = document.getElementById('movieInfoPopup');
+        const discPopup = document.getElementById('discPosterPopup');
+        const t = e.target;
+
+        // Dismiss movie info popup if touch is outside the popup and outside any movie card
+        if (mipPopup && mipPopup.classList.contains('mip-visible')) {
+          const insideMip = mipPopup.contains(t) || t === mipPopup;
+          const insideCard = !!t.closest('.movie-card, #heroBanner');
+          if (!insideMip && !insideCard) {
+            if (typeof window._hideMovieInfoImmediate === 'function') window._hideMovieInfoImmediate();
+          }
+        }
+
+        // Dismiss discovery poster popup if touch is outside the popup and outside the discovery table
+        if (discPopup && discPopup.classList.contains('pp-visible')) {
+          const insideDisc = discPopup.contains(t) || t === discPopup;
+          const insideTable = !!t.closest('#discoveryRows tr');
+          if (!insideDisc && !insideTable) {
+            if (typeof window._hidePosterPopup === 'function') window._hidePosterPopup();
+          }
+        }
+      }, { passive: true });
+    }());
 
     // ── Theme toggle ──────────────────────────────────────────────────────────
     (function () {
