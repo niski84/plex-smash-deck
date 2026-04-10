@@ -1,0 +1,579 @@
+@import "tailwindcss";
+@plugin "daisyui";
+
+/* Class-based dark mode */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Scan all templ files for class names */
+@source "../../internal/plexdash/views/**/*.templ";
+@source "../../internal/plexdash/**/*.go";
+@source "../../web/plex-dashboard-next/static/**/*.js";
+
+@theme {
+  /* Original uses Trebuchet MS — switching to it dramatically changes the feel
+   * to match the original dashboard exactly. Inter is kept as a fallback. */
+  --font-sans: "Trebuchet MS", "Lucida Grande", "Lucida Sans Unicode",
+               "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /*
+   * Re-map the entire zinc scale to a dark-navy blue palette.
+   * Every bg-zinc-*, text-zinc-*, border-zinc-* Tailwind utility in the
+   * templates will automatically pick up these values — no template edits needed.
+   *
+   * Original palette reference:
+   *   bg-1: #1a1e30  bg-2: #0d101a  bg-3: #07090f
+   *   card: #12151f  card-border: #1e2840  hover-border: #2d3d6a
+   *   text: #d8e0f0  heading: #c9d2f0  muted: #607090
+   */
+  --color-zinc-950: #07090f;   /* body / deepest bg */
+  --color-zinc-900: #0d101a;   /* card bg, inputs */
+  --color-zinc-800: #111827;   /* poster bg, progress track, skeleton */
+  --color-zinc-700: #1e2840;   /* default border */
+  --color-zinc-600: #374a6e;   /* hover border, very muted text */
+  --color-zinc-500: #607090;   /* muted text, placeholders, labels */
+  --color-zinc-400: #7a90bb;   /* secondary text */
+  --color-zinc-300: #9aaad0;   /* body text (tertiary) */
+  --color-zinc-200: #b8c8e8;   /* medium text */
+  --color-zinc-100: #d8e0f0;   /* primary text */
+  --color-zinc-50:  #eef2fa;   /* near-white highlight */
+}
+
+html { color-scheme: dark; }
+
+.htmx-indicator { display: none !important; }
+.htmx-request .htmx-indicator { display: flex !important; }
+.htmx-request.htmx-indicator { display: flex !important; }
+
+/*
+ * plex-dark DaisyUI theme — applied via data-theme="plex-dark" on <html>.
+ * Also set on :root so components render correctly before Alpine hydrates.
+ */
+:root,
+[data-theme="plex-dark"] {
+  color-scheme: dark;
+  --color-base-100: #07090f;
+  --color-base-200: #0d101a;
+  --color-base-300: #111827;
+  --color-base-content: #d8e0f0;
+  --color-primary: #4f7cff;
+  --color-primary-content: #ffffff;
+  --color-secondary: #2d3d6a;
+  --color-secondary-content: #c0cce8;
+  --color-accent: #4ade80;
+  --color-accent-content: #081408;
+  --color-neutral: #1e2840;
+  --color-neutral-content: #d8e0f0;
+  --color-info: #60a5fa;
+  --color-info-content: #0a1628;
+  --color-success: #4ade80;
+  --color-success-content: #081408;
+  --color-warning: #facc15;
+  --color-warning-content: #1a1200;
+  --color-error: #f87171;
+  --color-error-content: #1a0808;
+  --radius-selector: 0.375rem;
+  --radius-field: 0.25rem;
+  --radius-box: 0.5rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+/* Body: fixed radial gradient matching the original dark navy aesthetic.
+ * Body font-size 13px matches the original's denser feel — Tailwind's text-*
+ * utilities (text-xs/sm/base/etc.) still work normally because they set
+ * explicit sizes; this only affects elements that inherit the body size. */
+body {
+  background: radial-gradient(circle at top, #1a1e30 0%, #0d101a 50%, #07090f 100%) fixed;
+  min-height: 100vh;
+  font-size: 13px;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * SQUISHY BUTTON SYSTEM
+ * ════════════════════════════════════════════════════════════════════════════
+ *
+ * The original dashboard uses 3D-beveled buttons with a "squish" press
+ * animation. The look comes from:
+ *   1. A drop shadow `0 4px 0 <pillar-color>` that acts as a 3D pillar
+ *   2. Inset shadows for top highlight and bottom shading
+ *   3. `:active { transform: translateY(1px) }` + pillar shrunk to 3px
+ *   4. A keyframe `smash-bounce` triggered on click via JS (.smash-active class)
+ *   5. A radial ripple ring via ::after pseudo-element
+ *
+ * Apply alongside DaisyUI .btn — the colour variant overrides background and
+ * box-shadow but inherits .btn's base padding/font-size.
+ */
+
+@keyframes smash-bounce {
+  0%   { transform: translateY(0)   scale(1);    }
+  40%  { transform: translateY(3px) scale(0.96); }
+  75%  { transform: translateY(-1px) scale(1.03);}
+  100% { transform: translateY(0)   scale(1);    }
+}
+@keyframes smash-ring {
+  0%   { transform: translate(-50%, -50%) scale(0);   opacity: 0.75; }
+  100% { transform: translate(-50%, -50%) scale(5.8); opacity: 0;    }
+}
+
+/* Shared layout for every squishy variant */
+.btn-gold,
+.btn-red,
+.btn-blue,
+.btn-green,
+.pd-tab-active,
+.pd-tab-inactive {
+  position: relative;
+  overflow: hidden;
+  border-radius: 999px !important;
+  border: 2px solid #1a1a1a !important;
+  font-weight: 700 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: transform 0.08s ease, filter 0.12s ease !important;
+}
+
+.btn-gold:hover,
+.btn-red:hover,
+.btn-blue:hover,
+.btn-green:hover,
+.pd-tab-active:hover {
+  filter: brightness(1.06);
+}
+
+/* The squish: sink 1px and shorten the pillar 4 → 3 */
+.btn-gold:active,
+.btn-red:active,
+.btn-blue:active,
+.btn-green:active,
+.pd-tab-active:active,
+.pd-tab-inactive:active {
+  transform: translateY(1px);
+}
+
+/* Smash-bounce animation triggered by buttons.js on click */
+.btn-gold.smash-active,
+.btn-red.smash-active,
+.btn-blue.smash-active,
+.btn-green.smash-active,
+.pd-tab-active.smash-active,
+.pd-tab-inactive.smash-active {
+  animation: smash-bounce 220ms cubic-bezier(.2, .9, .2, 1);
+}
+.btn-gold.smash-active::after,
+.btn-red.smash-active::after,
+.btn-blue.smash-active::after,
+.btn-green.smash-active::after,
+.pd-tab-active.smash-active::after,
+.pd-tab-inactive.smash-active::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.35);
+  transform: translate(-50%, -50%) scale(0);
+  pointer-events: none;
+  animation: smash-ring 280ms ease-out;
+}
+
+/* ─── Gold (primary actions: Save, Play, Build, Take Snapshot) ──────────── */
+.btn-gold {
+  background: linear-gradient(180deg, #ffd24f 0%, #f49a17 100%) !important;
+  color: #201607 !important;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.30),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.30),
+    0 4px 0 #9a5f0b !important;
+}
+.btn-gold:active {
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.30),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.30),
+    0 3px 0 #9a5f0b !important;
+}
+
+/* ─── Red (tabs, destructive) ───────────────────────────────────────────── */
+.btn-red,
+.pd-tab-active {
+  background: linear-gradient(180deg, #ff5e5e 0%, #d41919 100%) !important;
+  color: #fff !important;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.24),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.35),
+    0 4px 0 #6f0d0d !important;
+}
+.btn-red:active,
+.pd-tab-active:active {
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.30),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.35),
+    0 3px 0 #6f0d0d !important;
+}
+
+/* ─── Blue (secondary: Browser Player, Refresh, Compare) ────────────────── */
+.btn-blue {
+  background: linear-gradient(180deg, #7ca0ff 0%, #4d6ee0 100%) !important;
+  color: #0f1428 !important;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.38),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.28),
+    0 4px 0 #344fae !important;
+}
+.btn-blue:active {
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.28),
+    0 3px 0 #344fae !important;
+}
+
+/* ─── Green (Cache, Download, Confirm) ──────────────────────────────────── */
+.btn-green {
+  background: linear-gradient(180deg, #34d399 0%, #059669 100%) !important;
+  color: #052e16 !important;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.25),
+    0 4px 0 #065f46 !important;
+}
+.btn-green:active {
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.30),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.25),
+    0 3px 0 #065f46 !important;
+}
+
+/* ─── Inactive tabs: subtle ghost button (no pillar, but still squishes) ─ */
+.pd-tab-inactive {
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: #7a90bb !important;
+  border-color: rgba(255, 255, 255, 0.10) !important;
+  box-shadow: none !important;
+  font-weight: 600 !important;
+}
+.pd-tab-inactive:hover {
+  background: rgba(255, 255, 255, 0.10) !important;
+  color: #d8e0f0 !important;
+  filter: none;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * MOVIE GRID
+ * ════════════════════════════════════════════════════════════════════════════ */
+
+/* Render-perf: skip work for off-screen cards (matches original) */
+.movie-grid-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 200px;
+}
+
+/* Glow when a card is selected */
+.movie-card-selected {
+  box-shadow: 0 0 0 2px #4f7cff, 0 0 14px rgba(79, 124, 255, 0.35) !important;
+}
+
+/* Stream-quality colour bands on the card file-size label */
+.mc-stream-warn { color: #eab308; font-weight: 600; }   /* tight headroom */
+.mc-stream-risk { color: #f87171; font-weight: 700; }   /* may buffer */
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * GENRE CHIPS  (multi-select + exclude — matches original .movie-genre-tag)
+ * ════════════════════════════════════════════════════════════════════════════ */
+
+/* Wrapper that reveals the ⊘ exclude button on hover */
+.genre-chip-group {
+  position: relative;
+  display: inline-flex;
+}
+.genre-chip-group .genre-chip-excl {
+  display: flex;
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #1f0e0e;
+  border: 1px solid #5a2020;
+  color: #a05050;
+  font-size: 8px;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 2;
+  line-height: 1;
+  padding: 0;
+  opacity: 0.5;
+  transition: opacity 0.12s, color 0.12s, border-color 0.12s;
+}
+.genre-chip-group:hover .genre-chip-excl,
+.genre-chip-excl:hover {
+  opacity: 1;
+  color: #f87171;
+  border-color: #b91c1c;
+}
+
+.genre-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid #3d4558;
+  background: linear-gradient(180deg, #1c2130 0%, #141824 100%);
+  color: #b8c0d8;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.12s, color 0.12s, box-shadow 0.12s, filter 0.12s;
+}
+.genre-chip:hover {
+  border-color: #5a6ba8;
+  color: #e8ecff;
+  filter: brightness(1.05);
+}
+.genre-chip.is-active {
+  background: linear-gradient(180deg, #fbbf24 0%, #d97706 100%);
+  color: #1a0900;
+  border-color: #92400e;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 2px 0 #78350f;
+}
+.genre-chip.is-excluded {
+  border-color: #7f1d1d;
+  background: linear-gradient(180deg, #2a1818 0%, #1a1214 100%);
+  color: #fca5a5;
+  text-decoration: line-through;
+}
+.genre-chip.is-excluded:hover {
+  border-color: #991b1b;
+  color: #fecaca;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * SETTINGS — service group accents
+ * ════════════════════════════════════════════════════════════════════════════ */
+
+.settings-group-plex    { border-left: 3px solid #e5a00d; }
+.settings-group-brand   { border-left: 3px solid #a855f7; }
+.settings-group-fanart  { border-left: 3px solid #38bdf8; }
+.settings-group-tmdb    { border-left: 3px solid #01d277; }
+.settings-group-omdb    { border-left: 3px solid #eab308; }
+.settings-group-radarr  { border-left: 3px solid #00b4d8; }
+.settings-group-snap    { border-left: 3px solid #94a3b8; }
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * NOW-PLAYING STATUS BADGES
+ * ════════════════════════════════════════════════════════════════════════════ */
+
+.np-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid;
+}
+.np-badge.playing  { background: rgba(52,211,153,0.18); color: #34d399; border-color: rgba(52,211,153,0.30); }
+.np-badge.paused   { background: rgba(251,191,36,0.18); color: #fbbf24; border-color: rgba(251,191,36,0.30); }
+.np-badge.local    { background: rgba(96,165,250,0.18); color: #60a5fa; border-color: rgba(96,165,250,0.30); }
+.np-badge.finished { background: rgba(148,163,184,0.14); color: #94a3b8; border-color: rgba(148,163,184,0.25); }
+.np-badge.idle     { background: rgba(100,116,139,0.10); color: #64748b; border-color: rgba(100,116,139,0.20); }
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * BACK-TO-TOP FAB
+ * ════════════════════════════════════════════════════════════════════════════ */
+
+.fab-back-to-top {
+  position: fixed;
+  z-index: 9990;
+  right: max(20px, env(safe-area-inset-right));
+  bottom: max(20px, env(safe-area-inset-bottom));
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 2px solid rgba(79, 124, 255, 0.65);
+  background: rgba(18, 22, 36, 0.94);
+  color: #dce4ff;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(10px);
+  transition: opacity 0.22s, transform 0.22s, visibility 0.22s;
+}
+.fab-back-to-top.is-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+.fab-back-to-top:hover {
+  border-color: #9bb4ff;
+  color: #fff;
+  filter: brightness(1.06);
+}
+
+/* ── Scroll-to-top button ──────────────────────────────────────────────── */
+#btt {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  z-index: 999;
+  background: #2a3a6a;
+  color: #c8d4ff;
+  border: 1px solid #3d52a0;
+  border-radius: 50%;
+  width: 42px;
+  height: 42px;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, background 0.15s;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.45);
+}
+#btt.btt-visible { opacity: 1; pointer-events: auto; }
+#btt:hover { background: #3d52a0; }
+
+/* ── Poster / fanart lightbox ──────────────────────────────────────────── */
+#pd-lb {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  align-items: center;
+  justify-content: center;
+}
+#pd-lb.pd-lb-open { display: flex; }
+.pd-lb-bg {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.9);
+  cursor: zoom-out;
+}
+.pd-lb-img {
+  position: relative;
+  z-index: 1;
+  max-width: min(1100px, 96vw);
+  max-height: min(92vh, 1600px);
+  border-radius: 8px;
+  object-fit: contain;
+  box-shadow: 0 8px 48px rgba(0,0,0,0.8);
+  animation: pd-lb-in 0.18s ease;
+  cursor: zoom-out;
+}
+@keyframes pd-lb-in {
+  from { opacity: 0; transform: scale(0.94); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.pd-lb-close {
+  position: absolute;
+  top: 16px; right: 20px;
+  z-index: 2;
+  font-size: 24px;
+  line-height: 1;
+  color: rgba(255,255,255,0.7);
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: color 0.1s, background 0.1s;
+}
+.pd-lb-close:hover { color: #fff; background: rgba(255,255,255,0.1); }
+.pd-lb-prev, .pd-lb-next {
+  position: absolute;
+  top: 50%; transform: translateY(-50%);
+  z-index: 2;
+  font-size: 36px;
+  line-height: 1;
+  color: rgba(255,255,255,0.6);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px 16px;
+  border-radius: 4px;
+  transition: color 0.1s, background 0.1s;
+}
+.pd-lb-prev:hover, .pd-lb-next:hover { color: #fff; background: rgba(255,255,255,0.1); }
+.pd-lb-prev { left: 12px; }
+.pd-lb-next { right: 12px; }
+.pd-lb-counter {
+  position: absolute;
+  bottom: 14px;
+  left: 50%; transform: translateX(-50%);
+  z-index: 2;
+  font-size: 11px;
+  font-family: monospace;
+  color: rgba(255,255,255,0.55);
+  pointer-events: none;
+}
+
+/* ── TV show cards ─────────────────────────────────────────────────────── */
+.show-card {
+  background: #12151f;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: border-color 0.12s;
+  overflow: hidden;
+}
+.show-card:hover { border-color: #2d3d6a; }
+.show-card-poster { aspect-ratio: 2/3; background: #1a1e30; overflow: hidden; }
+.show-card-poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.show-card-title { font-size: 11px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 4px 6px 0; color: #d4d4d8; }
+.show-card-meta  { font-size: 10px; color: #52525b; padding: 2px 6px 4px; }
+
+/* ── TV episode cards ──────────────────────────────────────────────────── */
+.episode-card {
+  background: #12151f;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.12s;
+}
+.episode-card:hover { border-color: #2d3d6a; }
+.episode-card-thumb {
+  aspect-ratio: 16/9;
+  background: #1a1e30;
+  overflow: hidden;
+  position: relative;
+}
+.episode-card-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.episode-card-info { padding: 4px 6px 6px; }
+.episode-card-title { font-size: 11px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #d4d4d8; }
+.episode-card-meta  { font-size: 10px; color: #52525b; margin-top: 2px; display: flex; align-items: center; gap: 4px; }
+.ep-watched-pip { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #4ade80; flex-shrink: 0; }
+.ep-progress { height: 3px; background: #27272a; border-radius: 2px; margin-top: 3px; overflow: hidden; }
+.ep-progress-fill { height: 100%; background: #e8a020; border-radius: 2px; }
+
+/* ── Season tabs ───────────────────────────────────────────────────────── */
+.season-pill {
+  padding: 4px 14px;
+  border-radius: 20px;
+  background: transparent;
+  border: 1px solid #3f3f46;
+  font-size: 11px;
+  cursor: pointer;
+  color: #a1a1aa;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.season-pill:hover { border-color: #4a6acc; color: #c8d4ff; }
+.season-pill.is-active { background: #2d4a8a; border-color: #2d4a8a; color: #fff; }
+
+/* cursor-zoom-in utility */
+.cursor-zoom-in { cursor: zoom-in; }

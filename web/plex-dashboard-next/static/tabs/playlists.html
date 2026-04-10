@@ -1,0 +1,54 @@
+<div x-data="playlistsTab()" x-init="init()" class="space-y-6 max-w-3xl">
+  <div class="rounded-2xl border border-white/10 bg-zinc-900/40 p-6 space-y-4">
+    <h2 class="font-mono text-xs uppercase tracking-widest text-zinc-500">Play from Plex</h2>
+    <div class="flex flex-wrap gap-2 items-center">
+      <select x-model="selectedPlaylist" @change="loadItems()" class="select select-sm flex-1 min-w-48 bg-zinc-950 border-zinc-700 text-zinc-100 focus:outline-none">
+        <option value="">Select a playlist…</option>
+        <template x-for="pl in playlists" :key="pl.Title||pl"><option :value="pl.Title||pl" x-text="pl.Title||pl"></option></template>
+      </select>
+      <button @click="play()" :disabled="!selectedPlaylist" class="btn btn-sm btn-gold">▶ Play</button>
+    </div>
+    <div x-show="playStatus" x-text="playStatus" class="text-sm" :class="playStatus.startsWith('Error')?'text-rose-400':'text-emerald-400'"></div>
+    <div x-show="loadingItems" class="flex items-center gap-2 text-zinc-500 text-xs">
+      <span class="loading loading-spinner loading-xs"></span> Loading items…
+    </div>
+    <div x-show="playlistItems.length>0 && !loadingItems">
+      <p class="text-xs text-zinc-500 mb-2" x-text="playlistItems.length+' items'"></p>
+      <ul class="space-y-0.5 max-h-64 overflow-y-auto rounded-lg bg-zinc-950/50 border border-zinc-800 divide-y divide-zinc-800/50">
+        <template x-for="(item,idx) in playlistItems.slice(0,20)" :key="item.RatingKey||idx">
+          <li class="flex items-center gap-2 px-3 py-1.5 text-sm text-zinc-300">
+            <span class="text-zinc-600 text-xs w-5 shrink-0" x-text="idx+1+'.'"></span>
+            <span class="truncate" x-text="item.Title||item.title||item"></span>
+            <span x-show="item.Year" class="text-zinc-600 text-xs shrink-0" x-text="item.Year"></span>
+          </li>
+        </template>
+        <li x-show="playlistItems.length>20" class="px-3 py-1.5 text-xs text-zinc-600 italic">
+          … and <span x-text="playlistItems.length-20"></span> more
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="rounded-2xl border border-white/10 bg-zinc-900/40 p-6 space-y-4">
+    <button @click="showBuildForm=!showBuildForm" class="flex items-center gap-2 font-mono text-xs uppercase tracking-widest text-zinc-500 hover:text-zinc-300 w-full text-left">
+      <span x-text="showBuildForm?'▾':'▸'"></span> Build Playlist by Actor / Director
+    </button>
+    <div x-show="showBuildForm" class="grid gap-4 md:grid-cols-2">
+      <label class="block space-y-1"><span class="text-xs text-zinc-500">Playlist Title</span>
+        <input type="text" x-model="buildTitle" placeholder="People Picks" class="input input-sm input-bordered w-full bg-zinc-950 border-zinc-700 text-zinc-100"/></label>
+      <label class="block space-y-1"><span class="text-xs text-zinc-500">Movie Count</span>
+        <input type="number" x-model.number="buildCount" min="1" max="100" class="input input-sm input-bordered w-full bg-zinc-950 border-zinc-700 text-zinc-100"/></label>
+      <label class="block space-y-1"><span class="text-xs text-zinc-500">Actor Name</span>
+        <input type="text" x-model="actorName" placeholder="Tom Hanks" class="input input-sm input-bordered w-full bg-zinc-950 border-zinc-700 text-zinc-100"/></label>
+      <label class="block space-y-1"><span class="text-xs text-zinc-500">Director Name</span>
+        <input type="text" x-model="directorName" placeholder="Christopher Nolan" class="input input-sm input-bordered w-full bg-zinc-950 border-zinc-700 text-zinc-100"/></label>
+      <div class="md:col-span-2 flex items-center gap-3">
+        <button @click="buildByPeople()" :disabled="buildStatus==='Creating...'" class="btn btn-sm btn-gold">
+          <span x-show="buildStatus==='Creating...'" class="loading loading-spinner loading-xs"></span>
+          Create Playlist
+        </button>
+        <span x-show="buildStatus&&buildStatus!=='Creating...'" x-text="buildStatus" class="text-sm" :class="buildStatus.startsWith('Error')?'text-rose-400':'text-emerald-400'"></span>
+      </div>
+    </div>
+  </div>
+</div>

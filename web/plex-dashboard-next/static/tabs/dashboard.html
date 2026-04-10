@@ -1,0 +1,280 @@
+<div class="space-y-4">
+
+  <!-- Hero banner -->
+  <div x-data="heroBanner()" x-init="init()" x-show="active" x-cloak
+       class="relative cursor-pointer"
+       @mouseenter="onBannerMouseenter()" @mouseleave="onBannerMouseleave()">
+    <div class="rounded-xl overflow-hidden relative" style="height:160px;border:1px solid #2d3b64">
+      <img :src="imageUrl" class="w-full h-full object-cover" @error="active=false"/>
+      <div class="absolute inset-0" style="background:linear-gradient(to right,rgba(0,0,0,.75) 0%,rgba(0,0,0,.3) 50%,rgba(0,0,0,.1) 100%),linear-gradient(to top,rgba(0,0,0,.7) 0%,transparent 60%)"></div>
+      <div x-show="movie" class="absolute bottom-0 left-0 p-3 space-y-0.5">
+        <p class="text-sm font-semibold text-white leading-snug drop-shadow" x-text="movie ? movie.title+(movie.year?' ('+movie.year+')':'') : ''"></p>
+        <div class="flex items-center gap-2 text-xs text-white/70">
+          <span x-show="movie&&movie.rating" x-text="movie ? '★ '+(movie.rating||0).toFixed(1) : ''"></span>
+          <span x-show="movie&&movie.durationMs" x-text="movie ? fmtDuration(movie.durationMs) : ''"></span>
+        </div>
+      </div>
+    </div>
+    <div x-show="popupVisible && movie" x-cloak
+         @mouseenter="onPopupMouseenter()" @mouseleave="onPopupMouseleave()" @click.stop
+         class="absolute left-0 z-50 rounded-xl shadow-2xl p-4 backdrop-blur-sm mt-2"
+         style="top:100%;width:min(420px,100%);background:rgba(15,18,30,.97);border:1px solid rgba(255,255,255,.12)">
+      <template x-if="movie">
+        <div class="flex gap-3">
+          <img :src="thumbUrl()" :alt="movie.title" class="w-[72px] min-w-[72px] rounded object-cover self-start" style="aspect-ratio:2/3"/>
+          <div class="flex-1 min-w-0 space-y-1.5">
+            <p class="text-sm font-semibold text-zinc-100 leading-snug" x-text="movie.title+(movie.year?' ('+movie.year+')':'')"></p>
+            <div class="flex flex-wrap gap-2 text-xs">
+              <span x-show="movie.rating" x-text="'★ '+(movie.rating||0).toFixed(1)" class="text-amber-400"></span>
+              <span x-show="movie.durationMs" class="text-zinc-400" x-text="fmtDuration(movie.durationMs)"></span>
+            </div>
+            <p x-show="movie.summary" class="text-xs text-zinc-400 leading-relaxed" x-text="movie.summary"></p>
+            <div x-show="(movie.actors||[]).length>0" class="text-xs text-zinc-500">
+              <span class="text-zinc-600">Cast: </span><span x-text="(movie.actors||[]).slice(0,3).join(', ')"></span>
+            </div>
+            <button @click="playBanner()" class="btn btn-xs btn-gold w-full mt-1">▶ Play on TV</button>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- Player card -->
+  <div class="max-w-sm">
+    <div id="player-card" x-data="playerCard()" x-init="init()" class="card bg-zinc-900/60 border border-white/10 rounded-2xl p-5 space-y-3">
+      <div class="flex items-start justify-between gap-4">
+        <div class="flex-1 min-w-0">
+          <p class="font-mono text-xs uppercase tracking-widest text-zinc-500 mb-1">Target Player</p>
+          <p class="text-sm font-semibold text-zinc-200 truncate" x-text="targetName || '—'"></p>
+        </div>
+        <div class="shrink-0">
+          <span x-show="primaryFrom==='plex_session'" class="badge badge-success badge-sm gap-1">
+            <span class="h-1.5 w-1.5 rounded-full bg-emerald-300 animate-pulse"></span>
+            <span x-text="sessionState||'playing'"></span>
+          </span>
+          <span x-show="primaryFrom==='local_send'&&!localStale" class="badge badge-info badge-sm">Sent</span>
+          <span x-show="primaryFrom!=='plex_session'&&!(primaryFrom==='local_send'&&!localStale)" class="badge badge-ghost badge-sm text-zinc-500">Idle</span>
+        </div>
+      </div>
+      <div x-show="primaryFrom==='plex_session'" class="space-y-1">
+        <p class="text-sm text-zinc-100 font-medium truncate" x-text="sessionTitle"></p>
+        <p class="text-xs text-zinc-500" x-text="sessionPlayer"></p>
+        <div x-show="progressPercent>0" class="mt-2 h-1.5 w-full rounded-full bg-zinc-800">
+          <div class="h-1.5 rounded-full bg-emerald-500 transition-all" :style="'width:'+progressPercent+'%'"></div>
+        </div>
+        <div class="flex items-center justify-between text-xs text-zinc-500 mt-1">
+          <span x-show="remainingLabel" x-text="remainingLabel" class="text-zinc-400"></span>
+          <span x-show="predictedEndTime" x-text="predictedEndTime"></span>
+        </div>
+      </div>
+      <div x-show="showJustFinished" class="rounded-lg bg-zinc-800/60 px-3 py-2 space-y-0.5">
+        <p class="text-xs text-zinc-500">Just finished</p>
+        <p class="text-sm text-zinc-300 truncate" x-text="_lastSessionTitle"></p>
+      </div>
+      <div x-show="primaryFrom==='local_send'&&localTitles.length>0" class="space-y-1">
+        <div class="flex gap-3 items-start">
+          <img x-show="localPoster" :src="localPoster" alt="" class="w-10 rounded shrink-0 object-cover" style="aspect-ratio:2/3"/>
+          <div class="min-w-0">
+            <p class="text-sm text-zinc-100 font-medium truncate" x-text="localTitles[0]"></p>
+            <p x-show="localTitles.length>1" class="text-xs text-zinc-500" x-text="'+ '+(localTitles.length-1)+' more in queue'"></p>
+            <p x-show="localStale" class="text-xs text-amber-500/80 mt-1">Queue sent &gt;45 min ago</p>
+          </div>
+        </div>
+      </div>
+      <p x-show="primaryFrom!=='plex_session'&&!(primaryFrom==='local_send'&&localTitles.length>0)"
+         class="text-xs text-zinc-600 leading-relaxed">Nothing playing</p>
+      <div x-show="players.length>0" class="space-y-1">
+        <p class="text-xs text-zinc-500">Target Player</p>
+        <select x-model="selectedPlayer" class="select select-sm w-full bg-zinc-950 border-zinc-700 text-zinc-100 focus:outline-none">
+          <option value="">Select player…</option>
+          <template x-for="p in players" :key="p.Name||p">
+            <option :value="p.Name||p" x-text="(p.Name||p)+(targetName&&(p.Name||p)===targetName?' ★':'')"></option>
+          </template>
+        </select>
+      </div>
+      <div class="flex items-center gap-0.5 flex-wrap">
+        <button @click="control('skipPrev')"    class="btn btn-xs btn-ghost text-zinc-400 hover:text-zinc-100 px-1.5" title="Previous">⏮</button>
+        <button @click="control('stepBack')"    class="btn btn-xs btn-ghost text-zinc-400 hover:text-zinc-100 px-1.5" title="Step Back">⏪</button>
+        <button @click="control('pause')"       class="btn btn-xs btn-ghost text-zinc-400 hover:text-zinc-100 px-1.5" title="Pause">⏸</button>
+        <button @click="control('play')"        class="btn btn-xs btn-ghost text-zinc-400 hover:text-zinc-100 px-1.5" title="Play">▶</button>
+        <button @click="control('stop')"        class="btn btn-xs btn-ghost text-zinc-400 hover:text-zinc-100 px-1.5" title="Stop">⏹</button>
+        <button @click="control('stepForward')" class="btn btn-xs btn-ghost text-zinc-400 hover:text-zinc-100 px-1.5" title="Step Forward">⏩</button>
+        <button @click="control('skipNext')"    class="btn btn-xs btn-ghost text-zinc-400 hover:text-zinc-100 px-1.5" title="Next">⏭</button>
+        <button @click="refreshPlayback()" class="btn btn-xs btn-ghost text-zinc-600 hover:text-zinc-300 px-1.5 ml-auto" title="Refresh status">↻</button>
+        <span x-show="controlStatus" x-text="controlStatus" class="text-xs ml-1"
+              :class="controlStatus==='OK'?'text-emerald-400':'text-rose-400'"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Movie grid -->
+  <div x-data="movieGrid()" x-init="init()" class="space-y-3">
+    <!-- Controls row 1 -->
+    <div class="flex flex-wrap gap-2 items-center">
+      <input x-model="searchQuery" type="search" placeholder="Search by title, actor, or director…"
+             class="input input-sm bg-zinc-900 border-zinc-700 text-zinc-100 placeholder-zinc-500 flex-1 min-w-48 focus:border-zinc-500 focus:outline-none"/>
+      <div x-show="searchQuery.trim()" class="flex items-center gap-2 text-xs text-zinc-500">
+        <label class="flex items-center gap-1 cursor-pointer"><input type="radio" name="searchScope" value="all"      x-model="searchScope" class="radio radio-xs"/> all</label>
+        <label class="flex items-center gap-1 cursor-pointer"><input type="radio" name="searchScope" value="actor"    x-model="searchScope" class="radio radio-xs"/> actor</label>
+        <label class="flex items-center gap-1 cursor-pointer"><input type="radio" name="searchScope" value="director" x-model="searchScope" class="radio radio-xs"/> director</label>
+      </div>
+      <select x-model="sortMode" class="select select-sm bg-zinc-900 border-zinc-700 text-zinc-100 focus:outline-none">
+        <option value="yearDesc">Year (newest)</option>
+        <option value="yearAsc">Year (oldest)</option>
+        <option value="plexAddedDesc">Recently added to Plex</option>
+        <option value="ratingDesc">Highest rating</option>
+        <option value="ratingAsc">Lowest rating</option>
+        <option value="playsDesc">Most played</option>
+        <option value="playsAsc">Least played</option>
+        <option value="sizeDesc">Largest file</option>
+        <option value="sizeAsc">Smallest file</option>
+        <option value="contentRatingDesc">Strictest content rating</option>
+        <option value="contentRatingAsc">Mildest content rating</option>
+        <option value="title">Title A–Z</option>
+        <option value="random">Random</option>
+      </select>
+      <button @click="load(true)" class="btn btn-sm btn-ghost text-zinc-400 hover:text-zinc-200" :disabled="loading">
+        <span x-show="!loading">↻ Refresh</span>
+        <span x-show="loading" class="loading loading-spinner loading-xs"></span>
+      </button>
+    </div>
+    <!-- Controls row 2 -->
+    <div class="flex flex-wrap gap-2 items-center">
+      <select x-model="decade" class="select select-sm bg-zinc-900 border-zinc-700 text-zinc-100 focus:outline-none">
+        <option value="">All Decades</option>
+        <template x-for="d in decades" :key="d"><option :value="d" x-text="d"></option></template>
+      </select>
+      <select x-model="minRating" class="select select-sm bg-zinc-900 border-zinc-700 text-zinc-100 focus:outline-none">
+        <option value="0">Any Rating</option>
+        <option value="5">★ 5+</option><option value="6">★ 6+</option><option value="7">★ 7+</option>
+        <option value="7.5">★ 7.5+</option><option value="8">★ 8+</option><option value="8.5">★ 8.5+</option><option value="9">★ 9+</option>
+      </select>
+      <select x-model="playbackPath" class="select select-sm bg-zinc-900 border-zinc-700 text-zinc-100 focus:outline-none">
+        <option value="direct">Direct to TV</option>
+        <option value="companion">Plex Companion</option>
+        <option value="browser">Browser Player</option>
+      </select>
+      <button @click="selectAll()" class="btn btn-sm btn-ghost text-zinc-400 hover:text-zinc-200">Select All</button>
+      <button x-show="selectedCount>0" @click="playSelected()" class="btn btn-sm btn-gold" x-cloak>▶ Play <span x-text="selectedCount"></span> Selected</button>
+      <button x-show="selectedCount>0" @click="clearSelected()" class="btn btn-sm btn-ghost text-zinc-500" x-cloak>✕ Clear</button>
+    </div>
+    <!-- Genre: Include row -->
+    <div x-show="genres.length>0" class="flex flex-wrap gap-1.5 items-center">
+      <span class="text-xs text-zinc-500 font-mono uppercase tracking-wider mr-1">Include</span>
+      <button type="button" @click="clearGenres()" class="genre-chip" :class="selectedGenres.size===0&&excludedGenres.size===0?'is-active':''">All</button>
+      <template x-for="g in visibleGenres" :key="g">
+        <span class="genre-chip-group">
+          <button type="button" @click="toggleGenre(g)" class="genre-chip" :class="{'is-active':isGenreSelected(g)}" x-text="g"></button>
+          <button type="button" class="genre-chip-excl" @click.stop="toggleExclude(g)" title="Exclude this genre">⊘</button>
+        </span>
+      </template>
+      <button x-show="hasMoreGenres" type="button" @click="showAllGenres=!showAllGenres" class="genre-chip" x-text="showAllGenres?'Fewer ▴':'More ▾'"></button>
+    </div>
+    <!-- Genre: Exclude row -->
+    <div x-show="excludedGenres.size>0" class="flex flex-wrap gap-1.5 items-center">
+      <span class="text-xs font-mono uppercase tracking-wider mr-1" style="color:#f87171;opacity:.75">Exclude</span>
+      <template x-for="ex in excludedDisplay" :key="ex.key">
+        <button type="button" @click="toggleExclude(ex.name)" class="genre-chip is-excluded" :title="'Un-exclude: '+ex.name" x-text="ex.name+' ×'"></button>
+      </template>
+    </div>
+    <!-- Status line -->
+    <div class="flex items-center gap-2 text-xs text-zinc-500 min-h-5">
+      <span x-show="movies.length>0" x-text="filtered.length.toLocaleString()+' movies'+(filtered.length!==movies.length?' (filtered from '+movies.length.toLocaleString()+')':'')"></span>
+      <span x-show="selectedCount>0" class="text-blue-400" x-text="selectedCount+' selected'"></span>
+      <span x-show="movies.length===0&&!loading&&!error" class="italic">No movies loaded</span>
+      <span x-show="loading" class="text-zinc-600">Loading…</span>
+      <button x-show="selectedGenres.size>0||excludedGenres.size>0||searchQuery.trim()||decade||Number(minRating)>0"
+              @click="clearGenres();searchQuery='';decade='';minRating=0;" class="text-zinc-600 hover:text-zinc-300 underline">clear filters</button>
+    </div>
+    <div x-show="error" class="p-3 rounded-lg bg-red-950/40 border border-red-800/60 text-red-300 text-sm" x-text="'Error: '+error"></div>
+    <!-- Poster grid -->
+    <div class="grid grid-cols-[repeat(auto-fill,minmax(108px,1fr))] gap-2">
+      <template x-for="m in displayed" :key="m.RatingKey">
+        <div class="movie-grid-card group relative bg-zinc-900 rounded overflow-hidden border-2 cursor-pointer transition-all duration-100"
+             :class="isSelected(m.RatingKey)?'border-blue-500 movie-card-selected':'border-transparent hover:border-zinc-600'"
+             @mouseenter="onCardMouseenter($event,m)" @mouseleave="onCardMouseleave()">
+          <div class="absolute top-1 left-1 z-10" @click.stop="toggleSelect(m.RatingKey)">
+            <input type="checkbox" class="checkbox checkbox-xs checkbox-primary opacity-70 group-hover:opacity-100 transition-opacity"
+                   :class="isSelected(m.RatingKey)?'opacity-100':''" :checked="isSelected(m.RatingKey)" @click.stop="toggleSelect(m.RatingKey)"/>
+          </div>
+          <div class="aspect-[2/3] bg-zinc-800 overflow-hidden relative">
+            <img :src="thumbUrl(m.RatingKey)" :alt="m.Title" class="w-full h-full object-cover" loading="lazy" @error="$event.target.style.opacity='.3'"/>
+            <button @click.stop="playMovie(m)" class="absolute inset-0 flex items-center justify-center bg-black/50 text-white text-3xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto" title="Play on TV">▶</button>
+          </div>
+          <div class="px-1.5 py-1">
+            <p class="text-[11px] font-medium text-zinc-200 truncate leading-tight" x-text="m.Title" :title="m.Title"></p>
+            <div class="flex items-center justify-between gap-1 mt-0.5 text-[10px]">
+              <span class="text-zinc-500" x-text="m.Year"></span>
+              <span x-show="m.PartSize>0" :class="streamHintClass(m)||'text-zinc-600'" x-text="fmtGB(m.PartSize)"
+                    :title="'File: '+fmtGB(m.PartSize)+(streamHintClass(m)==='mc-stream-risk'?' · may buffer':streamHintClass(m)==='mc-stream-warn'?' · tight headroom':' · comfortable')"></span>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+    <div x-ref="sentinel" class="h-4 w-full"></div>
+    <div x-show="displayedCount<filtered.length" class="flex justify-center pt-2">
+      <button @click="loadMore()" class="btn btn-sm btn-ghost text-zinc-500 hover:text-zinc-200">
+        Show more (<span x-text="filtered.length-displayedCount"></span> remaining)
+      </button>
+    </div>
+
+    <!-- Movie hover popup -->
+    <div id="mg-movie-popup" x-show="popupVisible&&selectedMovie" x-cloak
+         @mouseenter="onPopupMouseenter()" @mouseleave="onPopupMouseleave()"
+         class="fixed z-[9998] bg-zinc-900/95 border border-zinc-700 rounded-xl shadow-2xl p-4 backdrop-blur-sm"
+         style="top:0;left:0;width:min(420px,calc(100vw - 20px));max-height:min(90vh,600px);overflow-y:auto">
+      <template x-if="selectedMovie">
+        <div class="flex gap-4">
+          <!-- Poster — click to open lightbox -->
+          <img
+            :src="thumbUrl(selectedMovie.RatingKey)"
+            :alt="selectedMovie.Title"
+            class="w-[90px] min-w-[90px] rounded object-cover self-start cursor-zoom-in"
+            @click.stop="openLightbox(selectedMovie)"
+            title="Click to view full size + fanart"
+          />
+          <div class="flex-1 min-w-0 space-y-2">
+            <div>
+              <p class="text-sm font-semibold text-zinc-100 leading-snug" x-text="selectedMovie.Title+(selectedMovie.Year?' ('+selectedMovie.Year+')':'')"></p>
+              <!-- Pills row -->
+              <div class="flex flex-wrap gap-1.5 mt-1.5">
+                <span x-show="selectedMovie.Rating"       class="badge badge-xs text-amber-400 border-amber-700/50 bg-amber-950/30" x-text="'★ '+(selectedMovie.Rating||0).toFixed(1)"></span>
+                <span x-show="selectedMovie.contentRating" class="badge badge-xs badge-ghost text-zinc-400" x-text="selectedMovie.contentRating"></span>
+                <span x-show="selectedMovie.DurationMillis" class="badge badge-xs badge-ghost text-zinc-400" x-text="fmtDuration(selectedMovie.DurationMillis)"></span>
+                <span x-show="selectedMovie.ViewCount>0"  class="badge badge-xs badge-ghost text-zinc-400" x-text="selectedMovie.ViewCount+(selectedMovie.ViewCount===1?' play':' plays')"></span>
+                <span x-show="selectedMovie.FileContainer" class="badge badge-xs badge-ghost text-zinc-500" x-text="(selectedMovie.FileContainer||'').toUpperCase()"></span>
+              </div>
+            </div>
+            <div x-show="(selectedMovie.Genres||[]).length>0" class="flex flex-wrap gap-1">
+              <template x-for="g in (selectedMovie.Genres||[]).slice(0,4)" :key="g">
+                <span class="badge badge-xs badge-outline text-zinc-500 border-zinc-700" x-text="g"></span>
+              </template>
+            </div>
+            <p x-show="selectedMovie.Summary" class="text-xs text-zinc-400 leading-relaxed"
+               style="display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden"
+               x-text="selectedMovie.Summary"></p>
+            <div x-show="(selectedMovie.Directors||[]).length>0" class="text-xs text-zinc-500">
+              <span class="text-zinc-600">Dir: </span>
+              <template x-for="(d,i) in (selectedMovie.Directors||[]).slice(0,2)" :key="d">
+                <button @click.stop="goToDiscovery(d,'director')" class="hover:text-amber-400 underline decoration-dotted cursor-pointer" x-text="i>0?', '+d:d"></button>
+              </template>
+            </div>
+            <div x-show="(selectedMovie.Actors||[]).length>0" class="text-xs text-zinc-500">
+              <span class="text-zinc-600">Cast: </span>
+              <template x-for="(a,i) in (selectedMovie.Actors||[]).slice(0,5)" :key="a">
+                <button @click.stop="goToDiscovery(a,'actor')" class="hover:text-amber-400 underline decoration-dotted cursor-pointer" x-text="i>0?', '+a:a"></button>
+              </template>
+            </div>
+            <!-- Action buttons -->
+            <div class="flex gap-1.5 mt-1">
+              <button @click.stop="playMovie(selectedMovie)" class="btn btn-xs btn-gold flex-1">▶ Play on TV</button>
+              <button @click.stop="playInBrowser(selectedMovie)" class="btn btn-xs btn-ghost border border-zinc-700 text-zinc-400 hover:text-zinc-100 flex-1" title="Open stream in browser">🌐 Browser</button>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+
+</div>

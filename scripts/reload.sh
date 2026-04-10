@@ -28,6 +28,12 @@ if [[ -f "$_VAULT_SYNC" ]] && [[ -n "${INFISICAL_CLIENT_ID:-}" ]]; then
 fi
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Build Tailwind CSS
+echo "→ Tailwind CSS…"
+if [ -f package.json ] && [ -d node_modules ]; then
+    npm run build:css
+fi
+
 # Build the new binary
 echo "→ Building cmd/plex-dashboard..."
 go vet ./...

@@ -1,0 +1,42 @@
+package views
+
+templ Layout(title string) {
+	<!DOCTYPE html>
+	<html lang="en" class="h-full dark" data-theme="plex-dark">
+		<head>
+			<script>
+				(function () {
+					try {
+						var k = "plex-dashboard-theme";
+						var s = localStorage.getItem(k);
+						document.documentElement.classList.toggle("dark", s !== "light");
+					} catch (e) {
+						document.documentElement.classList.add("dark");
+					}
+				})();
+			</script>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<meta name="color-scheme" content="dark light"/>
+			<title>{ title }</title>
+			<link rel="stylesheet" href="/next/static/app.css"/>
+			<script src="/next/static/htmx.min.js"></script>
+			<!-- Squishy button click animation (vanilla JS, no Alpine dependency) -->
+			<script src="/next/static/buttons.js"></script>
+			<!-- Alpine component definitions must load before Alpine initialises -->
+			<script src="/next/static/movie-grid.js"></script>
+			<script src="/next/static/player-card.js"></script>
+			<script src="/next/static/settings-tab.js"></script>
+			<script src="/next/static/playlists-tab.js"></script>
+			<script src="/next/static/discovery-tab.js"></script>
+			<script src="/next/static/snapshots-tab.js"></script>
+			<script src="/next/static/connectivity.js"></script>
+			<script src="/next/static/hero-banner.js"></script>
+			<script defer src="/next/static/alpine.min.js"></script>
+			<style>[x-cloak] { display: none !important; }</style>
+		</head>
+		<body class="min-h-full text-zinc-100 font-sans">
+			{ children... }
+		</body>
+	</html>
+}

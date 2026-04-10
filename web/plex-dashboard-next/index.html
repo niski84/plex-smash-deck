@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full dark" data-theme="plex-dark">
+<head>
+  <script>(function(){try{var k="plex-dashboard-theme";var s=localStorage.getItem(k);document.documentElement.classList.toggle("dark",s!=="light");}catch(e){document.documentElement.classList.add("dark");}})()</script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Plex Dashboard</title>
+  <link rel="stylesheet" href="/next/static/app.css">
+  <script src="/next/static/buttons.js"></script>
+  <script src="/next/static/lightbox.js"></script>
+  <script src="/next/static/movie-grid.js"></script>
+  <script src="/next/static/player-card.js"></script>
+  <script src="/next/static/settings-tab.js"></script>
+  <script src="/next/static/playlists-tab.js"></script>
+  <script src="/next/static/discovery-tab.js"></script>
+  <script src="/next/static/snapshots-tab.js"></script>
+  <script src="/next/static/connectivity.js"></script>
+  <script src="/next/static/hero-banner.js"></script>
+  <script src="/next/static/show-grid.js"></script>
+  <!-- App shell + utilities — must be before Alpine -->
+  <script>
+  function appShell() {
+    return {
+      tab: localStorage.getItem('pd-tab') || 'dashboard',
+      _loaded: {},
+      async init() {
+        await this.loadTab(this.tab);
+        this.$watch('tab', async (name) => {
+          localStorage.setItem('pd-tab', name);
+          await this.loadTab(name);
+        });
+      },
+      async loadTab(name) {
+        if (this._loaded[name]) return;
+        const el = document.getElementById('tab-' + name);
+        if (!el) return;
+        try {
+          const r = await fetch('/next/static/tabs/' + name + '.html');
+          if (!r.ok) return;
+          el.innerHTML = await r.text();
+          this._loaded[name] = true;
+          Alpine.initTree(el);
+        } catch(e) { console.warn('loadTab', name, e); }
+      },
+    };
+  }
+
+  // Navigate to Discovery tab pre-filled with a person query
+  async function goToDiscovery(name, role) {
+    const A = window.Alpine;
+    if (!A) return;
+    const rootEl = document.getElementById('pd-root');
+    if (rootEl) {
+      A.$data(rootEl).tab = 'discovery';
+      localStorage.setItem('pd-tab', 'discovery');
+    }
+    let tries = 0;
+    const fill = () => {
+      const el = document.getElementById('discovery-tab');
+      if (!el) { if (++tries < 30) setTimeout(fill, 60); return; }
+      const d = A.$data(el);
+      if (!d) { if (++tries < 30) setTimeout(fill, 60); return; }
+      d.mode = 'person';
+      d.personQuery = name;
+      d.role = role === 'director' ? 'director' : 'actor';
+      if (typeof d.analyze === 'function') d.analyze();
+    };
+    setTimeout(fill, 80);
+  }
+  </script>
+  <script defer src="/next/static/alpine.min.js"></script>
+  <style>[x-cloak] { display: none !important; }</style>
+</head>
+<body class="min-h-full text-zinc-100 font-sans">
+
+  <div id="pd-root" x-data="appShell()" x-init="init()" class="flex flex-col min-h-screen">
+
+    <!-- ── Top bar ──────────────────────────────────────────────────────── -->
+    <header class="flex items-center gap-2 px-4 pt-3 pb-3 border-b border-white/8 bg-zinc-900/70 backdrop-blur-md sticky top-0 z-10">
+      <span class="font-semibold text-zinc-300 mr-2 text-sm">Plex</span>
+      <div class="flex gap-1 flex-wrap">
+        <button @click="tab='dashboard'" :class="tab==='dashboard' ? 'pd-tab-active' : 'pd-tab-inactive'" class="btn btn-sm">Dashboard</button>
+        <button @click="tab='tv'"        :class="tab==='tv'        ? 'pd-tab-active' : 'pd-tab-inactive'" class="btn btn-sm">TV Shows</button>
+        <button @click="tab='playlists'" :class="tab==='playlists' ? 'pd-tab-active' : 'pd-tab-inactive'" class="btn btn-sm">Playlists</button>
+        <button @click="tab='discovery'" :class="tab==='discovery' ? 'pd-tab-active' : 'pd-tab-inactive'" class="btn btn-sm">Discovery</button>
+        <button @click="tab='snapshots'" :class="tab==='snapshots' ? 'pd-tab-active' : 'pd-tab-inactive'" class="btn btn-sm">Snapshots</button>
+        <button @click="tab='settings'"  :class="tab==='settings'  ? 'pd-tab-active' : 'pd-tab-inactive'" class="btn btn-sm">Settings</button>
+        <button @click="tab='help'"      :class="tab==='help'      ? 'pd-tab-active' : 'pd-tab-inactive'" class="btn btn-sm">Help</button>
+      </div>
+
+      <!-- Connectivity + theme toggle -->
+      <div class="ml-auto flex items-center gap-3">
+        <div x-data="connectivityBadge()" x-init="init()" class="relative flex items-center gap-0.5 cursor-default"
+             @mouseenter="tooltipVisible=true" @mouseleave="tooltipVisible=false">
+          <template x-for="c in checks" :key="c.id">
+            <div class="flex flex-col items-center gap-px mx-0.5">
+              <svg width="10" height="14" viewBox="0 0 10 14">
+                <rect x="0" y="0" width="10" height="4" :fill="bars(c.level)[2] ? barColor(c.level) : '#3f3f46'" rx="1"/>
+                <rect x="0" y="5" width="10" height="4" :fill="bars(c.level)[1] ? barColor(c.level) : '#3f3f46'" rx="1"/>
+                <rect x="0" y="10" width="10" height="4" :fill="bars(c.level)[0] ? barColor(c.level) : '#3f3f46'" rx="1"/>
+              </svg>
+              <span class="text-[9px] font-mono leading-none"
+                :class="c.level==='skip'?'text-zinc-600':c.level==='ok'?'text-zinc-400':c.level==='warn'?'text-yellow-500':'text-red-400'"
+                x-text="letterFor(c.id)"></span>
+            </div>
+          </template>
+          <div x-show="tooltipVisible && checks.length > 0" x-cloak
+               class="absolute right-0 top-8 z-[9999] bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl p-3 min-w-72 text-xs"
+               style="white-space:pre-line">
+            <p class="font-mono text-zinc-300 mb-2 text-[11px]" x-text="summary"></p>
+            <template x-for="c in checks" :key="c.id+'_tip'">
+              <div class="flex items-start gap-2 py-0.5">
+                <span class="font-mono w-4 flex-shrink-0"
+                  :class="c.level==='ok'?'text-emerald-400':c.level==='warn'?'text-yellow-400':c.level==='error'?'text-red-400':'text-zinc-600'"
+                  x-text="c.level==='ok'?'✓':c.level==='warn'?'!':c.level==='error'?'✗':'−'"></span>
+                <div class="flex-1 min-w-0">
+                  <span class="text-zinc-300" x-text="c.label"></span>
+                  <span x-show="c.latencyMs" class="text-zinc-500 ml-1" x-text="'('+c.latencyMs+'ms)'"></span>
+                  <p class="text-zinc-500 truncate" x-text="c.message"></p>
+                </div>
+              </div>
+            </template>
+            <template x-if="stream && stream.mbps > 0">
+              <div class="mt-2 pt-2 border-t border-zinc-700/50 text-zinc-400">
+                <span class="text-yellow-400">⚡</span>
+                <span x-text="'~'+stream.mbps.toFixed(1)+' Mb/s to Plex'"></span>
+              </div>
+            </template>
+          </div>
+        </div>
+        <button x-data="{}" @click="var h=document.documentElement,d=h.classList.toggle('dark');localStorage.setItem('plex-dashboard-theme',d?'dark':'light')"
+                class="btn btn-ghost btn-sm btn-circle" title="Toggle theme">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 dark:hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+          </svg>
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 hidden dark:block" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- ── Tab containers (content injected lazily) ─────────────────────── -->
+    <main class="flex-1 p-4 md:p-6 max-w-[1600px] mx-auto w-full">
+      <div id="tab-dashboard" x-show="tab==='dashboard'"></div>
+      <div id="tab-tv"        x-show="tab==='tv'"        x-cloak></div>
+      <div id="tab-playlists" x-show="tab==='playlists'" x-cloak></div>
+      <div id="tab-discovery" x-show="tab==='discovery'" x-cloak></div>
+      <div id="tab-snapshots" x-show="tab==='snapshots'" x-cloak></div>
+      <div id="tab-settings"  x-show="tab==='settings'"  x-cloak></div>
+      <div id="tab-help"      x-show="tab==='help'"      x-cloak></div>
+    </main>
+
+  </div>
+
+  <!-- ── Scroll-to-top button ─────────────────────────────────────────── -->
+  <button id="btt" title="Back to top" aria-label="Scroll to top">&#8679;</button>
+  <script>
+  (function() {
+    const btn = document.getElementById('btt');
+    const inIframe = window.self !== window.top;
+    function onScroll() {
+      const y = inIframe ? (document.getElementById('pd-root') || document.scrollingElement)?.scrollTop : window.scrollY;
+      btn.classList.toggle('btt-visible', (y || 0) > 400);
+    }
+    btn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+    window.addEventListener('scroll', onScroll, { passive: true });
+  })();
+  </script>
+
+</body>
+</html>
