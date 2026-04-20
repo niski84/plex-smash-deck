@@ -17,6 +17,7 @@ import (
 
 type DiscoveryItem struct {
 	TMDBID           int      `json:"tmdbId"`
+	ImdbID           string   `json:"imdbId,omitempty"`
 	Title            string   `json:"title"`
 	Year             int      `json:"year"`
 	ReleaseDate      string   `json:"releaseDate,omitempty"` // ISO YYYY-MM-DD when known (TMDB)
@@ -26,6 +27,8 @@ type DiscoveryItem struct {
 	VoteAverage      float64  `json:"voteAverage"`
 	PosterURL        string   `json:"posterUrl"`
 	PosterPath       string   `json:"posterPath"` // raw TMDB path; UI can build /api/discovery/poster when posterUrl is empty
+	Directors        []string `json:"directors,omitempty"`
+	Actors           []string `json:"actors,omitempty"` // top billing from TMDB credits (when pre-fetched)
 	InLibrary        bool     `json:"inLibrary"`
 	PlexViewCount    *int     `json:"plexViewCount,omitempty"` // set when InLibrary; Plex aggregate play count
 	InPlaylist       bool     `json:"inPlaylist"`
@@ -50,7 +53,7 @@ var reDiscoveryDocWord = regexp.MustCompile(`(?i)\b(documentary|documentaries)\b
 var reDiscoveryMakingOf = regexp.MustCompile(`(?i)\bmaking of\b`)
 
 // excludedFromDiscovery drops documentaries, TV / made-for-TV, news, music/concert films,
-// and typical bonus-feature titles (making-of, behind the scenes) using TMDB genres plus
+// stand-up comedy specials, and typical bonus-feature titles using TMDB genres plus
 // title/overview heuristics.
 func excludedFromDiscovery(title, overview string, genres []string) bool {
 	for _, g := range genres {
@@ -77,6 +80,23 @@ func excludedFromDiscovery(title, overview string, genres []string) bool {
 		"made for television",
 		"miniseries",
 		"mini-series",
+		// Stand-up / comedy specials
+		"comedy special",
+		"stand-up special",
+		"stand up special",
+		"standup special",
+		"stand-up show",
+		"stand up show",
+		"stand-up performance",
+		"stand up performance",
+		"stand-up comedian",
+		"stand-up set",
+		"stand up set",
+		"live stand-up",
+		"live stand up",
+		"standup comedy",
+		"stand-up comedy",
+		"stand up comedy",
 	}
 	for _, p := range phrases {
 		if strings.Contains(combinedLower, p) {
@@ -465,14 +485,20 @@ func AnalyzeFilmography(ctx context.Context, cfg Config, plex *PlexClient, plexM
 	detailsMap := fetchMovieDetailsBatch(ctx, cfg.TMDBAPIKey, detailIDs, cache, stats)
 
 	today := time.Now().Truncate(24 * time.Hour)
+	// Exclude movies still in their theatrical window (≈90 days after release).
+	homeVideoCutoff := today.AddDate(0, 0, -90)
 	effectiveMin := discoveryEffectiveMinVote(minVoteAverage)
 
 	items := make([]DiscoveryItem, 0, len(filtered))
 	for _, credit := range filtered {
-		// Drop films with a known future release date.
+		// Drop films not yet on home video (released in the last 90 days or future).
+		// Exception: if the movie is already in the Plex library, always include it.
 		if credit.ReleaseDate != "" {
-			if rd, err := time.Parse("2006-01-02", credit.ReleaseDate); err == nil && rd.After(today) {
-				continue
+			if rd, err := time.Parse("2006-01-02", credit.ReleaseDate); err == nil && rd.After(homeVideoCutoff) {
+				alreadyOwned, _ := plexLibraryMatch(plexMovies, plexTitleYears, plexByTMDB, plexByIMDB, credit.ID, "", credit.Title, credit.Year)
+				if !alreadyOwned {
+					continue
+				}
 			}
 		}
 
@@ -547,8 +573,22 @@ func AnalyzeFilmography(ctx context.Context, cfg Config, plex *PlexClient, plexM
 		}
 		key := normalizeTitleYear(credit.Title, strconv.Itoa(credit.Year))
 		_, hasPlaylist := inPlaylist[key]
+		// Populate cast from disk cache (already fetched for filter checks, or fetch now).
+		var directors, actors []string
+		mc, ok := creditCache[credit.ID]
+		if !ok {
+			mc, _ = tmdbMovieCreditsForMovieCached(ctx, cfg.TMDBAPIKey, credit.ID, cache, stats)
+		}
+		directors = mc.Directors
+		if len(mc.Actors) > 10 {
+			actors = mc.Actors[:10]
+		} else {
+			actors = mc.Actors
+		}
+
 		items = append(items, DiscoveryItem{
 			TMDBID:           credit.ID,
+			ImdbID:           imdbID,
 			Title:            credit.Title,
 			Year:             credit.Year,
 			ReleaseDate:      strings.TrimSpace(credit.ReleaseDate),
@@ -558,6 +598,8 @@ func AnalyzeFilmography(ctx context.Context, cfg Config, plex *PlexClient, plexM
 			VoteAverage:      vote,
 			PosterURL:        posterURL,
 			PosterPath:       rawPosterPath,
+			Directors:        directors,
+			Actors:           actors,
 			InLibrary:        hasLibrary,
 			PlexViewCount:    plexVC,
 			InPlaylist:       hasPlaylist,
@@ -667,6 +709,8 @@ type fetchedMovieDetails struct {
 	OriginalLanguage string // ISO 639-1, e.g. "en", "fr", "it"
 	IMDbID           string // from TMDB external_ids when present (e.g. tt1234567)
 	Video            bool   // TMDB: direct-to-video / non-theatrical
+	CollectionID     int    // TMDB belongs_to_collection.id; 0 = none
+	CollectionName   string // TMDB belongs_to_collection.name
 }
 
 func uniqueMovieIDs(credits []tmdbCredit) []int {
@@ -732,6 +776,8 @@ func fetchMovieDetailsBatch(ctx context.Context, apiKey string, ids []int, cache
 				OriginalLanguage: d.OriginalLanguage,
 				IMDbID:           d.IMDbID,
 				Video:            d.Video,
+				CollectionID:     d.CollectionID,
+				CollectionName:   d.CollectionName,
 			}
 			out[movieID] = det
 			cache.putMovieDetails(movieID, det)
@@ -751,6 +797,8 @@ type tmdbMovieDetailsResult struct {
 	OriginalLanguage string
 	IMDbID           string
 	Video            bool
+	CollectionID     int
+	CollectionName   string
 }
 
 func tmdbFetchMovieDetails(ctx context.Context, apiKey string, movieID int) (tmdbMovieDetailsResult, error) {
@@ -784,6 +832,10 @@ func tmdbFetchMovieDetails(ctx context.Context, apiKey string, movieID int) (tmd
 		ExternalIDs struct {
 			IMDbID string `json:"imdb_id"`
 		} `json:"external_ids"`
+		BelongsToCollection *struct {
+			ID   int    `json:"id"`
+			Name string `json:"name"`
+		} `json:"belongs_to_collection"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		return empty, err
@@ -797,6 +849,12 @@ func tmdbFetchMovieDetails(ctx context.Context, apiKey string, movieID int) (tmd
 	}
 	rawPath := strings.TrimSpace(body.PosterPath)
 	posterURL := tmdbPosterURLFromPath(body.PosterPath)
+	var collectionID int
+	var collectionName string
+	if body.BelongsToCollection != nil {
+		collectionID = body.BelongsToCollection.ID
+		collectionName = strings.TrimSpace(body.BelongsToCollection.Name)
+	}
 	return tmdbMovieDetailsResult{
 		Overview:         strings.TrimSpace(body.Overview),
 		GenreNames:       names,
@@ -807,6 +865,8 @@ func tmdbFetchMovieDetails(ctx context.Context, apiKey string, movieID int) (tmd
 		OriginalLanguage: strings.TrimSpace(body.OriginalLanguage),
 		IMDbID:           strings.TrimSpace(body.ExternalIDs.IMDbID),
 		Video:            body.Video,
+		CollectionID:     collectionID,
+		CollectionName:   collectionName,
 	}, nil
 }
 
@@ -1602,12 +1662,14 @@ func buildDiscoveryItemsFromTMDBDiscoverList(ctx context.Context, apiKey string,
 	tmdbImdbByID := tmdbImdbIDsForDiscoverMovies(ctx, apiKey, credits, cache)
 
 	today := time.Now().Truncate(24 * time.Hour)
+	// Exclude movies still in their theatrical window (≈90 days after release).
+	homeVideoCutoff := today.AddDate(0, 0, -90)
 	effectiveMin := discoveryEffectiveMinVote(minVoteAverage)
 	items := make([]DiscoveryItem, 0, len(credits))
 
 	for _, c := range credits {
 		if c.ReleaseDate != "" {
-			if rd, err2 := time.Parse("2006-01-02", c.ReleaseDate); err2 == nil && rd.After(today) {
+			if rd, err2 := time.Parse("2006-01-02", c.ReleaseDate); err2 == nil && rd.After(homeVideoCutoff) {
 				continue
 			}
 		}
@@ -1643,6 +1705,7 @@ func buildDiscoveryItemsFromTMDBDiscoverList(ctx context.Context, apiKey string,
 
 		items = append(items, DiscoveryItem{
 			TMDBID:           c.TMDBID,
+			ImdbID:           tmdbImdb,
 			Title:            c.Title,
 			Year:             c.Year,
 			ReleaseDate:      strings.TrimSpace(c.ReleaseDate),
@@ -2069,4 +2132,84 @@ func tmdbDiscoverByCompanyWithGenreMap(ctx context.Context, apiKey string, compa
 	}
 
 	return all, nil
+}
+
+// --- TMDB Collection support ---
+
+// TMDBCollectionPart is one movie within a TMDB collection.
+type TMDBCollectionPart struct {
+	TMDBID      int    `json:"tmdbId"`
+	Title       string `json:"title"`
+	ReleaseDate string `json:"releaseDate"`
+	Year        int    `json:"year"`
+	PosterPath  string `json:"posterPath"`
+	// Owned and RatingKey are populated by the server after cross-referencing the library.
+	Owned     bool   `json:"owned"`
+	RatingKey string `json:"ratingKey,omitempty"`
+}
+
+// TMDBCollectionDetails is the response from /api/tmdb/collection.
+type TMDBCollectionDetails struct {
+	CollectionID   int                  `json:"collectionId"`
+	CollectionName string               `json:"collectionName"`
+	PosterPath     string               `json:"posterPath,omitempty"`
+	Parts          []TMDBCollectionPart `json:"parts"`
+}
+
+// tmdbFetchCollectionDetails fetches TMDB /collection/{id} and returns the members.
+func tmdbFetchCollectionDetails(ctx context.Context, apiKey string, collectionID int) (TMDBCollectionDetails, error) {
+	var empty TMDBCollectionDetails
+	u := fmt.Sprintf("https://api.themoviedb.org/3/collection/%d?api_key=%s", collectionID, url.QueryEscape(apiKey))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return empty, err
+	}
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		return empty, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return empty, fmt.Errorf("tmdb collection %d: status %s", collectionID, resp.Status)
+	}
+	var body struct {
+		ID       int    `json:"id"`
+		Name     string `json:"name"`
+		PosterPath string `json:"poster_path"`
+		Parts    []struct {
+			ID          int    `json:"id"`
+			Title       string `json:"title"`
+			ReleaseDate string `json:"release_date"`
+			PosterPath  string `json:"poster_path"`
+		} `json:"parts"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return empty, err
+	}
+	parts := make([]TMDBCollectionPart, 0, len(body.Parts))
+	for _, p := range body.Parts {
+		year := 0
+		if len(p.ReleaseDate) >= 4 {
+			if y, err2 := strconv.Atoi(p.ReleaseDate[:4]); err2 == nil {
+				year = y
+			}
+		}
+		parts = append(parts, TMDBCollectionPart{
+			TMDBID:      p.ID,
+			Title:       strings.TrimSpace(p.Title),
+			ReleaseDate: p.ReleaseDate,
+			Year:        year,
+			PosterPath:  strings.TrimSpace(p.PosterPath),
+		})
+	}
+	// Sort by release date ascending.
+	sort.Slice(parts, func(i, j int) bool {
+		return parts[i].ReleaseDate < parts[j].ReleaseDate
+	})
+	return TMDBCollectionDetails{
+		CollectionID:   body.ID,
+		CollectionName: strings.TrimSpace(body.Name),
+		PosterPath:     strings.TrimSpace(body.PosterPath),
+		Parts:          parts,
+	}, nil
 }

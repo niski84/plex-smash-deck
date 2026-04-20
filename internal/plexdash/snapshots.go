@@ -46,6 +46,24 @@ type SnapshotMeta struct {
 	ID         string    `json:"id"`
 	CapturedAt time.Time `json:"capturedAt"`
 	Count      int       `json:"count"`
+	NoChange   bool      `json:"noChange,omitempty"` // true = scheduler ran but library was identical; no snapshot file exists
+}
+
+// YearDrift records a movie whose metadata year changed between two snapshots.
+// The title and director(s) match; only the year differs.
+type YearDrift struct {
+	Before SnapshotMovie `json:"before"`
+	After  SnapshotMovie `json:"after"`
+}
+
+// YearDriftEvent is a YearDrift tied to specific snapshot IDs / times.
+type YearDriftEvent struct {
+	Before     SnapshotMovie `json:"before"`
+	After      SnapshotMovie `json:"after"`
+	LastSeenID string        `json:"lastSeenId"`
+	ChangedID  string        `json:"changedId"`
+	LastSeenAt time.Time     `json:"lastSeenAt"`
+	ChangedAt  time.Time     `json:"changedAt"`
 }
 
 // SnapshotDiff is the result of comparing two snapshots.
@@ -54,6 +72,7 @@ type SnapshotDiff struct {
 	To        SnapshotMeta    `json:"to"`
 	Added     []SnapshotMovie `json:"added"`
 	Removed   []SnapshotMovie `json:"removed"`
+	YearDrift []YearDrift     `json:"yearDrift"`
 	NetChange int             `json:"netChange"`
 }
 
@@ -190,23 +209,26 @@ func DiffSnapshots(fromID, toID string) (SnapshotDiff, error) {
 		toSet[snapshotKey(m)] = struct{}{}
 	}
 
-	var added, removed []SnapshotMovie
+	var rawAdded, rawRemoved []SnapshotMovie
 	for _, m := range to.Movies {
 		if _, ok := fromSet[snapshotKey(m)]; !ok {
-			added = append(added, m)
+			rawAdded = append(rawAdded, m)
 		}
 	}
 	for _, m := range from.Movies {
 		if _, ok := toSet[snapshotKey(m)]; !ok {
-			removed = append(removed, m)
+			rawRemoved = append(rawRemoved, m)
 		}
 	}
+
+	drifts, added, removed := reconcileYearDrift(rawAdded, rawRemoved)
 
 	return SnapshotDiff{
 		From:      SnapshotMeta{ID: from.ID, CapturedAt: from.CapturedAt, Count: from.Count},
 		To:        SnapshotMeta{ID: to.ID, CapturedAt: to.CapturedAt, Count: to.Count},
-		Added:     nullSafeMovies(added),
-		Removed:   nullSafeMovies(removed),
+		Added:     added,
+		Removed:   removed,
+		YearDrift: nullSafeYearDrift(drifts),
 		NetChange: to.Count - from.Count,
 	}, nil
 }
@@ -238,17 +260,20 @@ type MissingMovieEvent struct {
 	GoneAt     time.Time     `json:"goneAt"`
 }
 
-// FindAllMissing scans every consecutive snapshot pair (chronological order)
-// and returns movies that disappeared between any two consecutive snapshots.
-// A movie is reported once per disappearance event. If it later reappears and
-// disappears again, it will appear a second time.
-func FindAllMissing() ([]MissingMovieEvent, error) {
+// FindAllMissingAndDrift scans every consecutive snapshot pair (chronological
+// order) and returns:
+//   - movies that truly disappeared (missing)
+//   - movies whose metadata year changed (yearDrift)
+//
+// Year-drift pairs are excluded from the missing list so they don't trigger
+// false removal alerts.
+func FindAllMissingAndDrift() ([]MissingMovieEvent, []YearDriftEvent, error) {
 	list, err := ListSnapshots()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(list) < 2 {
-		return []MissingMovieEvent{}, nil
+		return []MissingMovieEvent{}, []YearDriftEvent{}, nil
 	}
 
 	// list is newest-first; reverse to chronological order for sequential scan.
@@ -257,49 +282,85 @@ func FindAllMissing() ([]MissingMovieEvent, error) {
 		chrono[len(list)-1-i] = m
 	}
 
-	var events []MissingMovieEvent
-	// Load snapshots lazily and walk consecutive pairs.
+	var missing []MissingMovieEvent
+	var driftEvents []YearDriftEvent
+
 	for i := 0; i < len(chrono)-1; i++ {
 		from, err := LoadSnapshot(chrono[i].ID)
 		if err != nil {
-			return nil, fmt.Errorf("loading snapshot %s: %w", chrono[i].ID, err)
+			return nil, nil, fmt.Errorf("loading snapshot %s: %w", chrono[i].ID, err)
 		}
 		to, err := LoadSnapshot(chrono[i+1].ID)
 		if err != nil {
-			return nil, fmt.Errorf("loading snapshot %s: %w", chrono[i+1].ID, err)
+			return nil, nil, fmt.Errorf("loading snapshot %s: %w", chrono[i+1].ID, err)
 		}
 
 		toSet := make(map[string]struct{}, len(to.Movies))
 		for _, m := range to.Movies {
 			toSet[snapshotKey(m)] = struct{}{}
 		}
+
+		// Collect raw disappearances then reconcile year drift.
+		var rawRemoved, rawAdded []SnapshotMovie
 		for _, m := range from.Movies {
 			if _, ok := toSet[snapshotKey(m)]; !ok {
-				events = append(events, MissingMovieEvent{
-					Movie:      m,
-					LastSeenID: from.ID,
-					GoneID:     to.ID,
-					LastSeenAt: from.CapturedAt,
-					GoneAt:     to.CapturedAt,
-				})
+				rawRemoved = append(rawRemoved, m)
 			}
+		}
+		fromSet := make(map[string]struct{}, len(from.Movies))
+		for _, m := range from.Movies {
+			fromSet[snapshotKey(m)] = struct{}{}
+		}
+		for _, m := range to.Movies {
+			if _, ok := fromSet[snapshotKey(m)]; !ok {
+				rawAdded = append(rawAdded, m)
+			}
+		}
+
+		drifts, _, trueRemoved := reconcileYearDrift(rawAdded, rawRemoved)
+
+		for _, d := range drifts {
+			driftEvents = append(driftEvents, YearDriftEvent{
+				Before:     d.Before,
+				After:      d.After,
+				LastSeenID: from.ID,
+				ChangedID:  to.ID,
+				LastSeenAt: from.CapturedAt,
+				ChangedAt:  to.CapturedAt,
+			})
+		}
+		for _, m := range trueRemoved {
+			missing = append(missing, MissingMovieEvent{
+				Movie:      m,
+				LastSeenID: from.ID,
+				GoneID:     to.ID,
+				LastSeenAt: from.CapturedAt,
+				GoneAt:     to.CapturedAt,
+			})
 		}
 	}
 
-	if events == nil {
-		return []MissingMovieEvent{}, nil
+	if missing == nil {
+		missing = []MissingMovieEvent{}
 	}
-	// Sort: most recently gone first so the UI shows the freshest issues at top.
-	sort.Slice(events, func(i, j int) bool {
-		return events[i].GoneAt.After(events[j].GoneAt)
+	if driftEvents == nil {
+		driftEvents = []YearDriftEvent{}
+	}
+
+	sort.Slice(missing, func(i, j int) bool {
+		return missing[i].GoneAt.After(missing[j].GoneAt)
 	})
-	return events, nil
+	sort.Slice(driftEvents, func(i, j int) bool {
+		return driftEvents[i].ChangedAt.After(driftEvents[j].ChangedAt)
+	})
+	return missing, driftEvents, nil
 }
 
 // TakeSnapshotDedup takes a snapshot and immediately diffs it against the
 // previous one. If nothing has changed (same movies by title+year), the new
-// file is deleted and removed from the index. Returns nil when the snapshot was
-// a duplicate and discarded.
+// file is deleted and a lightweight no-change marker is written to the index
+// so the UI can show that the scheduler ran but found nothing new.
+// Returns a meta with NoChange=true when the snapshot was discarded.
 func TakeSnapshotDedup(movies []Movie) (*SnapshotMeta, error) {
 	snap, err := TakeSnapshot(movies)
 	if err != nil {
@@ -308,7 +369,6 @@ func TakeSnapshotDedup(movies []Movie) (*SnapshotMeta, error) {
 
 	list, err := ListSnapshots()
 	if err != nil {
-		// Can't verify dedup — keep the snapshot.
 		meta := SnapshotMeta{ID: snap.ID, CapturedAt: snap.CapturedAt, Count: snap.Count}
 		return &meta, nil
 	}
@@ -327,17 +387,25 @@ func TakeSnapshotDedup(movies []Movie) (*SnapshotMeta, error) {
 	}
 
 	if len(diff.Added) == 0 && len(diff.Removed) == 0 {
-		// No change — discard the new snapshot.
+		// No change — delete the snapshot file and replace the index entry with
+		// a lightweight no-change marker so the UI knows the scheduler ran.
 		_ = os.Remove(snapshotFilePath(snap.ID))
-		pruned := make([]SnapshotMeta, 0, len(list)-1)
+		marker := SnapshotMeta{
+			ID:         snap.ID,
+			CapturedAt: snap.CapturedAt,
+			Count:      snap.Count,
+			NoChange:   true,
+		}
+		pruned := make([]SnapshotMeta, 0, len(list))
+		pruned = append(pruned, marker)
 		for _, m := range list {
 			if m.ID != snap.ID {
 				pruned = append(pruned, m)
 			}
 		}
 		_ = saveSnapshotIndex(pruned)
-		fmt.Printf("[snapshot] daily snapshot %s had no diff — discarded\n", snap.ID)
-		return nil, nil
+		fmt.Printf("[snapshot] daily snapshot %s had no diff — marker written\n", snap.ID)
+		return &marker, nil
 	}
 
 	fmt.Printf("[snapshot] daily snapshot %s: +%d added, -%d removed\n", snap.ID, len(diff.Added), len(diff.Removed))
@@ -349,9 +417,81 @@ func snapshotKey(m SnapshotMovie) string {
 	return strings.ToLower(strings.TrimSpace(m.Title)) + "|" + fmt.Sprintf("%d", m.Year)
 }
 
+// directorsOverlap returns true if the two director lists share at least one
+// name. If either list is empty we assume overlap — title match alone is
+// sufficient when director data isn't available.
+func directorsOverlap(a, b []string) bool {
+	if len(a) == 0 || len(b) == 0 {
+		return true
+	}
+	for _, da := range a {
+		for _, db := range b {
+			if strings.EqualFold(strings.TrimSpace(da), strings.TrimSpace(db)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// reconcileYearDrift separates year-drift pairs from plain added/removed lists.
+// A year drift is: same title (case-insensitive), different year, director overlap.
+func reconcileYearDrift(added, removed []SnapshotMovie) (drifts []YearDrift, filteredAdded, filteredRemoved []SnapshotMovie) {
+	type entry struct {
+		idx int
+		m   SnapshotMovie
+	}
+	byTitle := make(map[string][]entry, len(removed))
+	for i, m := range removed {
+		k := strings.ToLower(strings.TrimSpace(m.Title))
+		byTitle[k] = append(byTitle[k], entry{i, m})
+	}
+
+	usedRemoved := make(map[int]bool)
+	usedAdded := make(map[int]bool)
+
+	for ai, a := range added {
+		k := strings.ToLower(strings.TrimSpace(a.Title))
+		for _, cand := range byTitle[k] {
+			if usedRemoved[cand.idx] {
+				continue
+			}
+			if cand.m.Year == a.Year {
+				continue // same year — not a drift
+			}
+			if !directorsOverlap(a.Directors, cand.m.Directors) {
+				continue
+			}
+			drifts = append(drifts, YearDrift{Before: cand.m, After: a})
+			usedRemoved[cand.idx] = true
+			usedAdded[ai] = true
+			break
+		}
+	}
+
+	for i, m := range added {
+		if !usedAdded[i] {
+			filteredAdded = append(filteredAdded, m)
+		}
+	}
+	for i, m := range removed {
+		if !usedRemoved[i] {
+			filteredRemoved = append(filteredRemoved, m)
+		}
+	}
+	return drifts, nullSafeMovies(filteredAdded), nullSafeMovies(filteredRemoved)
+}
+
 func nullSafeMovies(s []SnapshotMovie) []SnapshotMovie {
 	if s == nil {
 		return []SnapshotMovie{}
+	}
+	return s
+}
+
+func nullSafeYearDrift(s []YearDrift) []YearDrift {
+	if s == nil {
+		return []YearDrift{}
 	}
 	return s
 }

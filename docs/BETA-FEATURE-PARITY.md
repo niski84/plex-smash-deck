@@ -899,6 +899,19 @@ Function: `sortMoviesList()`, applied inside `renderMovies()`.
 
 **Status:** ✅ Beta matches.
 
+### 5.9 Library sync status
+
+**V1 elements**: `#libraryCacheLine` (status line), `#syncRecentMoviesBtn` ("Sync new titles" button)
+
+**Behavior**:
+- `GET /api/movies/cache-status` — polls every 10 minutes; also called on page load and after any load/sync
+- Shows: `N titles in memory · cached Xm ago · Plex has Y more titles — sync or refresh`
+- Amber text when Plex count is higher (delta > 0), rose when lower, normal when in sync
+- **Sync new titles** button — enabled only when `deltaVsCache > 0`; calls `POST /api/movies/sync-recent` to merge recently added titles without a full reload
+- After sync: shows "Merged N new title(s)." confirmation message
+
+**Status:** ✅ Implemented in beta — `cacheLine` computed getter + `syncNewTitles()` in `movie-grid.js`; "⬇ Sync new" button in controls row; status line above genre bar.
+
 ---
 
 ## 6. Dashboard — Movie Hover Popup
@@ -958,15 +971,17 @@ Function: `sortMoviesList()`, applied inside `renderMovies()`.
 - `GET /api/movies/hover-meta?ratingKey=X` (for fields not in initial payload)
 
 **Status:**
-- 🟡 Beta has a popup with title/genres/summary/director/cast/play button
-- ❌ Combined rating average across sources
-- ❌ Per-source rating pills (IMDb, RT, Metacritic, TMDB)
+- ✅ Beta popup with title/genres/summary/director/cast/play buttons
+- ✅ Combined rating average (`Avg ★ X.X`) — trimmed mean, shown when 2+ sources
+- ✅ Per-source rating pills: IMDb (yellow), RT (red), Metacritic (green), TMDB (teal)
+- ✅ Async fetch via `GET /api/omdb-ratings?tmdbId=X` — aborted on hide
+- ✅ TMDB ↗ and IMDb ↗ external link badges
 - ✅ Runtime shown (`fmtDuration`)
 - ✅ Play count (`ViewCount` pill, shown only when > 0)
 - ✅ File container pill (`FileContainer` uppercased, e.g. `MKV`)
+- ✅ Poster is 280px wide, click → lightbox
 - ❌ Stream-hint color coding (comfortable / tight / may buffer)
 - ❌ Plex speed sample / title bitrate
-- ✅ "Play in Browser" button (opens `/api/stream/{ratingKey}` in new tab)
 - ❌ "Cache" button with pulse-glow
 - ✅ Click-to-trigger-discovery on actor/director names — calls `goToDiscovery(name, role)` which switches tab and auto-runs analysis via retry-poll for lazy-loaded tab
 - ❌ "Show more" expand for long summaries
@@ -1200,29 +1215,73 @@ Result envelope:
 
 `#discoveryTableWrap` — scrollable table, `max-height: calc(100vh - 380px)`.
 
-| # | Cover | Title | Year | Genres | TMDB | In library | In playlist | Known for | Action |
+Column order: `☐ | # | Cover | Title | Year | Genres | TMDB | In library | In playlist | Known for | Action`
 
-- All headers `class="th-sort"` → click to sort, asc/desc toggle
-- Aria-sort attributes updated
+- **Cover column** — `.disc-poster-cell` (64 px wide): renders a **52×78 px** thumbnail
+  - Image source priority:
+    1. `discoveryPosterProxyFromPath(item.posterPath)` → `/api/discovery/poster?path=…`
+    2. Direct TMDB `posterUrl` (retry on proxy 404)
+    3. `.disc-poster-missing` placeholder div (`"—"` / `"No art"`)
+  - Error fallback: first retries with direct TMDB URL; if that also fails, replaces img with
+    `<div class="disc-poster-missing">No art</div>`
+  - CSS:
+    ```css
+    .disc-poster { width:52px; height:78px; object-fit:cover; border-radius:4px;
+                   border:1px solid #333; background:#111; cursor:zoom-in; }
+    .disc-poster-missing { width:52px; height:78px; display:flex; align-items:center;
+                           justify-content:center; font-size:10px; color:#666;
+                           border:1px dashed #444; border-radius:4px; background:#141414; }
+    ```
+- All headers `class="th-sort"` → click to sort, asc/desc toggle; `aria-sort` updated
 - Default sort: recommendation # (asc)
 - **Sort function:** `sortDiscoveryByColumn(columnKey)` (line 5982)
 - "In playlist" column only shown in Person mode (when `discoverPlaylistTitle` set)
 
+**Beta status for the table:** results table exists but the **Cover column is entirely absent** —
+beta renders `#`, Title, Year, In Library, TMDB, Genres, Action only.
+
 ### 9.6 Poster hover popup
 
-`wireDiscoveryRowPosterHover(tr, idx)` (line 7681):
-- Hover poster or center of title → ~500 ms delay → popup
-- Popup shows: large poster, title, overview
-- Image source priority:
-  1. Proxied: `/api/discovery/poster?tmdbId=X&size=w780`
-  2. Fallback: direct `posterUrl` from TMDB
-  3. Placeholder: gray "No art" tile
-- Touch: tap to show immediately
+`wireDiscoveryRowPosterHover(tr, idx)` (line 7681) is called for every row after render.
+
+**Trigger zones:** hover the poster thumbnail OR the center 32% band of the title cell.
+Delay: **500 ms** (`window.__PLEXDASH_DISCOVERY_HOVER_MS`, default 500).
+Touch: tap immediately (no delay).
+
+**Element:** `<div id="discPosterPopup">` — fixed-position, `z-index: 9999`.
+
+**Content displayed:**
+1. **TMDB poster** — `w780` size, `max-width: min(1000px, 88vw)`, `max-height: min(720px, 50vh)`, `object-fit: contain`
+   - Source: `discPosterBigSrc(src)` upgrades the thumb URL to `?size=w780`
+   - "Loading poster…" spinner shown while image loads
+   - Cursor: `zoom-in`
+   - Click poster → opens image in a **fullscreen view** at original resolution (not the same lightbox as movie grid)
+2. **Title** (large, `font-size: 24px`)
+3. **Overview / plot** — synopsis text, `max-height: 76vh`, scrollable, `font-size: 24px`, `color: #b8bdd4`
+
+**No fanart** — the discovery popup is TMDB poster + title + overview only. The fanart gallery (used in the dashboard movie hover popup) is NOT present here.
+
+**Popup CSS:**
+```css
+#discPosterPopup {
+  position: fixed; z-index: 9999; pointer-events: none; display: none;
+  background: #0d101a; border: 4px solid #3b4a78; border-radius: 16px;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.85); padding: 16px 20px 20px;
+  opacity: 0; transition: opacity 0.15s ease;
+  max-width: min(1040px, 92vw);
+}
+#discPosterPopup.pp-visible { opacity: 1; pointer-events: auto; }
+```
+
+**Close behaviour:** pointer leaves row → hide timer; pointer enters popup → cancel hide.
+`✕` close button also present (`class="disc-popup-close-btn"`).
 
 **Functions:**
-- `window._showPosterPopup(anchor, src, title, overview, opts)`
-- `window._cancelPendingPosterPopup()`
-- `window._hidePosterPopup()`
+- `window._showPosterPopup(anchorEl, thumbSrc, title, overview, opts)` (line 6288)
+- `window._cancelPendingPosterPopup()` (line 6274)
+- `window._hidePosterPopup()` (line 6386)
+- `discoveryPosterDisplayFromItem(item)` (line 6034) — resolves poster source
+- `discPosterBigSrc(src)` (line 6148) — upgrades URL to w780
 
 ### 9.7 Infinite scroll
 
@@ -1290,23 +1349,26 @@ All three produce GitHub-flavored Markdown to clipboard:
 
 ### 9.11 Status
 
-- ✅ Mode tabs (person/studio/year)
+- ✅ Mode tabs (person/studio/**browse** — renamed from year)
 - ✅ Per-mode inputs
-- ✅ Min rating, exclude non-theatrical
-- ✅ Job start + poll loop
-- ✅ Results table (basic)
-- ✅ Cart with localStorage
-- ✅ Copy missing/cart as markdown
+- ✅ Year range — **`<select>` dropdowns** (1920–currentYear+1) in browse mode
+- ✅ Min TMDB rating filter
+- ✅ Exclude non-theatrical checkbox
+- ✅ TMDB genre multi-select (Ctrl/Cmd for multiple, populated from `/api/discovery/tmdb-genres`)
+- ✅ Director collaborator filter (person mode)
+- ✅ Co-actor collaborator filter (person mode)
+- ✅ Compare against existing playlist (person mode, populated from `/api/playlists`)
+- ✅ Job start + poll loop with animated status
+- ✅ Results table with Cover (poster thumbnail), checkbox, #, Title, Year, In Library, TMDB, Genres, Action
+- ✅ Select all missing / Add selected to cart
+- ✅ Cart with localStorage persistence
+- ✅ Copy missing / Copy all titles / Copy cart as Markdown
+- ✅ Clear cart button
+- ✅ Poster hover popup (via shared `Alpine.store('moviePopup')`)
 - ✅ Clear TMDB cache button
-- ❌ TMDB genre multi-select
-- ❌ Director collaborator filter
-- ❌ Co-actor collaborator filter
-- ❌ Compare against existing playlist
 - ❌ Sortable columns (click headers)
-- ❌ Poster hover popup
 - ❌ Infinite scroll (currently shows all rows)
 - ❌ Add to Radarr button
-- ❌ "Copy all titles" Markdown
 - ❌ Cache stats in status message
 
 ---
@@ -1788,8 +1850,17 @@ Closes the "looks nothing like the original" complaint immediately.
 ### Phase E — Tab gaps (2 days)
 
 28. **Playlists**: Build by Genre/Rating + preview
-29. **Discovery**: TMDB genre multi-select, sortable columns, infinite scroll,
-    poster hover popup, Add to Radarr, Copy all titles
+29. **Discovery**:
+    - **Cover column** — add `.disc-poster-cell` with 52×78 img; proxy via
+      `/api/discovery/poster?path=…`; error-retry with direct TMDB URL; "No art" fallback
+    - **Poster hover popup** — `#discPosterPopup` fixed panel; 500 ms delay on poster/title
+      hover; fetch w780 poster via `discPosterBigSrc()`; show title + overview; click → fullscreen;
+      touch tap immediately; `_showPosterPopup` / `_hidePosterPopup`
+    - TMDB genre multi-select
+    - Sortable columns (click headers → `sortDiscoveryByColumn`)
+    - Infinite scroll (48-row chunks, `discoveryAppendMoreIfNeeded`)
+    - Add to Radarr button
+    - "Copy all titles" Markdown
 30. **Snapshots**: Pattern analysis, all-time missing grouped by event
 31. **Settings**: Connectivity panel, fanart cache panel, stream cache panel,
     cache table, genre bar prefs, TV devices, secret copy buttons

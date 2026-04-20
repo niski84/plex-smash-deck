@@ -23,6 +23,7 @@ const (
 	discoveryCacheBrowseDiscoverTTL = 60 * 24 * time.Hour
 	discoveryCacheCompanyIDTTL      = 180 * 24 * time.Hour
 	discoveryCacheGenreMapTTL       = 365 * 24 * time.Hour
+	discoveryCacheCollectionTTL     = 30 * 24 * time.Hour
 )
 
 const discoveryCacheJSONVersion = 4
@@ -297,6 +298,8 @@ type cachedMovieDetails struct {
 	OriginalLanguage string   `json:"originalLanguage,omitempty"`
 	IMDbID           string   `json:"imdbId,omitempty"`
 	Video            bool     `json:"video,omitempty"`
+	CollectionID     int      `json:"collectionId,omitempty"`
+	CollectionName   string   `json:"collectionName,omitempty"`
 }
 
 func movieDetailsCacheFile(movieID int) string {
@@ -329,6 +332,8 @@ func (d *diskDiscoveryCache) getMovieDetails(movieID int) (fetchedMovieDetails, 
 		OriginalLanguage: c.OriginalLanguage,
 		IMDbID:           strings.TrimSpace(c.IMDbID),
 		Video:            c.Video,
+		CollectionID:     c.CollectionID,
+		CollectionName:   c.CollectionName,
 	}, true
 }
 
@@ -353,6 +358,8 @@ func (d *diskDiscoveryCache) putMovieDetails(movieID int, det fetchedMovieDetail
 		OriginalLanguage: det.OriginalLanguage,
 		IMDbID:           det.IMDbID,
 		Video:            det.Video,
+		CollectionID:     det.CollectionID,
+		CollectionName:   det.CollectionName,
 	}
 	_ = writeJSONAtomic(path, c)
 }
@@ -623,6 +630,90 @@ func (d *diskDiscoveryCache) putStudioDiscover(companyID, minYear, maxYear int, 
 			TTLSeconds: int64(discoveryCacheStudioDiscoverTTL / time.Second),
 		},
 		Movies: cp,
+	}
+	_ = writeJSONAtomic(path, c)
+}
+
+// --- TMDB Collection cache ---
+
+type cachedCollectionPart struct {
+	TMDBID      int    `json:"tmdbId"`
+	Title       string `json:"title"`
+	ReleaseDate string `json:"releaseDate"`
+	Year        int    `json:"year"`
+	PosterPath  string `json:"posterPath"`
+}
+
+type cachedCollection struct {
+	cachedEnvelope
+	CollectionID   int                    `json:"collectionId"`
+	CollectionName string                 `json:"collectionName"`
+	PosterPath     string                 `json:"posterPath,omitempty"`
+	Parts          []cachedCollectionPart `json:"parts"`
+}
+
+func collectionCacheFile(collectionID int) string {
+	return fmt.Sprintf("collection-%d.json", collectionID)
+}
+
+func (d *diskDiscoveryCache) getCollection(collectionID int) (TMDBCollectionDetails, bool) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	path := d.abs(collectionCacheFile(collectionID))
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return TMDBCollectionDetails{}, false
+	}
+	var c cachedCollection
+	if err := json.Unmarshal(b, &c); err != nil || c.Version != discoveryCacheJSONVersion {
+		return TMDBCollectionDetails{}, false
+	}
+	if c.expired() {
+		return TMDBCollectionDetails{}, false
+	}
+	parts := make([]TMDBCollectionPart, 0, len(c.Parts))
+	for _, p := range c.Parts {
+		parts = append(parts, TMDBCollectionPart{
+			TMDBID:      p.TMDBID,
+			Title:       p.Title,
+			ReleaseDate: p.ReleaseDate,
+			Year:        p.Year,
+			PosterPath:  p.PosterPath,
+		})
+	}
+	return TMDBCollectionDetails{
+		CollectionID:   c.CollectionID,
+		CollectionName: c.CollectionName,
+		PosterPath:     c.PosterPath,
+		Parts:          parts,
+	}, true
+}
+
+func (d *diskDiscoveryCache) putCollection(coll TMDBCollectionDetails) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_ = d.ensureDir()
+	path := d.abs(collectionCacheFile(coll.CollectionID))
+	cp := make([]cachedCollectionPart, len(coll.Parts))
+	for i, p := range coll.Parts {
+		cp[i] = cachedCollectionPart{
+			TMDBID:      p.TMDBID,
+			Title:       p.Title,
+			ReleaseDate: p.ReleaseDate,
+			Year:        p.Year,
+			PosterPath:  p.PosterPath,
+		}
+	}
+	c := cachedCollection{
+		cachedEnvelope: cachedEnvelope{
+			Version:    discoveryCacheJSONVersion,
+			CachedAt:   time.Now().UTC(),
+			TTLSeconds: int64(discoveryCacheCollectionTTL / time.Second),
+		},
+		CollectionID:   coll.CollectionID,
+		CollectionName: coll.CollectionName,
+		PosterPath:     coll.PosterPath,
+		Parts:          cp,
 	}
 	_ = writeJSONAtomic(path, c)
 }

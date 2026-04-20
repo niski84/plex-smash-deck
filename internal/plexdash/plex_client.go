@@ -44,6 +44,8 @@ type Movie struct {
 	PartKey           string // e.g. /library/parts/12345/file.mp4
 	FileContainer     string // e.g. mp4, mkv
 	PartSize          int64
+	CollectionID      int    `json:"collectionId,omitempty"`   // TMDB collection id; 0 = none/unknown
+	CollectionName    string `json:"collectionName,omitempty"` // TMDB collection name
 }
 
 type CreatePlaylistResult struct {

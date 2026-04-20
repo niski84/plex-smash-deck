@@ -124,6 +124,7 @@ type FanartLogEntry struct {
 type localPlaybackSend struct {
 	Target       string
 	Titles       []string
+	RatingKeys   []string // parallel to Titles; may be shorter if unknown
 	SentAt       time.Time
 	Source       string // e.g. movies_play, playlist_play
 	PlaylistName string
@@ -136,6 +137,7 @@ type localPlaybackSend struct {
 type persistedPlaybackState struct {
 	Target       string   `json:"target"`
 	Titles       []string `json:"titles"`
+	RatingKeys   []string `json:"ratingKeys,omitempty"`
 	SentAt       string   `json:"sentAt"`
 	Source       string   `json:"source"`
 	PlaylistName string   `json:"playlistName,omitempty"`
@@ -233,6 +235,7 @@ func (s *Server) loadPlaybackState() {
 	s.localPlayback = localPlaybackSend{
 		Target:       raw.Target,
 		Titles:       raw.Titles,
+		RatingKeys:   raw.RatingKeys,
 		SentAt:       t,
 		Source:       raw.Source,
 		PlaylistName: raw.PlaylistName,
@@ -249,6 +252,7 @@ func (s *Server) persistPlaybackState(state localPlaybackSend) {
 	raw := persistedPlaybackState{
 		Target:       state.Target,
 		Titles:       state.Titles,
+		RatingKeys:   state.RatingKeys,
 		SentAt:       state.SentAt.UTC().Format(time.RFC3339),
 		Source:       state.Source,
 		PlaylistName: state.PlaylistName,
@@ -439,7 +443,7 @@ func pickPrimarySession(sessions []PlaybackSession, targetName string) (Playback
 	return sessions[0], true, true
 }
 
-func (s *Server) recordLocalPlayback(target string, titles []string, source, playlistName string, shuffle bool) {
+func (s *Server) recordLocalPlayback(target string, titles, ratingKeys []string, source, playlistName string, shuffle bool) {
 	if len(titles) == 0 {
 		return
 	}
@@ -457,6 +461,7 @@ func (s *Server) recordLocalPlayback(target string, titles []string, source, pla
 	s.localPlayback = localPlaybackSend{
 		Target:       target,
 		Titles:       clean,
+		RatingKeys:   ratingKeys,
 		SentAt:       time.Now(),
 		Source:       source,
 		PlaylistName: playlistName,
@@ -465,6 +470,24 @@ func (s *Server) recordLocalPlayback(target string, titles []string, source, pla
 	st := s.localPlayback
 	s.playbackMu.Unlock()
 	s.persistPlaybackState(st)
+}
+
+// findRatingKeyByTitle matches a "Title (Year)" string against the movie library.
+func findRatingKeyByTitle(movies []Movie, titleYear string) string {
+	// Strip " (Year)" suffix if present.
+	clean := titleYear
+	if idx := len(titleYear) - 1; idx > 0 && titleYear[idx] == ')' {
+		if open := len(titleYear) - 6; open > 0 && titleYear[open] == '(' {
+			clean = strings.TrimSpace(titleYear[:open])
+		}
+	}
+	lower := strings.ToLower(clean)
+	for _, m := range movies {
+		if strings.ToLower(m.Title) == lower {
+			return m.RatingKey
+		}
+	}
+	return ""
 }
 
 func buildPlaybackStatusPayload(cfg Config, sessions []PlaybackSession, sessionsErr error, local localPlaybackSend) map[string]any {
@@ -483,6 +506,7 @@ func buildPlaybackStatusPayload(cfg Config, sessions []PlaybackSession, sessions
 		localPayload = map[string]any{
 			"target":       local.Target,
 			"titles":       local.Titles,
+			"ratingKeys":   local.RatingKeys,
 			"sentAt":       local.SentAt.UTC().Format(time.RFC3339),
 			"source":       local.Source,
 			"playlistName": local.PlaylistName,
@@ -548,6 +572,21 @@ func (s *Server) handlePlaybackStatus(w http.ResponseWriter, r *http.Request) {
 	s.playbackMu.RLock()
 	local := s.localPlayback
 	s.playbackMu.RUnlock()
+	// Fill in any missing ratingKeys from the in-memory movie library.
+	if len(local.Titles) > 0 && len(local.RatingKeys) < len(local.Titles) {
+		s.mlMu.RLock()
+		movies := s.mlMovies
+		s.mlMu.RUnlock()
+		enriched := make([]string, len(local.Titles))
+		copy(enriched, local.RatingKeys)
+		for i, title := range local.Titles {
+			if i < len(local.RatingKeys) && local.RatingKeys[i] != "" {
+				continue
+			}
+			enriched[i] = findRatingKeyByTitle(movies, title)
+		}
+		local.RatingKeys = enriched
+	}
 	data := buildPlaybackStatusPayload(cfg, sessions, sessionsErr, local)
 	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: data})
 }
@@ -558,6 +597,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/connectivity", s.handleConnectivity)
 	mux.HandleFunc("/api/settings/caches", s.handleSettingsCaches)
+	mux.HandleFunc("/api/settings/active-plex-url", s.handleActivePlexURL)
 	mux.HandleFunc("/api/settings", s.handleSettings)
 	// Register /api/movies/* before /api/movies so path matching is unambiguous across Go versions.
 	mux.HandleFunc("/api/shows/hover-meta", s.handleShowsHoverMeta)
@@ -579,6 +619,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/movies/sync-recent", s.handleMoviesSyncRecent)
 	mux.HandleFunc("/api/movies/play", s.handleMoviesPlay)
 	mux.HandleFunc("/api/movies", s.handleMovies)
+	mux.HandleFunc("/api/tmdb/collection", s.handleTMDBCollection)
 	mux.HandleFunc("/api/omdb-ratings", s.handleOMDbRatings)
 	mux.HandleFunc("/api/branding/banner-thumb", s.handleBrandingBannerThumb)
 	mux.HandleFunc("/api/genres", s.handleGenres)
@@ -598,6 +639,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/discovery/poll", s.handleDiscoveryPoll)
 	mux.HandleFunc("/api/discovery/cache/invalidate", s.handleDiscoveryCacheInvalidate)
 	mux.HandleFunc("/api/discovery/poster", s.handleDiscoveryPoster)
+	mux.HandleFunc("/api/discovery/movie-credits", s.handleDiscoveryMovieCredits)
 	mux.HandleFunc("/api/discovery/radarr/add", s.handleDiscoveryAddToRadarr)
 	mux.HandleFunc("/api/snapshots/latest-diff", s.handleSnapshotLatestDiff)
 	mux.HandleFunc("/api/snapshots/missing", s.handleSnapshotMissing)
@@ -625,8 +667,11 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/stream/cache", s.handleStreamCacheList)
 	mux.HandleFunc("/api/stream/", s.handleStream)
 
-	// Static UI: disk (repo / beside binary) or embedded in the binary (see EnsureDashboardUI).
+	// Old dashboard at /.
 	mux.Handle("/", DashboardFileServer())
+
+	// New dashboard at /beta.
+	s.registerBetaRoutes(mux)
 
 	return requestLogMiddleware(mux)
 }
@@ -727,6 +772,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		req.PlexBaseURL = strings.TrimRight(req.PlexBaseURL, "/")
+		req.PlexBaseURLOverride = req.PlexBaseURL // keep override in sync with any manual edit
 		req.RadarrURL = strings.TrimRight(req.RadarrURL, "/")
 		if req.Port == "" {
 			req.Port = s.snapshot().Port
@@ -782,6 +828,44 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	default:
 		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
 	}
+}
+
+// handleActivePlexURL switches the active Plex base URL in-memory and persists it to disk.
+// The movie-list cache is NOT invalidated — it is keyed by LibraryKey, so the same
+// cached titles are reused regardless of which address is active.
+func (s *Server) handleActivePlexURL(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+		return
+	}
+	var req struct {
+		URL string `json:"url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "invalid JSON"})
+		return
+	}
+	u := strings.TrimRight(strings.TrimSpace(req.URL), "/")
+	if u == "" {
+		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "url required"})
+		return
+	}
+	cfg := s.snapshot()
+	if cfg.PlexBaseURL == u {
+		respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"url": u, "unchanged": true}})
+		return
+	}
+	cfg.PlexBaseURL = u
+	cfg.PlexBaseURLOverride = u // survives .env merge on restart
+	s.replaceConfig(cfg)
+	// Invalidate the remote-count cache so the next cache-status poll re-fetches
+	// from the new address rather than serving a stale count from the old one.
+	s.remoteCountMu.Lock()
+	s.remoteCountAt = time.Time{}
+	s.remoteCountMu.Unlock()
+	// Persist so the active URL survives a process restart.
+	_ = SavePersistedConfig(s.settingsPath, cfg)
+	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"url": u}})
 }
 
 func (s *Server) handleMovies(w http.ResponseWriter, r *http.Request) {
@@ -881,6 +965,178 @@ func (s *Server) handleMoviesHoverMeta(w http.ResponseWriter, r *http.Request) {
 			"imdbId":        imdbID,
 		},
 	})
+}
+
+// handleTMDBCollection: GET /api/tmdb/collection?tmdbId=X
+// Returns the TMDB collection that contains the movie with the given TMDB id,
+// with each part annotated with owned=true/false based on the current library.
+func (s *Server) handleTMDBCollection(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+		return
+	}
+	tmdbIDStr := strings.TrimSpace(r.URL.Query().Get("tmdbId"))
+	if tmdbIDStr == "" {
+		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "tmdbId required"})
+		return
+	}
+	tmdbID, err := strconv.Atoi(tmdbIDStr)
+	if err != nil || tmdbID <= 0 {
+		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "invalid tmdbId"})
+		return
+	}
+	cfg := s.snapshot()
+	if strings.TrimSpace(cfg.TMDBAPIKey) == "" {
+		respondJSON(w, http.StatusServiceUnavailable, apiResponse{Success: false, Error: "TMDB API key not configured"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	cache := newDiskDiscoveryCache(defaultDiscoveryCacheDir())
+
+	// Step 1: get collection ID from movie details (cached).
+	var collectionID int
+	var collectionName string
+	if det, ok := cache.getMovieDetails(tmdbID); ok && det.OK && det.CollectionID > 0 {
+		collectionID = det.CollectionID
+		collectionName = det.CollectionName
+	} else {
+		d, err2 := tmdbFetchMovieDetails(ctx, cfg.TMDBAPIKey, tmdbID)
+		if err2 != nil {
+			respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: "tmdb fetch failed: " + err2.Error()})
+			return
+		}
+		// Persist for next time.
+		cache.putMovieDetails(tmdbID, fetchedMovieDetails{
+			OK:             true,
+			Overview:       d.Overview,
+			Genres:         d.GenreNames,
+			VoteAverage:    d.VoteAverage,
+			Runtime:        d.Runtime,
+			PosterURL:      d.PosterURL,
+			PosterPath:     d.PosterPath,
+			OriginalLanguage: d.OriginalLanguage,
+			IMDbID:         d.IMDbID,
+			Video:          d.Video,
+			CollectionID:   d.CollectionID,
+			CollectionName: d.CollectionName,
+		})
+		collectionID = d.CollectionID
+		collectionName = d.CollectionName
+	}
+	if collectionID <= 0 {
+		// Movie is not part of a collection.
+		respondJSON(w, http.StatusOK, apiResponse{
+			Success: true,
+			Data: map[string]any{
+				"collectionId":   0,
+				"collectionName": collectionName,
+				"parts":          []any{},
+			},
+		})
+		return
+	}
+
+	// Step 2: get collection details (cached).
+	var coll TMDBCollectionDetails
+	if c, ok := cache.getCollection(collectionID); ok {
+		coll = c
+	} else {
+		coll, err = tmdbFetchCollectionDetails(ctx, cfg.TMDBAPIKey, collectionID)
+		if err != nil {
+			respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: "tmdb collection fetch failed: " + err.Error()})
+			return
+		}
+		cache.putCollection(coll)
+	}
+
+	// Step 3: cross-reference with library.
+	s.mlMu.RLock()
+	movies := s.mlMovies
+	s.mlMu.RUnlock()
+	byTMDB := make(map[int]Movie, len(movies))
+	for _, m := range movies {
+		if m.TMDBID > 0 {
+			byTMDB[m.TMDBID] = m
+		}
+	}
+	for i := range coll.Parts {
+		if m, ok := byTMDB[coll.Parts[i].TMDBID]; ok {
+			coll.Parts[i].Owned = true
+			coll.Parts[i].RatingKey = m.RatingKey
+		}
+	}
+
+	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: coll})
+}
+
+// EnrichCollectionIDsInBackground runs after library warm-up, fetching TMDB
+// collection IDs for movies that have a TMDB id but no CollectionID stored.
+// Results are saved back to the in-memory slice and the disk library cache.
+func (s *Server) EnrichCollectionIDsInBackground(ctx context.Context) {
+	cfg := s.snapshot()
+	if strings.TrimSpace(cfg.TMDBAPIKey) == "" {
+		return
+	}
+	cache := newDiskDiscoveryCache(defaultDiscoveryCacheDir())
+
+	s.mlMu.RLock()
+	movies := append([]Movie(nil), s.mlMovies...)
+	s.mlMu.RUnlock()
+
+	updated := 0
+	for i := range movies {
+		if ctx.Err() != nil {
+			break
+		}
+		m := &movies[i]
+		if m.TMDBID <= 0 || m.CollectionID != 0 {
+			continue
+		}
+		// Check disk cache first — avoid an API call if we already fetched this movie.
+		if det, ok := cache.getMovieDetails(m.TMDBID); ok && det.OK {
+			if det.CollectionID > 0 {
+				m.CollectionID = det.CollectionID
+				m.CollectionName = det.CollectionName
+				updated++
+			}
+			continue
+		}
+		// Fetch from TMDB (throttled: 1 request per 150ms ≈ 6/sec, well under 50/sec limit).
+		time.Sleep(150 * time.Millisecond)
+		d, err := tmdbFetchMovieDetails(ctx, cfg.TMDBAPIKey, m.TMDBID)
+		if err != nil {
+			continue
+		}
+		cache.putMovieDetails(m.TMDBID, fetchedMovieDetails{
+			OK:             true,
+			Overview:       d.Overview,
+			Genres:         d.GenreNames,
+			VoteAverage:    d.VoteAverage,
+			Runtime:        d.Runtime,
+			PosterURL:      d.PosterURL,
+			PosterPath:     d.PosterPath,
+			OriginalLanguage: d.OriginalLanguage,
+			IMDbID:         d.IMDbID,
+			Video:          d.Video,
+			CollectionID:   d.CollectionID,
+			CollectionName: d.CollectionName,
+		})
+		if d.CollectionID > 0 {
+			m.CollectionID = d.CollectionID
+			m.CollectionName = d.CollectionName
+			updated++
+		}
+	}
+	if updated == 0 {
+		return
+	}
+	// Write updated slice back.
+	s.mlMu.Lock()
+	s.mlMovies = movies
+	s.mlMu.Unlock()
+	s.saveLibraryMemoryToDisk(cfg, movies)
+	fmt.Printf("[collections] enriched %d movies with TMDB collection IDs\n", updated)
 }
 
 // handleOMDbRatings: GET /api/omdb-ratings?tmdbId=123 or &imdbId=tt1234567
@@ -1261,7 +1517,7 @@ func (s *Server) handleShowsPlay(w http.ResponseWriter, r *http.Request) {
 			respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: err.Error()})
 			return
 		}
-		s.recordLocalPlayback(player.Name, titles, "show_play_companion", "", false)
+		s.recordLocalPlayback(player.Name, titles, nil, "show_play_companion", "", false)
 		respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"count": 1, "target": player.Name, "transport": "companion"}})
 		return
 	}
@@ -1270,7 +1526,7 @@ func (s *Server) handleShowsPlay(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: err.Error()})
 		return
 	}
-	s.recordLocalPlayback(targetName, titles, "show_play", "", false)
+	s.recordLocalPlayback(targetName, titles, nil, "show_play", "", false)
 	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"count": len(streamItems), "target": targetName}})
 }
 
@@ -1536,6 +1792,40 @@ func (s *Server) handleMoviesPlay(w http.ResponseWriter, r *http.Request) {
 	}
 
 	transport := strings.ToLower(strings.TrimSpace(req.Transport))
+
+	// "local" transport: serve the movie through this machine instead of pointing
+	// the TV directly at Plex. Stream URL becomes http://<this-host>/api/stream/<rk>.
+	// A background preload is kicked off so the file starts downloading immediately;
+	// the TV can start playing before the download completes (progressive serving).
+	if transport == "local" {
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+		localBase := scheme + "://" + r.Host
+		streamItems = streamItems[:0] // rebuild with local URLs
+		for _, item := range req.Items {
+			rk := strings.TrimSpace(item.RatingKey)
+			mimeContainer := item.Container
+			if mimeContainer == "" {
+				mimeContainer = "mp4"
+			}
+			streamItems = append(streamItems, WebOSStreamItem{
+				StreamURL: localBase + "/api/stream/" + rk,
+				Title:     item.Title,
+				Container: mimeContainer,
+				Size:      item.PartSize,
+				RatingKey: rk,
+			})
+			// Start preloading in background — TV can start playing while this downloads.
+			go func(ratingKey string) {
+				if _, err := s.startStreamDownload(ratingKey); err != nil {
+					fmt.Printf("[local-stream] preload %s: %v\n", ratingKey, err)
+				}
+			}(rk)
+		}
+	}
+
 	if transport == "companion" {
 		if len(req.Items) != 1 {
 			respondJSON(w, http.StatusBadRequest, apiResponse{
@@ -1563,7 +1853,7 @@ func (s *Server) handleMoviesPlay(w http.ResponseWriter, r *http.Request) {
 		if title == "" {
 			title = "item " + rk
 		}
-		s.recordLocalPlayback(player.Name, []string{title}, "movies_play_companion", "", false)
+		s.recordLocalPlayback(player.Name, []string{title}, []string{rk}, "movies_play_companion", "", false)
 		respondJSON(w, http.StatusOK, apiResponse{
 			Success: true,
 			Data: map[string]any{
@@ -1582,10 +1872,12 @@ func (s *Server) handleMoviesPlay(w http.ResponseWriter, r *http.Request) {
 	}
 
 	titles := make([]string, len(streamItems))
+	ratingKeys := make([]string, len(streamItems))
 	for i, it := range streamItems {
 		titles[i] = strings.TrimSpace(it.Title)
+		ratingKeys[i] = it.RatingKey
 	}
-	s.recordLocalPlayback(targetName, titles, "movies_play", "", req.Shuffle)
+	s.recordLocalPlayback(targetName, titles, ratingKeys, "movies_play", "", req.Shuffle)
 
 	respondJSON(w, http.StatusOK, apiResponse{
 		Success: true,
@@ -1998,6 +2290,44 @@ func (s *Server) handleDiscoveryPoll(w http.ResponseWriter, r *http.Request) {
 
 // handleDiscoveryCacheInvalidate removes on-disk TMDB discovery cache files so the
 // next analysis refetches from TMDB. Does not clear the in-memory Plex movie list.
+// handleDiscoveryMovieCredits: GET /api/discovery/movie-credits?tmdbId=...
+// Returns directors and top actors for a TMDB movie ID, using the disk cache.
+func (s *Server) handleDiscoveryMovieCredits(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+		return
+	}
+	tmdbID, err := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("tmdbId")))
+	if err != nil || tmdbID <= 0 {
+		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "tmdbId required"})
+		return
+	}
+	cfg := s.snapshot()
+	if strings.TrimSpace(cfg.TMDBAPIKey) == "" {
+		respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"directors": []string{}, "actors": []string{}}})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+	defer cancel()
+	cache := newDiskDiscoveryCache(defaultDiscoveryCacheDir())
+	mc, err := tmdbMovieCreditsForMovieCached(ctx, cfg.TMDBAPIKey, tmdbID, cache, nil)
+	if err != nil {
+		respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: err.Error()})
+		return
+	}
+	actors := mc.Actors
+	if len(actors) > 10 {
+		actors = actors[:10]
+	}
+	respondJSON(w, http.StatusOK, apiResponse{
+		Success: true,
+		Data: map[string]any{
+			"directors": mc.Directors,
+			"actors":    actors,
+		},
+	})
+}
+
 func (s *Server) handleDiscoveryCacheInvalidate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
@@ -2245,7 +2575,7 @@ func (s *Server) handlePlayPlaylist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(result.SentTitles) > 0 {
-		s.recordLocalPlayback(result.TargetClient, result.SentTitles, "playlist_play", result.PlaylistTitle, false)
+		s.recordLocalPlayback(result.TargetClient, result.SentTitles, nil, "playlist_play", result.PlaylistTitle, false)
 	}
 	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: result})
 }

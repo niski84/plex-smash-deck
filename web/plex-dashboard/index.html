@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>plex-smash-deck</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <style>
     :root {
       --bg-1: #1a1e30;
@@ -1526,6 +1527,12 @@
     .snap-compare-row select { flex: 1; min-width: 180px; }
     #snapStatus { margin-left: 12px; }
     #snapshotsTakenAt { font-size: 12px; color: #6b7280; }
+    .snap-title-link {
+      background: none; border: none; padding: 0; cursor: pointer;
+      color: inherit; font: inherit; text-align: left;
+      text-decoration: underline dotted; text-underline-offset: 2px;
+    }
+    .snap-title-link:hover { color: #a5b4fc; }
 
     /* Pattern analysis card */
     #snapDropPatterns, #snapDiffPatterns { margin-top: 18px; display: none; }
@@ -4753,6 +4760,19 @@
       return blob.includes(qLower);
     }
 
+    function goToDashboardSearch(title, scope) {
+      const q = String(title || '').trim();
+      if (!q) return;
+      activateMainTab('dashboard');
+      const searchEl = document.getElementById('movieSearch');
+      if (searchEl) searchEl.value = q;
+      const radioScope = (scope === 'actor') ? 'actor' : (scope === 'director') ? 'director' : 'all';
+      const radio = document.querySelector(`input[name="movieSearchScope"][value="${radioScope}"]`);
+      if (radio) radio.checked = true;
+      filterMovieCards();
+      if (searchEl) { searchEl.focus(); try { searchEl.select(); } catch (_) {} }
+    }
+
     function applyDashboardSearchFromCredit(name, kind) {
       const q = String(name || '').trim();
       if (!q) return;
@@ -4794,6 +4814,7 @@
         if (moviesDisplayFiltered !== null) {
           cancelPrefetch();
           moviesDisplayFiltered = null;
+          if (typeof window._hideMovieInfoImmediate === 'function') window._hideMovieInfoImmediate();
           grid.innerHTML = '';
           allCardData = [];
           moviesMaterializedCount = 0;
@@ -4829,13 +4850,19 @@
       moviesDisplayFiltered = filtered;
 
       // Rebuild grid with first chunk of matching movies
+      if (typeof window._hideMovieInfoImmediate === 'function') window._hideMovieInfoImmediate();
       grid.innerHTML = '';
       allCardData = [];
       moviesMaterializedCount = 0;
       materializeMovieRange(0, Math.min(MOVIE_GRID_INITIAL, filtered.length));
 
       updateMovieCountDisplay(q, filtered.length, genreOn, ratingOn, decadeOn);
-      (window.self !== window.top ? grid : window).scrollTo({ top: 0, behavior: 'smooth' });
+      // Scroll to the search bar (not page top) so the results are immediately visible.
+      const _toolbar = document.querySelector('.movies-toolbar') || document.getElementById('movieSearch');
+      if (_toolbar) {
+        const _toolbarTop = _toolbar.getBoundingClientRect().top + (window.scrollY || document.documentElement.scrollTop);
+        (window.self !== window.top ? grid : window).scrollTo({ top: Math.max(0, _toolbarTop - 8), behavior: 'smooth' });
+      }
       schedulePrefetch();
     }
 
@@ -5066,7 +5093,9 @@
         if (scope === 'all') {
           for (const m of lib) {
             add(m.Title);
-            if (out.length >= 28) break;
+            for (const a of dashboardCreditNameList(m.Actors)) add(a);
+            for (const d of dashboardCreditNameList(m.Directors)) add(d);
+            if (out.length >= 40) break;
           }
         } else if (scope === 'actor') {
           for (const m of lib) {
@@ -6567,6 +6596,8 @@
 
       function positionPopup(cardRect) {
         if (!cardRect) return;
+        // A detached element returns a zero rect — bail out to avoid upper-left drift.
+        if (cardRect.width === 0 && cardRect.height === 0) return;
         const margin = 8;
         /* Overlap removes the dead zone where the cursor leaves the card before reaching the panel. */
         const sideOverlap = 14;
@@ -7140,6 +7171,9 @@
         show();
         suspendedForLightbox = false;
       };
+
+      // Expose to outer scope (filterMovieCards lives outside this IIFE).
+      window._hideMovieInfoImmediate = hideMovieInfoImmediate;
     }());
 
     // Hero banner: same #movieInfoPopup as dashboard cards (with Play when PartKey exists).
@@ -10081,7 +10115,13 @@
         movies.forEach(m => {
           const li = document.createElement('li');
           li.className = cls;
-          li.textContent = movieLabel(m);
+          const title = m.title || m.Title || '';
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'snap-title-link';
+          btn.textContent = movieLabel(m);
+          if (title) btn.addEventListener('click', () => goToDashboardSearch(title, 'title'));
+          li.appendChild(btn);
           ul.appendChild(li);
         });
       }

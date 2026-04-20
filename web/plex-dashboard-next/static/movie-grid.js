@@ -107,18 +107,85 @@ function movieGrid() {
 
     // ── Render state ────────────────────────────────────────────────────────
     displayedCount: 60,
-    selectedMovie: null,
-    popupVisible: false,
-    popupAnchor: null,
     selected: new Set(),
     playbackPath: 'direct',
-    _hoverTimer: null,
-    _hideTimer: null,
+    _suggTimer: null,
+    searchSuggestions: [],
+
+    // ── Library sync status ──────────────────────────────────────────────────
+    cacheStatus: null,   // data from /api/movies/cache-status
+    syncing: false,
+    syncMsg: '',
+    _cachePollTimer: null,
+
+    get cacheLine() {
+      const d = this.cacheStatus;
+      if (!d) return '';
+      if (!d.plexConfigured) return 'Configure Plex in Settings to enable library sync.';
+      if (!d.cachedCount) return 'No movie list loaded — click Refresh to load from Plex.';
+      if (!d.cacheKeyMatches) return 'Library key changed — Refresh to resync.';
+      const age = d.cachedAtISO ? (() => {
+        const secs = Math.round((Date.now() - new Date(d.cachedAtISO).getTime()) / 1000);
+        if (secs < 90) return 'just now';
+        if (secs < 3600) return Math.round(secs / 60) + 'm ago';
+        return Math.round(secs / 3600) + 'h ago';
+      })() : '';
+      const local = d.cachedCount.toLocaleString() + ' titles in memory' + (age ? ' · cached ' + age : '');
+      if (d.remoteCountError) return local + ' · could not read Plex count: ' + d.remoteCountError;
+      if (d.plexRemoteCount == null) return local;
+      const delta = d.deltaVsCache;
+      if (delta == null) return local;
+      if (delta > 0) return local + ` · Plex has ${delta} more title${delta===1?'':'s'} — sync or refresh`;
+      if (delta < 0) return local + ` · ${Math.abs(delta)} title${Math.abs(delta)===1?'':'s'} removed in Plex — Refresh to resync`;
+      return local + ' · in sync with Plex ✓';
+    },
+
+    get syncEnabled() {
+      const d = this.cacheStatus;
+      return !!(d && d.plexConfigured && d.cacheKeyMatches && d.cachedCount > 0 && d.deltaVsCache > 0);
+    },
+
+    async fetchCacheStatus() {
+      try {
+        const r = await fetch('/api/movies/cache-status');
+        const j = await r.json();
+        this.cacheStatus = j.data || j;
+      } catch (e) {}
+    },
+
+    startCachePoll() {
+      clearInterval(this._cachePollTimer);
+      this.fetchCacheStatus();
+      this._cachePollTimer = setInterval(() => this.fetchCacheStatus(), 10 * 60 * 1000);
+    },
+
+    async syncNewTitles() {
+      if (!this.syncEnabled || this.syncing) return;
+      this.syncing = true;
+      this.syncMsg = 'Merging new titles…';
+      try {
+        const r = await fetch('/api/movies/sync-recent', { method: 'POST' });
+        const j = await r.json();
+        const added = j.data?.added ?? 0;
+        if (added > 0) {
+          await this.load(false);
+          this.syncMsg = `Merged ${added} new title${added===1?'':'s'}.`;
+        } else {
+          this.syncMsg = j.data?.message || 'No new titles to merge.';
+        }
+        await this.fetchCacheStatus();
+      } catch (e) {
+        this.syncMsg = 'Sync failed: ' + e.message;
+      }
+      this.syncing = false;
+    },
 
     init() {
-      const reset = () => { this.displayedCount = 60; };
-      this.$watch('searchQuery', reset);
-      this.$watch('searchScope', reset);
+      // Force Alpine to re-evaluate `filtered` by nudging displayedCount even
+      // when it was already 60 — avoids Alpine skipping the update as a no-op.
+      const reset = () => { this.displayedCount = 0; this.displayedCount = 60; };
+      this.$watch('searchQuery', () => { reset(); this.scheduleSuggestions(); });
+      this.$watch('searchScope', () => { reset(); this.scheduleSuggestions(); });
       this.$watch('sortMode', (v) => {
         reset();
         saveSortPrefs({ sort: v, decade: this.decade });
@@ -128,8 +195,8 @@ function movieGrid() {
         reset();
         saveSortPrefs({ sort: this.sortMode, decade: v });
       });
-      // Popup positioning is handled directly in onCardMouseenter via rAF.
       this.load();
+      this.startCachePoll();
       this.$nextTick(() => {
         const sentinel = this.$refs.sentinel;
         if (sentinel) {
@@ -148,6 +215,7 @@ function movieGrid() {
         const j = await r.json();
         this.movies = j.data?.movies || j.movies || [];
         this.displayedCount = 60;
+        this.fetchCacheStatus();
       } catch (e) {
         this.error = e.message;
       } finally {
@@ -444,6 +512,7 @@ function movieGrid() {
       const keys = [...this.selected];
       if (keys.length === 0) return;
       const items = this.movies.filter(m => keys.includes(m.RatingKey));
+      const transport = this.playbackPath === 'direct' ? '' : this.playbackPath;
       try {
         const r = await fetch('/api/movies/play', {
           method: 'POST',
@@ -456,7 +525,8 @@ function movieGrid() {
               title: m.Title + (m.Year ? ' (' + m.Year + ')' : ''),
               partSize: m.PartSize || 0,
             })),
-            shuffle: true,  // original always shuffles batch play
+            shuffle: true,
+            transport,
           }),
         });
         const j = await r.json();
@@ -467,58 +537,41 @@ function movieGrid() {
       }
     },
 
-    // ── Hover popup ──────────────────────────────────────────────────────────
+    // ── Hover popup — delegates to shared $store.moviePopup ──────────────────
+    normalizeForPopup(m) {
+      return {
+        thumbUrl: this.thumbUrl(m.RatingKey),
+        title: m.Title,
+        year: m.Year,
+        rating: m.Rating,
+        contentRating: m.contentRating,
+        durationMs: m.DurationMillis,
+        viewCount: m.ViewCount,
+        fileContainer: m.FileContainer,
+        genres: m.Genres || [],
+        summary: m.Summary,
+        directors: m.Directors || [],
+        actors: m.Actors || [],
+        ratingKey: m.RatingKey,
+        partKey: m.PartKey || '',
+        container: m.FileContainer || 'mp4',
+        partSize: m.PartSize || 0,
+        tmdbId: m.TMDBID || 0,
+        imdbId: m.IMDbID || '',
+        mediaType: 'movie',
+      };
+    },
     onCardMouseenter(event, movie) {
-      clearTimeout(this._hideTimer);
-      clearTimeout(this._hoverTimer);
-      const anchor = event.currentTarget;
-      this._hoverTimer = setTimeout(() => {
-        this.selectedMovie = movie;
-        this.popupAnchor = anchor;
-        this.popupVisible = true;
-        // Double rAF: first rAF is before paint, second ensures layout is complete
-        requestAnimationFrame(() => requestAnimationFrame(() => this._positionPopup(anchor)));
-      }, 500);
+      Alpine.store('moviePopup').show(this.normalizeForPopup(movie), event.currentTarget, { showPlay: true });
     },
     onCardMouseleave() {
-      clearTimeout(this._hoverTimer);
-      this._hideTimer = setTimeout(() => {
-        this.popupVisible = false;
-        this.selectedMovie = null;
-        this.popupAnchor = null;
-      }, 280);
-    },
-    onPopupMouseenter() { clearTimeout(this._hideTimer); },
-    onPopupMouseleave() {
-      this._hideTimer = setTimeout(() => {
-        this.popupVisible = false;
-        this.selectedMovie = null;
-        this.popupAnchor = null;
-      }, 280);
-    },
-
-    _positionPopup(anchor) {
-      const popup = document.getElementById('mg-movie-popup');
-      if (!popup || !anchor) return;
-      const rect = anchor.getBoundingClientRect();
-      const vpw = window.innerWidth;
-      const vph = window.innerHeight;
-      const pw = popup.offsetWidth || 400;
-      const ph = popup.offsetHeight || 320;
-
-      let left = rect.right + 10;
-      let top = rect.top;
-      if (left + pw > vpw - 10) left = rect.left - pw - 10;
-      if (left < 10) left = 10;
-      if (top + ph > vph - 10) top = Math.max(10, vph - ph - 10);
-
-      popup.style.left = left + 'px';
-      popup.style.top = top + 'px';
+      Alpine.store('moviePopup').hide();
     },
 
     // ── Single-movie play ──────────────────────────────────────────────────
     async playMovie(movie) {
       if (!movie) return;
+      const transport = this.playbackPath === 'direct' ? '' : this.playbackPath;
       try {
         const r = await fetch('/api/movies/play', {
           method: 'POST',
@@ -532,6 +585,7 @@ function movieGrid() {
               partSize: movie.PartSize || 0,
             }],
             shuffle: false,
+            transport,
           }),
         });
         const j = await r.json();
@@ -540,6 +594,40 @@ function movieGrid() {
       } catch (e) {
         alert('Play failed: ' + e.message);
       }
+    },
+
+    // ── Search autocomplete ───────────────────────────────────────────────────
+    scheduleSuggestions() {
+      clearTimeout(this._suggTimer);
+      const q = (this.searchQuery || '').trim();
+      if (!q) { this.searchSuggestions = []; return; }
+      this._suggTimer = setTimeout(() => {
+        const scope = this.searchScope;
+        const qq = q.toLowerCase();
+        const seen = new Set();
+        const out = [];
+        const add = s => {
+          const t = String(s).trim();
+          if (!t) return;
+          const k = t.toLowerCase();
+          if (k.includes(qq) && !seen.has(k)) { seen.add(k); out.push(t); }
+        };
+        const limit = scope === 'all' ? 40 : 36;
+        for (const m of this.movies) {
+          if (scope === 'all') {
+            add(m.Title);
+            for (const a of (m.Actors || [])) add(a);
+            for (const d of (m.Directors || [])) add(d);
+          } else if (scope === 'actor') {
+            for (const a of (m.Actors || [])) add(a);
+          } else {
+            for (const d of (m.Directors || [])) add(d);
+          }
+          if (out.length >= limit) break;
+        }
+        out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+        this.searchSuggestions = out.slice(0, 25);
+      }, 90);
     },
 
     // Open stream in a new browser tab / native video player

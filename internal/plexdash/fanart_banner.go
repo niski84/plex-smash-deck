@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
@@ -95,7 +97,25 @@ func bannerScheduleDuration(s string) (d time.Duration, once bool) {
 	}
 }
 
-func sortMoviesForFanartBanner(movies []Movie) []Movie {
+// bannerEntry wraps a Movie with optional Netflix-style recommendation context
+// derived from shared actors with recently-watched titles.
+type bannerEntry struct {
+	Movie
+	RelatedToTitle  string // title of the recently-watched movie this was linked through
+	RelatedViaActor string // actor name that connects them
+}
+
+// buildBannerQueue replaces the old deterministic sort.
+//
+// Scoring: each movie receives a weight from a blend of normalised rating (60%)
+// and log-scaled view count (40%).  Movies that share a top actor with any of
+// the 10 most-recently-watched titles receive a 1.5× boost.  A floor of 0.05
+// ensures every movie in the library can appear in the rotation eventually.
+//
+// The weighted list is then shuffled using the "exponential random keys"
+// technique (Efraimidis & Spirakis 2006) seeded by the UTC calendar day, so
+// the order feels fresh each day without being purely random.
+func buildBannerQueue(movies []Movie) []bannerEntry {
 	out := make([]Movie, 0, len(movies))
 	for _, m := range movies {
 		if strings.TrimSpace(m.RatingKey) == "" {
@@ -103,21 +123,116 @@ func sortMoviesForFanartBanner(movies []Movie) []Movie {
 		}
 		out = append(out, m)
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		vi, vj := out[i].ViewCount, out[j].ViewCount
-		if vi != vj {
-			return vi > vj
+	if len(out) == 0 {
+		return nil
+	}
+
+	// ── Recently watched: last 10 titles with a non-zero last-viewed timestamp ──
+	recent := bannerRecentlyWatched(out, 10)
+
+	// Build actor → recently-watched-movie index (top 3 actors per recent title).
+	type relation struct{ watchedTitle, actor string }
+	actorToWatched := make(map[string]Movie, len(recent)*3)
+	watchedKeys := make(map[string]bool, len(recent))
+	for _, m := range recent {
+		watchedKeys[m.RatingKey] = true
+		for i, actor := range m.Actors {
+			if i >= 3 {
+				break
+			}
+			if _, seen := actorToWatched[actor]; !seen {
+				actorToWatched[actor] = m
+			}
 		}
-		ai, aj := out[i].AddedAtEpoch, out[j].AddedAtEpoch
-		if ai != aj {
-			return ai > aj
+	}
+
+	// Find related movies (share a top-5 actor with a recently-watched title,
+	// but aren't themselves in the recently-watched set).
+	related := make(map[string]relation, 64)
+	for _, m := range out {
+		if watchedKeys[m.RatingKey] {
+			continue
 		}
-		if out[i].Year != out[j].Year {
-			return out[i].Year > out[j].Year
+		for i, actor := range m.Actors {
+			if i >= 5 {
+				break
+			}
+			if watched, ok := actorToWatched[actor]; ok {
+				related[m.RatingKey] = relation{watchedTitle: watched.Title, actor: actor}
+				break
+			}
 		}
-		return out[i].Title < out[j].Title
+	}
+
+	// ── Score each movie ──────────────────────────────────────────────────────
+	maxViews := 1
+	for _, m := range out {
+		if m.ViewCount > maxViews {
+			maxViews = m.ViewCount
+		}
+	}
+
+	weights := make([]float64, len(out))
+	for i, m := range out {
+		// Log scale prevents the single most-watched movie from dominating.
+		logViews := math.Log1p(float64(m.ViewCount)) / math.Log1p(float64(maxViews))
+		normRating := m.Rating / 10.0
+		w := 0.6*normRating + 0.4*logViews
+		if w < 0.05 {
+			w = 0.05 // floor: every movie can appear
+		}
+		if _, ok := related[m.RatingKey]; ok {
+			w *= 1.5 // boost related movies
+		}
+		weights[i] = w
+	}
+
+	// ── Weighted shuffle seeded by UTC calendar day ───────────────────────────
+	daySeed := time.Now().UTC().Truncate(24 * time.Hour).Unix()
+	rng := rand.New(rand.NewSource(daySeed))
+
+	type keyed struct {
+		idx int
+		key float64
+	}
+	keys := make([]keyed, len(out))
+	for i, w := range weights {
+		r := rng.Float64()
+		if r <= 0 {
+			r = 1e-10
+		}
+		keys[i] = keyed{idx: i, key: math.Pow(r, 1.0/w)}
+	}
+	sort.Slice(keys, func(i, j int) bool { return keys[i].key > keys[j].key })
+
+	result := make([]bannerEntry, len(out))
+	for i, k := range keys {
+		m := out[k.idx]
+		e := bannerEntry{Movie: m}
+		if rel, ok := related[m.RatingKey]; ok {
+			e.RelatedToTitle = rel.watchedTitle
+			e.RelatedViaActor = rel.actor
+		}
+		result[i] = e
+	}
+	return result
+}
+
+// bannerRecentlyWatched returns up to n movies sorted by LastViewedAtEpoch desc.
+func bannerRecentlyWatched(movies []Movie, n int) []Movie {
+	var watched []Movie
+	for _, m := range movies {
+		if m.LastViewedAtEpoch > 0 {
+			watched = append(watched, m)
+		}
+	}
+	sort.Slice(watched, func(i, j int) bool {
+		return watched[i].LastViewedAtEpoch > watched[j].LastViewedAtEpoch
 	})
-	return out
+	if len(watched) > n {
+		watched = watched[:n]
+	}
+	return watched
 }
 
 type fanartManifestEntry struct {
@@ -337,25 +452,30 @@ func (s *Server) fanartDownloadToCache(ctx context.Context, sourceURL string, ma
 	return id, nil
 }
 
-func movieToBannerPayload(m Movie) map[string]any {
-	topActors := m.Actors
+func movieToBannerPayload(e bannerEntry) map[string]any {
+	topActors := e.Actors
 	if len(topActors) > 8 {
 		topActors = topActors[:8]
 	}
-	return map[string]any{
-		"ratingKey":   m.RatingKey,
-		"title":       m.Title,
-		"year":        m.Year,
-		"tmdbId":      m.TMDBID,
-		"durationMs":  m.DurationMillis,
-		"viewCount":   m.ViewCount,
-		"rating":      m.Rating,
-		"summary":     m.Summary,
-		"actors":      topActors,
-		"partKey":     m.PartKey,
-		"container":   m.FileContainer,
-		"partSize":    m.PartSize,
+	p := map[string]any{
+		"ratingKey":  e.RatingKey,
+		"title":      e.Title,
+		"year":       e.Year,
+		"tmdbId":     e.TMDBID,
+		"durationMs": e.DurationMillis,
+		"viewCount":  e.ViewCount,
+		"rating":     e.Rating,
+		"summary":    e.Summary,
+		"actors":     topActors,
+		"partKey":    e.PartKey,
+		"container":  e.FileContainer,
+		"partSize":   e.PartSize,
 	}
+	if e.RelatedToTitle != "" {
+		p["relatedToTitle"] = e.RelatedToTitle
+		p["relatedViaActor"] = e.RelatedViaActor
+	}
+	return p
 }
 
 // syncFanartBannerPayload updates in-memory/disk fanart state and returns the same JSON shape as the HTTP handler.
@@ -370,7 +490,7 @@ func (s *Server) syncFanartBannerPayload(ctx context.Context, cfg Config) map[st
 	if err != nil {
 		return map[string]any{"active": false, "error": err.Error()}
 	}
-	queue := sortMoviesForFanartBanner(movies)
+	queue := buildBannerQueue(movies)
 	if len(queue) == 0 {
 		out["reason"] = "no_movies"
 		return out
@@ -397,7 +517,8 @@ func (s *Server) syncFanartBannerPayload(ctx context.Context, cfg Config) map[st
 	}
 
 	idx := s.fanartBannerRotateIdx % len(queue)
-	m := queue[idx]
+	e := queue[idx]
+	m := e.Movie
 
 	movieChanged := m.RatingKey != s.fanartBannerMovieKey
 	if movieChanged {
@@ -473,7 +594,7 @@ func (s *Server) syncFanartBannerPayload(ctx context.Context, cfg Config) map[st
 	return map[string]any{
 		"active":       true,
 		"imageUrl":     imageURL,
-		"movie":        movieToBannerPayload(m),
+		"movie":        movieToBannerPayload(e),
 		"source":       kind,
 		"fetchError":   fetchErr,
 		"rotateIdx":    idx,

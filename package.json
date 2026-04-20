@@ -7,6 +7,8 @@
     "doc": "docs"
   },
   "scripts": {
+    "build:css": "npx @tailwindcss/cli -i ./web/styles/input.css -o ./web/plex-dashboard-next/static/app.css --minify",
+    "dev:css": "npx @tailwindcss/cli -i ./web/styles/input.css -o ./web/plex-dashboard-next/static/app.css --watch",
     "demo": "PLAYWRIGHT_BROWSERS_PATH=/home/nick/.cache/ms-playwright playwright test scripts/demo.spec.ts --config=playwright.config.ts",
     "scroll-tour": "PLAYWRIGHT_BROWSERS_PATH=/home/nick/.cache/ms-playwright playwright test scripts/scroll-tour.spec.ts --config=playwright.config.ts",
     "scroll-tour:gif": "bash scripts/make-scroll-tour-gif.sh",
@@ -31,6 +33,9 @@
   },
   "homepage": "https://github.com/niski84/plex-smash-deck#readme",
   "devDependencies": {
-    "@playwright/test": "^1.58.2"
+    "@playwright/test": "^1.58.2",
+    "@tailwindcss/cli": "^4.1.0",
+    "tailwindcss": "^4.1.0",
+    "daisyui": "^5.0.0"
   }
 }
