@@ -102,19 +102,21 @@ func (s *Server) handleSnapshotLatestDiff(w http.ResponseWriter, r *http.Request
 }
 
 // handleSnapshotMissing: GET /api/snapshots/missing
-// Scans all consecutive snapshot pairs and returns movies that went missing.
+// Scans all consecutive snapshot pairs and returns movies that went missing,
+// plus year-drift events (same movie, different metadata year).
 func (s *Server) handleSnapshotMissing(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	events, err := FindAllMissing()
+	missing, drifts, err := FindAllMissingAndDrift()
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, apiResponse{Error: err.Error()})
 		return
 	}
 	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{
-		"missing": events,
-		"count":   len(events),
+		"missing":   missing,
+		"count":     len(missing),
+		"yearDrift": drifts,
 	}})
 }

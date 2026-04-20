@@ -10,9 +10,13 @@ import (
 )
 
 type Config struct {
-	Port               string
-	PlexBaseURL        string
-	PlexToken          string
+	Port        string
+	PlexBaseURL string
+	// PlexBaseURLOverride, when non-empty, replaces PlexBaseURL after all config
+	// merging is done. This lets the address-switcher persist across restarts even
+	// when PLEX_BASE_URL is set in .env (which would otherwise always win).
+	PlexBaseURLOverride string `json:"PlexBaseURLOverride,omitempty"`
+	PlexToken           string
 	LibraryKey         string
 	TargetClientName   string
 	AutoTargetDetected bool
@@ -134,6 +138,10 @@ func LoadConfig() (Config, error) {
 	}
 	applyFanartEnvOverrides(&cfg)
 	migrateLegacyLGTV(&cfg)
+	// Address override wins over .env — lets the UI switcher survive restarts.
+	if o := strings.TrimRight(strings.TrimSpace(cfg.PlexBaseURLOverride), "/"); o != "" {
+		cfg.PlexBaseURL = o
+	}
 	return cfg, nil
 }
 
@@ -299,6 +307,10 @@ func SavePersistedConfig(path string, cfg Config) error {
 func mergeMissingConfig(dst *Config, src Config) {
 	if dst.PlexBaseURL == "" {
 		dst.PlexBaseURL = src.PlexBaseURL
+	}
+	// Override always wins — copy regardless of whether dst already has a value.
+	if src.PlexBaseURLOverride != "" {
+		dst.PlexBaseURLOverride = src.PlexBaseURLOverride
 	}
 	if dst.PlexToken == "" {
 		dst.PlexToken = src.PlexToken

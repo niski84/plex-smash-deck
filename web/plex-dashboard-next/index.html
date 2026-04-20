@@ -6,9 +6,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
   <title>Plex Dashboard</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/next/static/app.css">
   <script src="/next/static/buttons.js"></script>
   <script src="/next/static/lightbox.js"></script>
+  <script src="/next/static/movie-popup.js"></script>
   <script src="/next/static/movie-grid.js"></script>
   <script src="/next/static/player-card.js"></script>
   <script src="/next/static/settings-tab.js"></script>
@@ -44,6 +46,27 @@
         } catch(e) { console.warn('loadTab', name, e); }
       },
     };
+  }
+
+  // Filter the Dashboard movie grid by actor/director name (stays on dashboard)
+  async function goToDashboardSearch(name, scope) {
+    const A = window.Alpine;
+    if (!A) return;
+    const rootEl = document.getElementById('pd-root');
+    if (rootEl) {
+      A.$data(rootEl).tab = 'dashboard';
+      localStorage.setItem('pd-tab', 'dashboard');
+    }
+    let tries = 0;
+    const fill = () => {
+      const el = document.getElementById('movie-grid-root');
+      if (!el) { if (++tries < 30) setTimeout(fill, 60); return; }
+      const d = A.$data(el);
+      if (!d) { if (++tries < 30) setTimeout(fill, 60); return; }
+      d.searchQuery = name;
+      d.searchScope = scope === 'director' ? 'director' : scope === 'actor' ? 'actor' : 'all';
+    };
+    setTimeout(fill, 80);
   }
 
   // Navigate to Discovery tab pre-filled with a person query
@@ -152,6 +175,135 @@
       <div id="tab-help"      x-show="tab==='help'"      x-cloak></div>
     </main>
 
+  </div>
+
+  <!-- ── Shared movie hover popup ─────────────────────────────────────── -->
+  <div x-data="{ get mp() { return $store.moviePopup; } }"
+       x-show="$store.moviePopup.visible" x-cloak
+       id="shared-movie-popup"
+       @mouseenter="$store.moviePopup.keepOpen()"
+       @mouseleave="$store.moviePopup.hide()"
+       class="fixed z-[9998] bg-zinc-900/95 border border-zinc-700 rounded-xl shadow-2xl p-4 backdrop-blur-sm overflow-y-auto"
+       style="width:min(640px,calc(100vw - 20px));max-height:min(90vh,680px)"
+       :style="'top:'+$store.moviePopup.y+'px;left:'+$store.moviePopup.x+'px'">
+    <template x-if="$store.moviePopup.item">
+      <div class="flex gap-4">
+        <!-- Poster -->
+        <img :src="mp.item.thumbUrl" :alt="mp.item.title"
+             class="w-[280px] min-w-[280px] rounded object-cover self-start cursor-zoom-in"
+             @click.stop="window.lightbox?.open(mp.item.thumbUrl, {alt:mp.item.title, ratingKey:mp.item.ratingKey})"
+             title="Click to view full size + fanart"
+             @error="$event.target.style.opacity='.2'"/>
+        <div class="flex-1 min-w-0 space-y-2" style="overflow-wrap:break-word;word-break:break-word">
+          <div>
+            <p class="text-sm font-semibold text-zinc-100 leading-snug"
+               x-text="mp.item.title+(mp.item.year?' ('+mp.item.year+')':'')"></p>
+            <div class="flex flex-wrap gap-1.5 mt-1.5">
+              <span x-show="mp.item.rating" class="badge badge-xs text-amber-400 border-amber-700/50 bg-amber-950/30"
+                    x-text="'★ '+(Number(mp.item.rating)||0).toFixed(1)"></span>
+              <span x-show="mp.item.contentRating" class="badge badge-xs badge-ghost text-zinc-400"
+                    x-text="mp.item.contentRating"></span>
+              <span x-show="mp.item.durationMs" class="badge badge-xs badge-ghost text-zinc-400"
+                    x-text="mp.fmtDuration(mp.item.durationMs)"></span>
+              <span x-show="mp.item.viewCount>0" class="badge badge-xs badge-ghost text-zinc-400"
+                    x-text="mp.item.viewCount+(mp.item.viewCount===1?' play':' plays')"></span>
+              <span x-show="mp.item.fileContainer" class="badge badge-xs badge-ghost text-zinc-500"
+                    x-text="(mp.item.fileContainer||'').toUpperCase()"></span>
+              <a x-show="mp.item.tmdbId > 0"
+                 :href="'https://www.themoviedb.org/'+(mp.item.mediaType||'movie')+'/'+mp.item.tmdbId"
+                 target="_blank" rel="noopener"
+                 class="badge badge-xs border-teal-700/60 bg-teal-950/40 text-teal-400 hover:bg-teal-900/60 no-underline"
+                 @click.stop>TMDB ↗</a>
+              <a x-show="mp.item.imdbId"
+                 :href="'https://www.imdb.com/title/'+mp.item.imdbId"
+                 target="_blank" rel="noopener"
+                 class="badge badge-xs border-yellow-700/60 bg-yellow-950/40 text-yellow-400 hover:bg-yellow-900/60 no-underline"
+                 @click.stop>IMDb ↗</a>
+            </div>
+          </div>
+          <div x-show="(mp.item.genres||[]).length>0" class="flex flex-wrap gap-1">
+            <template x-for="g in (mp.item.genres||[]).slice(0,4)" :key="g">
+              <span class="badge badge-xs badge-outline text-zinc-500 border-zinc-700" x-text="g"></span>
+            </template>
+          </div>
+          <p x-show="mp.item.summary" class="text-xs text-zinc-400 leading-relaxed"
+             style="display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:break-word;word-break:break-word"
+             x-text="mp.item.summary"></p>
+          <!-- Multi-source ratings -->
+          <div x-show="mp.ratings?.entries?.length > 0" class="space-y-1">
+            <div class="flex flex-wrap items-center gap-1.5">
+              <span x-show="mp.ratingsAvg > 0"
+                    class="badge badge-xs border-indigo-700/60 bg-indigo-950/40 text-indigo-300 font-semibold"
+                    x-text="'Avg ★ ' + mp.ratingsAvg.toFixed(1)"></span>
+              <template x-for="e in (mp.ratings?.entries || [])" :key="e.source">
+                <span class="badge badge-xs" :class="mp.ratingBadgeClass(e.source)"
+                      :title="e.label" x-text="e.label + ' ' + e.display"></span>
+              </template>
+            </div>
+          </div>
+          <div x-show="(mp.item.directors||[]).length>0" class="text-xs text-zinc-500">
+            <span class="text-zinc-600">Dir: </span>
+            <template x-for="(d,i) in (mp.item.directors||[]).slice(0,2)" :key="d">
+              <span>
+                <span x-show="i>0" class="text-zinc-700">, </span>
+                <button @click.stop="goToDashboardSearch(d,'director')" class="hover:text-amber-400 underline decoration-dotted" x-text="d"></button>
+                <button @click.stop="goToDiscovery(d,'director')" class="text-zinc-600 hover:text-sky-400 text-[10px] ml-0.5" title="Explore full filmography">↗</button>
+              </span>
+            </template>
+          </div>
+          <div x-show="(mp.item.actors||[]).length>0" class="text-xs text-zinc-500">
+            <span class="text-zinc-600">Cast: </span>
+            <template x-for="(a,i) in (mp.item.actors||[]).slice(0,5)" :key="a">
+              <span>
+                <span x-show="i>0" class="text-zinc-700">, </span>
+                <button @click.stop="goToDashboardSearch(a,'actor')" class="hover:text-amber-400 underline decoration-dotted" x-text="a"></button>
+                <button @click.stop="goToDiscovery(a,'actor')" class="text-zinc-600 hover:text-sky-400 text-[10px] ml-0.5" title="Explore full filmography">↗</button>
+              </span>
+            </template>
+          </div>
+          <div x-show="mp.opts.showPlay && mp.item.ratingKey" class="flex gap-1.5 mt-1">
+            <button @click.stop="mp.play('tv')" class="btn btn-xs btn-gold flex-1">▶ Play on TV</button>
+            <button @click.stop="mp.play('browser')" class="btn btn-xs btn-ghost border border-zinc-700 text-zinc-400 hover:text-zinc-100 flex-1">🌐 Browser</button>
+          </div>
+
+          <!-- Collection row -->
+          <template x-if="mp.collection && mp.collection.collectionId > 0">
+            <div class="mt-2 pt-2 border-t border-zinc-800">
+              <p class="text-[10px] text-zinc-500 mb-1.5 font-medium tracking-wide uppercase"
+                 x-text="mp.collection.collectionName"></p>
+              <div class="flex gap-1.5 overflow-x-auto pb-1" style="scrollbar-width:thin;scrollbar-color:#3f3f46 transparent">
+                <template x-for="(part, idx) in mp.collection.parts" :key="part.tmdbId">
+                  <button @click.stop="mp.goToCollectionMember(part)"
+                          class="flex-shrink-0 flex flex-col items-center gap-0.5 group/cp"
+                          :title="part.title + ' (' + (part.year||'?') + ')' + (part.owned ? '' : ' — not in library')"
+                          style="width:52px">
+                    <div class="relative w-[52px] h-[78px] rounded overflow-hidden bg-zinc-800"
+                         :class="part.owned ? 'ring-1 ring-teal-600' : 'opacity-40 group-hover/cp:opacity-70'">
+                      <img x-show="part.posterPath"
+                           :src="'/api/discovery/poster?path=' + encodeURIComponent(part.posterPath) + '&size=w92'"
+                           class="w-full h-full object-cover"
+                           @error="$event.target.style.display='none'"/>
+                      <div x-show="!part.posterPath"
+                           class="w-full h-full flex items-center justify-center text-zinc-600 text-[10px] text-center px-0.5"
+                           x-text="part.title"></div>
+                      <!-- "current" marker -->
+                      <div x-show="part.tmdbId === mp.item.tmdbId"
+                           class="absolute inset-0 ring-2 ring-amber-400 rounded pointer-events-none"></div>
+                      <!-- not owned badge -->
+                      <div x-show="!part.owned"
+                           class="absolute bottom-0 inset-x-0 bg-black/70 text-[8px] text-zinc-400 text-center py-0.5">+Add</div>
+                    </div>
+                    <span class="text-[9px] leading-tight text-center w-full truncate"
+                          :class="part.owned ? 'text-zinc-400' : 'text-zinc-600'"
+                          x-text="part.year || ''"></span>
+                  </button>
+                </template>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </template>
   </div>
 
   <!-- ── Scroll-to-top button ─────────────────────────────────────────── -->

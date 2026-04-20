@@ -5,9 +5,6 @@ function heroBanner() {
     imageUrl: '',
     movie: null,
     loaded: false,
-    popupVisible: false,
-    _showTimer: null,
-    _hideTimer: null,
 
     init() {
       this.load();
@@ -31,18 +28,29 @@ function heroBanner() {
       }
     },
 
+    normalizeForPopup(m) {
+      return {
+        thumbUrl: '/api/plex/thumb?ratingKey=' + encodeURIComponent(m.ratingKey),
+        title: m.title,
+        year: m.year,
+        rating: m.rating,
+        durationMs: m.durationMs,
+        summary: m.summary,
+        actors: m.actors || [],
+        directors: [],
+        genres: [],
+        ratingKey: m.ratingKey,
+        partKey: m.partKey || '',
+        container: m.container || 'mp4',
+        partSize: m.partSize || 0,
+      };
+    },
     onBannerMouseenter() {
       if (!this.movie) return;
-      clearTimeout(this._hideTimer);
-      this._showTimer = setTimeout(() => { this.popupVisible = true; }, 350);
+      Alpine.store('moviePopup').show(this.normalizeForPopup(this.movie), this.$el, { showPlay: true });
     },
     onBannerMouseleave() {
-      clearTimeout(this._showTimer);
-      this._hideTimer = setTimeout(() => { this.popupVisible = false; }, 220);
-    },
-    onPopupMouseenter() { clearTimeout(this._hideTimer); },
-    onPopupMouseleave() {
-      this._hideTimer = setTimeout(() => { this.popupVisible = false; }, 220);
+      Alpine.store('moviePopup').hide();
     },
 
     thumbUrl() {

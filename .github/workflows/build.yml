@@ -78,10 +78,20 @@ jobs:
           path: dist/
           merge-multiple: true
 
+      - name: Copy macOS install script
+        run: cp packaging/macos/install.sh dist/install-macos.sh
+
+      - name: Generate SHA-256 checksums
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          files: |
+            dist/*
           generate_release_notes: true
 
   windows_installer:
@@ -98,15 +108,14 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Build Windows binary and package files
+      - name: Build Windows binary
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Path dist/winpkg/web -Force | Out-Null
+          New-Item -ItemType Directory -Path dist/winpkg -Force | Out-Null
           $env:GOOS = "windows"
           $env:GOARCH = "amd64"
           $env:CGO_ENABLED = "0"
           go build -trimpath -ldflags="-s -w" -o "dist/winpkg/plex-dashboard.exe" ./cmd/plex-dashboard
-          Copy-Item -Path "web/plex-dashboard" -Destination "dist/winpkg/web" -Recurse -Force
 
       - name: Install NSIS
         shell: pwsh

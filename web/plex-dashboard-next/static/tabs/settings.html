@@ -8,7 +8,7 @@
     <div class="rounded-2xl border border-white/10 bg-zinc-900/40 p-6 space-y-4">
       <h2 class="font-mono text-xs uppercase tracking-widest" style="color:#e5a00d">🎬 Plex</h2>
       <div class="grid gap-4 md:grid-cols-2">
-        <label class="block space-y-1 md:col-span-2"><span class="text-xs text-zinc-500">Plex Base URL</span>
+        <label class="block space-y-1 md:col-span-2"><span class="text-xs text-zinc-500">Active Plex URL</span>
           <input type="url" x-model="cfg.PlexBaseURL" placeholder="http://192.168.1.x:32400" class="input input-bordered w-full font-mono text-sm bg-zinc-950 border-white/10 text-white focus:border-primary/60"/></label>
         <label class="block space-y-1 md:col-span-2"><span class="text-xs text-zinc-500">Plex Token</span>
           <input type="password" x-model="cfg.PlexToken" placeholder="••••••••••••••••" class="input input-bordered w-full font-mono text-sm bg-zinc-950 border-white/10 text-white focus:border-primary/60"/></label>
@@ -25,6 +25,60 @@
         <label class="flex items-center gap-3 cursor-pointer">
           <input type="checkbox" x-model="cfg.AutoTargetDetected" class="checkbox checkbox-sm"/>
           <span class="text-sm text-zinc-300">Auto-detect target from sessions</span></label>
+      </div>
+
+      <!-- Plex Address Book -->
+      <div class="border-t border-white/5 pt-4 space-y-3">
+        <p class="text-xs font-mono uppercase tracking-wider text-zinc-500">Saved Addresses</p>
+        <p class="text-xs text-zinc-600">Switch between Plex addresses without reloading the movie cache. The same cached library is shared across all addresses.</p>
+
+        <!-- Address list -->
+        <div x-show="plexAddresses.length === 0" class="text-xs text-zinc-600 italic py-1">No saved addresses yet.</div>
+        <div class="space-y-2">
+          <template x-for="addr in plexAddresses" :key="addr.id">
+            <div class="flex items-center gap-2 p-2.5 rounded-lg border"
+                 :class="isActiveAddr(addr.url)
+                   ? 'bg-zinc-800/80 border-emerald-700/50'
+                   : 'bg-zinc-950 border-zinc-800'">
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium leading-tight"
+                   :class="isActiveAddr(addr.url) ? 'text-emerald-300' : 'text-zinc-200'"
+                   x-text="addr.label"></p>
+                <p class="text-xs text-zinc-500 font-mono truncate" x-text="addr.url"></p>
+              </div>
+              <span x-show="isActiveAddr(addr.url)" class="text-xs text-emerald-500 font-mono shrink-0">active</span>
+              <button x-show="!isActiveAddr(addr.url)"
+                      @click="switchToAddress(addr.url)"
+                      :disabled="switchingUrl === addr.url"
+                      class="btn btn-xs btn-ghost text-zinc-400 hover:text-emerald-300 shrink-0">
+                <span x-show="switchingUrl !== addr.url">Use</span>
+                <span x-show="switchingUrl === addr.url" class="loading loading-spinner loading-xs"></span>
+              </button>
+              <button @click="removePlexAddress(addr.id)"
+                      class="btn btn-xs btn-ghost text-zinc-600 hover:text-rose-400 shrink-0">✕</button>
+            </div>
+          </template>
+        </div>
+
+        <!-- Add new address -->
+        <div class="flex gap-2 items-end flex-wrap">
+          <label class="block space-y-1">
+            <span class="text-xs text-zinc-500">Label</span>
+            <input type="text" x-model="newAddrLabel" placeholder="e.g. Local IP"
+                   @keydown.enter="addPlexAddress()"
+                   class="input input-sm bg-zinc-950 border-zinc-700 text-zinc-100 w-32 focus:outline-none"/>
+          </label>
+          <label class="block space-y-1 flex-1 min-w-48">
+            <span class="text-xs text-zinc-500">URL (scheme + host + port)</span>
+            <input type="text" x-model="newAddrUrl" placeholder="http://192.168.1.x:32400 or 192.168.1.x"
+                   @keydown.enter="addPlexAddress()"
+                   class="input input-sm bg-zinc-950 border-zinc-700 text-zinc-100 w-full font-mono focus:outline-none"/>
+          </label>
+          <button @click="addPlexAddress()" class="btn btn-sm btn-ghost text-zinc-400 hover:text-zinc-100 mb-0.5">+ Add</button>
+        </div>
+
+        <p x-show="switchMsg" x-text="switchMsg" class="text-xs"
+           :class="switchMsg.startsWith('Error') ? 'text-rose-400' : 'text-emerald-400'"></p>
       </div>
     </div>
 

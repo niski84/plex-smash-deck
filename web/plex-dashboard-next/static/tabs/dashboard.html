@@ -15,28 +15,6 @@
         </div>
       </div>
     </div>
-    <div x-show="popupVisible && movie" x-cloak
-         @mouseenter="onPopupMouseenter()" @mouseleave="onPopupMouseleave()" @click.stop
-         class="absolute left-0 z-50 rounded-xl shadow-2xl p-4 backdrop-blur-sm mt-2"
-         style="top:100%;width:min(420px,100%);background:rgba(15,18,30,.97);border:1px solid rgba(255,255,255,.12)">
-      <template x-if="movie">
-        <div class="flex gap-3">
-          <img :src="thumbUrl()" :alt="movie.title" class="w-[72px] min-w-[72px] rounded object-cover self-start" style="aspect-ratio:2/3"/>
-          <div class="flex-1 min-w-0 space-y-1.5">
-            <p class="text-sm font-semibold text-zinc-100 leading-snug" x-text="movie.title+(movie.year?' ('+movie.year+')':'')"></p>
-            <div class="flex flex-wrap gap-2 text-xs">
-              <span x-show="movie.rating" x-text="'★ '+(movie.rating||0).toFixed(1)" class="text-amber-400"></span>
-              <span x-show="movie.durationMs" class="text-zinc-400" x-text="fmtDuration(movie.durationMs)"></span>
-            </div>
-            <p x-show="movie.summary" class="text-xs text-zinc-400 leading-relaxed" x-text="movie.summary"></p>
-            <div x-show="(movie.actors||[]).length>0" class="text-xs text-zinc-500">
-              <span class="text-zinc-600">Cast: </span><span x-text="(movie.actors||[]).slice(0,3).join(', ')"></span>
-            </div>
-            <button @click="playBanner()" class="btn btn-xs btn-gold w-full mt-1">▶ Play on TV</button>
-          </div>
-        </div>
-      </template>
-    </div>
   </div>
 
   <!-- Player card -->
@@ -108,11 +86,24 @@
   </div>
 
   <!-- Movie grid -->
-  <div x-data="movieGrid()" x-init="init()" class="space-y-3">
+  <div id="movie-grid-root" x-data="movieGrid()" x-init="init()" class="space-y-3">
     <!-- Controls row 1 -->
     <div class="flex flex-wrap gap-2 items-center">
-      <input x-model="searchQuery" type="search" placeholder="Search by title, actor, or director…"
-             class="input input-sm bg-zinc-900 border-zinc-700 text-zinc-100 placeholder-zinc-500 flex-1 min-w-48 focus:border-zinc-500 focus:outline-none"/>
+      <div class="relative flex-1 min-w-48">
+        <input :value="searchQuery"
+               @input="searchQuery = $event.target.value"
+               @change="searchQuery = $event.target.value"
+               type="text"
+               placeholder="Search by title, actor, or director…"
+               list="movie-search-suggest"
+               autocomplete="off"
+               class="input input-sm bg-zinc-900 border-zinc-700 text-zinc-100 placeholder-zinc-500 w-full focus:border-zinc-500 focus:outline-none pr-6"/>
+        <button x-show="searchQuery" @click="searchQuery=''" type="button"
+                class="absolute right-1.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-200 text-sm leading-none px-0.5">✕</button>
+      </div>
+      <datalist id="movie-search-suggest">
+        <template x-for="s in searchSuggestions" :key="s"><option :value="s"></option></template>
+      </datalist>
       <div x-show="searchQuery.trim()" class="flex items-center gap-2 text-xs text-zinc-500">
         <label class="flex items-center gap-1 cursor-pointer"><input type="radio" name="searchScope" value="all"      x-model="searchScope" class="radio radio-xs"/> all</label>
         <label class="flex items-center gap-1 cursor-pointer"><input type="radio" name="searchScope" value="actor"    x-model="searchScope" class="radio radio-xs"/> actor</label>
@@ -137,6 +128,12 @@
         <span x-show="!loading">↻ Refresh</span>
         <span x-show="loading" class="loading loading-spinner loading-xs"></span>
       </button>
+      <button @click="syncNewTitles()" :disabled="!syncEnabled||syncing"
+              class="btn btn-sm btn-ghost text-zinc-400 hover:text-emerald-300 disabled:opacity-30"
+              :title="syncEnabled?'Merge '+cacheStatus.deltaVsCache+' new title(s) from Plex recently-added (fast, no full reload)':'Enabled when Plex has more titles than this list'">
+        <span x-show="!syncing">⬇ Sync new</span>
+        <span x-show="syncing" class="loading loading-spinner loading-xs"></span>
+      </button>
     </div>
     <!-- Controls row 2 -->
     <div class="flex flex-wrap gap-2 items-center">
@@ -151,12 +148,19 @@
       </select>
       <select x-model="playbackPath" class="select select-sm bg-zinc-900 border-zinc-700 text-zinc-100 focus:outline-none">
         <option value="direct">Direct to TV</option>
+        <option value="local">Via this computer</option>
         <option value="companion">Plex Companion</option>
         <option value="browser">Browser Player</option>
       </select>
       <button @click="selectAll()" class="btn btn-sm btn-ghost text-zinc-400 hover:text-zinc-200">Select All</button>
       <button x-show="selectedCount>0" @click="playSelected()" class="btn btn-sm btn-gold" x-cloak>▶ Play <span x-text="selectedCount"></span> Selected</button>
       <button x-show="selectedCount>0" @click="clearSelected()" class="btn btn-sm btn-ghost text-zinc-500" x-cloak>✕ Clear</button>
+    </div>
+    <!-- Library sync status line -->
+    <div class="flex items-center gap-2 min-h-4">
+      <span x-show="cacheLine" class="text-xs text-zinc-600 leading-relaxed" x-text="cacheLine"
+            :class="cacheStatus?.deltaVsCache>0?'text-amber-600/80':cacheStatus?.deltaVsCache<0?'text-rose-600/60':'text-zinc-600'"></span>
+      <span x-show="syncMsg" class="text-xs text-emerald-400/80" x-text="syncMsg"></span>
     </div>
     <!-- Genre: Include row -->
     <div x-show="genres.length>0" class="flex flex-wrap gap-1.5 items-center">
@@ -208,6 +212,11 @@
               <span x-show="m.PartSize>0" :class="streamHintClass(m)||'text-zinc-600'" x-text="fmtGB(m.PartSize)"
                     :title="'File: '+fmtGB(m.PartSize)+(streamHintClass(m)==='mc-stream-risk'?' · may buffer':streamHintClass(m)==='mc-stream-warn'?' · tight headroom':' · comfortable')"></span>
             </div>
+            <!-- Collection badge (shown once CollectionID is enriched in background) -->
+            <div x-show="m.collectionId > 0"
+                 class="text-[8px] text-teal-500/80 truncate leading-tight mt-0.5"
+                 :title="m.collectionName"
+                 x-text="m.collectionName ? '⬡ ' + m.collectionName.replace(/ Collection$/i,'') : ''"></div>
           </div>
         </div>
       </template>
@@ -219,62 +228,6 @@
       </button>
     </div>
 
-    <!-- Movie hover popup -->
-    <div id="mg-movie-popup" x-show="popupVisible&&selectedMovie" x-cloak
-         @mouseenter="onPopupMouseenter()" @mouseleave="onPopupMouseleave()"
-         class="fixed z-[9998] bg-zinc-900/95 border border-zinc-700 rounded-xl shadow-2xl p-4 backdrop-blur-sm"
-         style="top:0;left:0;width:min(420px,calc(100vw - 20px));max-height:min(90vh,600px);overflow-y:auto">
-      <template x-if="selectedMovie">
-        <div class="flex gap-4">
-          <!-- Poster — click to open lightbox -->
-          <img
-            :src="thumbUrl(selectedMovie.RatingKey)"
-            :alt="selectedMovie.Title"
-            class="w-[90px] min-w-[90px] rounded object-cover self-start cursor-zoom-in"
-            @click.stop="openLightbox(selectedMovie)"
-            title="Click to view full size + fanart"
-          />
-          <div class="flex-1 min-w-0 space-y-2">
-            <div>
-              <p class="text-sm font-semibold text-zinc-100 leading-snug" x-text="selectedMovie.Title+(selectedMovie.Year?' ('+selectedMovie.Year+')':'')"></p>
-              <!-- Pills row -->
-              <div class="flex flex-wrap gap-1.5 mt-1.5">
-                <span x-show="selectedMovie.Rating"       class="badge badge-xs text-amber-400 border-amber-700/50 bg-amber-950/30" x-text="'★ '+(selectedMovie.Rating||0).toFixed(1)"></span>
-                <span x-show="selectedMovie.contentRating" class="badge badge-xs badge-ghost text-zinc-400" x-text="selectedMovie.contentRating"></span>
-                <span x-show="selectedMovie.DurationMillis" class="badge badge-xs badge-ghost text-zinc-400" x-text="fmtDuration(selectedMovie.DurationMillis)"></span>
-                <span x-show="selectedMovie.ViewCount>0"  class="badge badge-xs badge-ghost text-zinc-400" x-text="selectedMovie.ViewCount+(selectedMovie.ViewCount===1?' play':' plays')"></span>
-                <span x-show="selectedMovie.FileContainer" class="badge badge-xs badge-ghost text-zinc-500" x-text="(selectedMovie.FileContainer||'').toUpperCase()"></span>
-              </div>
-            </div>
-            <div x-show="(selectedMovie.Genres||[]).length>0" class="flex flex-wrap gap-1">
-              <template x-for="g in (selectedMovie.Genres||[]).slice(0,4)" :key="g">
-                <span class="badge badge-xs badge-outline text-zinc-500 border-zinc-700" x-text="g"></span>
-              </template>
-            </div>
-            <p x-show="selectedMovie.Summary" class="text-xs text-zinc-400 leading-relaxed"
-               style="display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden"
-               x-text="selectedMovie.Summary"></p>
-            <div x-show="(selectedMovie.Directors||[]).length>0" class="text-xs text-zinc-500">
-              <span class="text-zinc-600">Dir: </span>
-              <template x-for="(d,i) in (selectedMovie.Directors||[]).slice(0,2)" :key="d">
-                <button @click.stop="goToDiscovery(d,'director')" class="hover:text-amber-400 underline decoration-dotted cursor-pointer" x-text="i>0?', '+d:d"></button>
-              </template>
-            </div>
-            <div x-show="(selectedMovie.Actors||[]).length>0" class="text-xs text-zinc-500">
-              <span class="text-zinc-600">Cast: </span>
-              <template x-for="(a,i) in (selectedMovie.Actors||[]).slice(0,5)" :key="a">
-                <button @click.stop="goToDiscovery(a,'actor')" class="hover:text-amber-400 underline decoration-dotted cursor-pointer" x-text="i>0?', '+a:a"></button>
-              </template>
-            </div>
-            <!-- Action buttons -->
-            <div class="flex gap-1.5 mt-1">
-              <button @click.stop="playMovie(selectedMovie)" class="btn btn-xs btn-gold flex-1">▶ Play on TV</button>
-              <button @click.stop="playInBrowser(selectedMovie)" class="btn btn-xs btn-ghost border border-zinc-700 text-zinc-400 hover:text-zinc-100 flex-1" title="Open stream in browser">🌐 Browser</button>
-            </div>
-          </div>
-        </div>
-      </template>
-    </div>
   </div>
 
 </div>

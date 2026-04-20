@@ -1,103 +1,248 @@
 <div x-data="snapshotsTab()" x-init="init()" class="space-y-6 max-w-3xl">
+
+  <!-- Actions bar -->
   <div class="flex flex-wrap items-center gap-3">
     <button @click="takeSnapshot()" :disabled="loading" class="btn btn-sm btn-gold">📸 Take Snapshot</button>
     <button @click="refresh()" :disabled="loading" class="btn btn-sm btn-ghost text-zinc-400">
-      <span x-show="!loading">↻ Refresh</span><span x-show="loading" class="loading loading-spinner loading-xs"></span>
+      <span x-show="!loading">↻ Refresh</span>
+      <span x-show="loading" class="loading loading-spinner loading-xs"></span>
     </button>
-    <span x-show="status" x-text="status" class="text-sm" :class="status.startsWith('Error')?'text-rose-400':'text-emerald-400'"></span>
+    <span x-show="status" x-text="status" class="text-sm"
+          :class="status.startsWith('Error') ? 'text-rose-400' : 'text-emerald-400'"></span>
   </div>
 
-  <div x-show="missing.length>0" class="rounded-xl border border-amber-700/50 bg-amber-950/20 p-4 space-y-2">
-    <p class="text-xs font-mono uppercase tracking-widest text-amber-500">Missing Movies</p>
-    <p class="text-sm text-amber-300" x-text="missing.length+' movies missing from library'"></p>
-    <ul class="max-h-40 overflow-y-auto space-y-0.5">
-      <template x-for="(m,idx) in missing.slice(0,20)" :key="m.Title||idx">
-        <li class="text-xs text-amber-200/70" x-text="m.Title+(m.Year?' ('+m.Year+')':'')"></li>
-      </template>
-      <li x-show="missing.length>20" class="text-xs text-amber-600 italic" x-text="'… and '+(missing.length-20)+' more'"></li>
-    </ul>
-  </div>
+  <!-- Missing movies -->
+  <div x-show="missing.length > 0 || yearDrift.length > 0" class="rounded-xl border border-amber-700/50 bg-amber-950/20 p-4 space-y-3">
+    <p class="text-xs font-mono uppercase tracking-widest text-amber-500">Library Alerts</p>
 
-  <div x-show="latestDiff" class="rounded-2xl border border-white/10 bg-zinc-900/40 p-5 space-y-3">
-    <h3 class="font-mono text-xs uppercase tracking-widest text-zinc-500">Latest Changes</h3>
-    <div class="flex gap-6">
-      <div><p class="text-xs text-zinc-500">Added</p><p class="text-lg font-semibold text-emerald-400" x-text="latestDiff?.added?.length||0"></p></div>
-      <div><p class="text-xs text-zinc-500">Removed</p><p class="text-lg font-semibold text-rose-400" x-text="latestDiff?.removed?.length||0"></p></div>
-    </div>
-    <div x-show="(latestDiff?.added||[]).length>0" class="space-y-1">
-      <p class="text-xs text-zinc-600">New additions:</p>
-      <ul class="space-y-0.5">
-        <template x-for="(t,i) in (latestDiff?.added||[]).slice(0,5)" :key="t.title||i">
-          <li class="text-xs text-emerald-300" x-text="t.title+(t.year?' ('+t.year+')':'')"></li>
+    <!-- Truly missing -->
+    <div x-show="missing.length > 0" class="space-y-1">
+      <p class="text-sm text-rose-400" x-text="missing.length + ' movie' + (missing.length !== 1 ? 's' : '') + ' removed from library'"></p>
+      <ul class="max-h-40 overflow-y-auto space-y-0.5">
+        <template x-for="(m, idx) in missing.slice(0, 20)" :key="(m.movie?.title || m.Title) + idx">
+          <li class="text-xs text-rose-300/80">
+            <button class="hover:text-rose-100 underline decoration-dotted text-left"
+                    @click="typeof goToDashboardSearch === 'function' && goToDashboardSearch(m.movie?.title || m.Title, 'title')"
+                    x-text="(m.movie?.title || m.Title) + (m.movie?.year || m.Year ? ' (' + (m.movie?.year || m.Year) + ')' : '')"></button>
+          </li>
         </template>
-        <li x-show="(latestDiff?.added||[]).length>5" class="text-xs text-zinc-600 italic" x-text="'… and '+((latestDiff?.added||[]).length-5)+' more'"></li>
+        <li x-show="missing.length > 20" class="text-xs text-rose-600 italic"
+            x-text="'… and ' + (missing.length - 20) + ' more'"></li>
       </ul>
     </div>
-    <div x-show="(latestDiff?.removed||[]).length>0" class="space-y-1">
+
+    <!-- Year drift (metadata year change, not a real deletion) -->
+    <div x-show="yearDrift.length > 0" class="space-y-1">
+      <p class="text-sm text-amber-400" x-text="yearDrift.length + ' movie' + (yearDrift.length !== 1 ? 's' : '') + ' with year update (metadata change, not deleted)'"></p>
+      <ul class="max-h-40 overflow-y-auto space-y-0.5">
+        <template x-for="(d, idx) in yearDrift" :key="(d.before?.title || '') + idx">
+          <li class="text-xs text-amber-200/70 flex items-center gap-1">
+            <button class="hover:text-amber-100 underline decoration-dotted text-left"
+                    @click="typeof goToDashboardSearch === 'function' && goToDashboardSearch(d.after?.title || d.before?.title, 'title')"
+                    x-text="(d.before?.title || '?') + ': ' + (d.before?.year || '?') + ' → ' + (d.after?.year || '?')"></button>
+          </li>
+        </template>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Latest Drop (was "Latest Changes") -->
+  <div x-show="latestDiff" class="rounded-2xl border border-white/10 bg-zinc-900/40 p-5 space-y-3">
+    <div class="flex items-center gap-3">
+      <h3 class="font-mono text-xs uppercase tracking-widest text-zinc-500">Latest Drop</h3>
+      <span class="text-xs text-zinc-600" x-show="latestDiff?.from"
+            x-text="fmtDate(latestDiff?.from?.capturedAt) + ' → ' + fmtDate(latestDiff?.to?.capturedAt)"></span>
+    </div>
+    <div class="flex gap-6">
+      <div>
+        <p class="text-xs text-zinc-500">Added</p>
+        <p class="text-lg font-semibold text-emerald-400" x-text="latestDiff?.added?.length || 0"></p>
+      </div>
+      <div>
+        <p class="text-xs text-zinc-500">Removed</p>
+        <p class="text-lg font-semibold text-rose-400" x-text="latestDiff?.removed?.length || 0"></p>
+      </div>
+      <div x-show="(latestDiff?.yearDrift || []).length > 0">
+        <p class="text-xs text-zinc-500">Year Updated</p>
+        <p class="text-lg font-semibold text-amber-400" x-text="(latestDiff?.yearDrift || []).length"></p>
+      </div>
+    </div>
+    <div x-show="(latestDiff?.added || []).length > 0" class="space-y-1">
+      <p class="text-xs text-zinc-600">New additions:</p>
+      <ul class="space-y-0.5" :class="latestDropExpanded ? '' : 'max-h-40 overflow-hidden'">
+        <template x-for="(t, i) in (latestDiff?.added || [])" :key="t.title || i">
+          <li class="text-xs text-emerald-300">
+            <button class="hover:text-emerald-100 underline decoration-dotted text-left"
+                    @click="typeof goToDashboardSearch === 'function' && goToDashboardSearch(t.title, 'title')"
+                    x-text="t.title + (t.year ? ' (' + t.year + ')' : '')"></button>
+          </li>
+        </template>
+      </ul>
+      <button x-show="(latestDiff?.added || []).length > 8"
+              @click="latestDropExpanded = !latestDropExpanded"
+              class="text-xs text-zinc-500 hover:text-zinc-300 mt-1">
+        <span x-text="latestDropExpanded ? '▲ Show less' : '▼ Show all ' + (latestDiff?.added || []).length + ' titles'"></span>
+      </button>
+    </div>
+    <div x-show="(latestDiff?.removed || []).length > 0" class="space-y-1">
       <p class="text-xs text-zinc-600">Removed:</p>
       <ul class="space-y-0.5">
-        <template x-for="(t,i) in (latestDiff?.removed||[]).slice(0,5)" :key="t.title||i">
-          <li class="text-xs text-rose-300" x-text="t.title+(t.year?' ('+t.year+')':'')"></li>
+        <template x-for="(t, i) in (latestDiff?.removed || [])" :key="t.title || i">
+          <li class="text-xs text-rose-300">
+            <button class="hover:text-rose-100 underline decoration-dotted text-left"
+                    @click="typeof goToDashboardSearch === 'function' && goToDashboardSearch(t.title, 'title')"
+                    x-text="t.title + (t.year ? ' (' + t.year + ')' : '')"></button>
+          </li>
         </template>
-        <li x-show="(latestDiff?.removed||[]).length>5" class="text-xs text-zinc-600 italic" x-text="'… and '+((latestDiff?.removed||[]).length-5)+' more'"></li>
+      </ul>
+    </div>
+    <div x-show="(latestDiff?.yearDrift || []).length > 0" class="space-y-1">
+      <p class="text-xs text-zinc-600">Year updated <span class="text-zinc-700">(metadata change, not deleted)</span>:</p>
+      <ul class="space-y-0.5">
+        <template x-for="(d, i) in (latestDiff?.yearDrift || [])" :key="(d.before?.title || '') + i">
+          <li class="text-xs text-amber-400/80">
+            <button class="hover:text-amber-300 underline decoration-dotted text-left"
+                    @click="typeof goToDashboardSearch === 'function' && goToDashboardSearch(d.after?.title || d.before?.title, 'title')"
+                    x-text="(d.before?.title || '?') + ' (' + (d.before?.year || '?') + ' → ' + (d.after?.year || '?') + ')'"></button>
+          </li>
+        </template>
       </ul>
     </div>
   </div>
 
-  <div x-show="snapshots.length>0" class="overflow-x-auto rounded-xl border border-white/10">
-    <table class="table table-sm w-full">
-      <thead class="bg-zinc-900/80">
-        <tr>
-          <th class="text-zinc-500 font-mono text-xs">#</th><th class="text-zinc-500 font-mono text-xs">Captured</th>
-          <th class="text-zinc-500 font-mono text-xs">Movies</th><th class="text-zinc-500 font-mono text-xs">Change</th>
-        </tr>
-      </thead>
-      <tbody>
-        <template x-for="(s,idx) in snapshots" :key="s.id||idx">
-          <tr>
-            <td class="text-zinc-600 text-xs" x-text="idx+1"></td>
-            <td class="text-zinc-300 text-sm" x-text="fmtDate(s.capturedAt)"></td>
-            <td class="text-zinc-200 text-sm" x-text="s.count||'—'"></td>
-            <td class="text-xs font-mono" :class="(s.netChange||0)>0?'text-emerald-400':(s.netChange||0)<0?'text-rose-400':'text-zinc-600'" x-text="fmtChange(s.netChange||0)"></td>
-          </tr>
-        </template>
-      </tbody>
-    </table>
-  </div>
-  <div x-show="snapshots.length===0&&!loading" class="text-center py-12 text-zinc-600 text-sm italic">No snapshots yet</div>
-
-  <div x-show="snapshots.length>=2" class="rounded-2xl border border-white/10 bg-zinc-900/40 p-5 space-y-4">
+  <!-- Compare Snapshots — moved above list -->
+  <div x-show="snapshots.length >= 2" class="rounded-2xl border border-white/10 bg-zinc-900/40 p-5 space-y-4">
     <h3 class="font-mono text-xs uppercase tracking-widest text-zinc-500">Compare Snapshots</h3>
     <div class="flex flex-wrap gap-3 items-end">
-      <label class="block space-y-1"><span class="text-xs text-zinc-500">From</span>
+      <label class="block space-y-1">
+        <span class="text-xs text-zinc-500">From</span>
         <select x-model="compareFrom" class="select select-sm bg-zinc-950 border-zinc-700 text-zinc-100 focus:outline-none">
           <option value="">Select…</option>
-          <template x-for="(s,idx) in snapshots" :key="s.id||idx"><option :value="s.id||s.capturedAt" x-text="fmtDate(s.capturedAt)"></option></template>
-        </select></label>
-      <label class="block space-y-1"><span class="text-xs text-zinc-500">To</span>
+          <template x-for="(s, idx) in snapshots.filter(s=>!s.noChange)" :key="s.id || idx">
+            <option :value="s.id || s.capturedAt" x-text="fmtDate(s.capturedAt)"></option>
+          </template>
+        </select>
+      </label>
+      <label class="block space-y-1">
+        <span class="text-xs text-zinc-500">To</span>
         <select x-model="compareTo" class="select select-sm bg-zinc-950 border-zinc-700 text-zinc-100 focus:outline-none">
           <option value="">Select…</option>
-          <template x-for="(s,idx) in snapshots" :key="s.id||idx"><option :value="s.id||s.capturedAt" x-text="fmtDate(s.capturedAt)"></option></template>
-        </select></label>
-      <button @click="compare()" :disabled="!compareFrom||!compareTo" class="btn btn-sm btn-blue">Compare</button>
+          <template x-for="(s, idx) in snapshots.filter(s=>!s.noChange)" :key="s.id || idx">
+            <option :value="s.id || s.capturedAt" x-text="fmtDate(s.capturedAt)"></option>
+          </template>
+        </select>
+      </label>
+      <button @click="compare()" :disabled="!compareFrom || !compareTo" class="btn btn-sm btn-blue">Compare</button>
     </div>
     <div x-show="diffResult" class="space-y-3">
       <div class="flex gap-6">
-        <div><p class="text-xs text-zinc-500">Added</p><p class="text-lg font-semibold text-emerald-400" x-text="diffResult?.addedCount||(diffResult?.added||[]).length||0"></p></div>
-        <div><p class="text-xs text-zinc-500">Removed</p><p class="text-lg font-semibold text-rose-400" x-text="diffResult?.removedCount||(diffResult?.removed||[]).length||0"></p></div>
+        <div>
+          <p class="text-xs text-zinc-500">Added</p>
+          <p class="text-lg font-semibold text-emerald-400" x-text="diffResult?.addedCount || (diffResult?.added || []).length || 0"></p>
+        </div>
+        <div>
+          <p class="text-xs text-zinc-500">Removed</p>
+          <p class="text-lg font-semibold text-rose-400" x-text="diffResult?.removedCount || (diffResult?.removed || []).length || 0"></p>
+        </div>
+        <div x-show="(diffResult?.yearDrift || []).length > 0">
+          <p class="text-xs text-zinc-500">Year Updated</p>
+          <p class="text-lg font-semibold text-amber-400" x-text="(diffResult?.yearDrift || []).length"></p>
+        </div>
       </div>
-      <div x-show="(diffResult?.added||[]).length>0">
+      <div x-show="(diffResult?.added || []).length > 0">
         <p class="text-xs text-zinc-500 mb-1">Added:</p>
-        <ul class="space-y-0.5 max-h-40 overflow-y-auto">
-          <template x-for="(t,i) in (diffResult?.added||[])" :key="t.title||i"><li class="text-xs text-emerald-300" x-text="t.title+(t.year?' ('+t.year+')':'')"></li></template>
+        <ul class="space-y-0.5 max-h-48 overflow-y-auto">
+          <template x-for="(t, i) in (diffResult?.added || [])" :key="t.title || i">
+            <li class="text-xs text-emerald-300">
+              <button class="hover:text-emerald-100 underline decoration-dotted text-left"
+                      @click="typeof goToDashboardSearch === 'function' && goToDashboardSearch(t.title, 'title')"
+                      x-text="t.title + (t.year ? ' (' + t.year + ')' : '')"></button>
+            </li>
+          </template>
         </ul>
       </div>
-      <div x-show="(diffResult?.removed||[]).length>0">
+      <div x-show="(diffResult?.removed || []).length > 0">
         <p class="text-xs text-zinc-500 mb-1">Removed:</p>
-        <ul class="space-y-0.5 max-h-40 overflow-y-auto">
-          <template x-for="(t,i) in (diffResult?.removed||[])" :key="t.title||i"><li class="text-xs text-rose-300" x-text="t.title+(t.year?' ('+t.year+')':'')"></li></template>
+        <ul class="space-y-0.5 max-h-48 overflow-y-auto">
+          <template x-for="(t, i) in (diffResult?.removed || [])" :key="t.title || i">
+            <li class="text-xs text-rose-300">
+              <button class="hover:text-rose-100 underline decoration-dotted text-left"
+                      @click="typeof goToDashboardSearch === 'function' && goToDashboardSearch(t.title, 'title')"
+                      x-text="t.title + (t.year ? ' (' + t.year + ')' : '')"></button>
+            </li>
+          </template>
+        </ul>
+      </div>
+      <div x-show="(diffResult?.yearDrift || []).length > 0">
+        <p class="text-xs text-zinc-500 mb-1">Year updated <span class="text-zinc-600">(metadata change)</span>:</p>
+        <ul class="space-y-0.5 max-h-48 overflow-y-auto">
+          <template x-for="(d, i) in (diffResult?.yearDrift || [])" :key="(d.before?.title || '') + i">
+            <li class="text-xs text-amber-400/80">
+              <button class="hover:text-amber-300 underline decoration-dotted text-left"
+                      @click="typeof goToDashboardSearch === 'function' && goToDashboardSearch(d.after?.title || d.before?.title, 'title')"
+                      x-text="(d.before?.title || '?') + ' (' + (d.before?.year || '?') + ' → ' + (d.after?.year || '?') + ')'"></button>
+            </li>
+          </template>
         </ul>
       </div>
     </div>
   </div>
+
+  <!-- Snapshot history table -->
+  <div x-show="snapshots.length > 0" class="rounded-xl border border-white/10 overflow-hidden">
+    <div class="overflow-x-auto overflow-y-auto" style="max-height: 380px">
+      <table class="table table-sm w-full">
+        <thead class="bg-zinc-900/80 sticky top-0 z-10">
+          <tr>
+            <th class="text-zinc-500 font-mono text-xs">#</th>
+            <th class="text-zinc-500 font-mono text-xs">Captured</th>
+            <th class="text-zinc-500 font-mono text-xs">Movies</th>
+            <th class="text-zinc-500 font-mono text-xs">Change</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="(s, idx) in snapshots" :key="s.id || idx">
+            <tr :class="s.noChange ? 'opacity-40' : ''">
+              <td class="text-zinc-600 text-xs" x-text="idx + 1"></td>
+              <td class="text-xs" :class="s.noChange ? 'text-zinc-600 italic' : 'text-zinc-300 text-sm'">
+                <span x-text="fmtDate(s.capturedAt)"></span>
+                <span x-show="s.noChange" class="ml-1 text-zinc-600" title="Scheduler ran but library was unchanged — no snapshot file stored">· no changes</span>
+              </td>
+              <td class="text-sm" :class="s.noChange ? 'text-zinc-700' : 'text-zinc-200'" x-text="s.noChange ? '—' : (s.count || '—')"></td>
+              <td class="text-xs font-mono"
+                  :class="s.noChange ? 'text-zinc-700' : (netChange(idx)||0) > 0 ? 'text-emerald-400 cursor-default' : (netChange(idx)||0) < 0 ? 'text-rose-400' : 'text-zinc-600'"
+                  @mouseenter="!s.noChange && onChangeHover($event, idx)"
+                  @mouseleave="onChangeLeave()"
+                  x-text="s.noChange ? '—' : fmtChange(netChange(idx))"></td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div x-show="snapshots.length === 0 && !loading" class="text-center py-12 text-zinc-600 text-sm italic">No snapshots yet</div>
+
+  <!-- Change hover popup -->
+  <div x-show="hoverVisible && (netChange(snapshots.findIndex(s=>s.id===hoverSnap?.id))||0) > 0"
+       x-cloak
+       @mouseenter="keepHoverOpen()"
+       @mouseleave="onChangeLeave()"
+       class="fixed z-[9997] bg-zinc-900 border border-white/15 rounded-xl shadow-2xl p-4 w-72 space-y-2"
+       :style="'top:'+hoverY+'px;left:'+hoverX+'px;max-height:320px;overflow-y:auto'">
+    <div class="flex items-center gap-2">
+      <span class="text-xs font-mono uppercase tracking-widest text-zinc-500">Added</span>
+      <span x-show="hoverLoading" class="loading loading-spinner loading-xs text-zinc-400"></span>
+    </div>
+    <ul class="space-y-0.5" x-show="!hoverLoading && hoverAdded.length > 0">
+      <template x-for="(t, i) in hoverAdded" :key="t.title || i">
+        <li class="text-xs text-emerald-300">
+          <button class="hover:text-emerald-100 underline decoration-dotted text-left w-full"
+                  @click="hoverVisible=false; typeof goToDashboardSearch === 'function' && goToDashboardSearch(t.title, 'title')"
+                  x-text="t.title + (t.year ? ' (' + t.year + ')' : '')"></button>
+        </li>
+      </template>
+    </ul>
+    <p x-show="!hoverLoading && hoverAdded.length === 0" class="text-xs text-zinc-600 italic">No additions found</p>
+  </div>
+
 </div>

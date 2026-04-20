@@ -1,75 +1,254 @@
-<div x-data="discoveryTab()" id="discovery-tab" class="space-y-6 max-w-4xl">
-  <div class="flex gap-1 flex-wrap">
+<div x-data="discoveryTab()" id="discovery-tab" class="space-y-6 max-w-5xl">
+
+  <!-- Mode tabs + cache indicator -->
+  <div class="flex gap-1 flex-wrap items-center">
     <button @click="mode='person'" :class="mode==='person'?'pd-tab-active':'pd-tab-inactive'" class="btn btn-sm">By Person</button>
     <button @click="mode='studio'" :class="mode==='studio'?'pd-tab-active':'pd-tab-inactive'" class="btn btn-sm">By Studio</button>
-    <button @click="mode='year'"   :class="mode==='year'?'pd-tab-active':'pd-tab-inactive'"   class="btn btn-sm">By Year + Rating</button>
+    <button @click="mode='browse'" :class="mode==='browse'?'pd-tab-active':'pd-tab-inactive'" class="btn btn-sm">Browse</button>
+
+    <!-- Stream cache fill indicator -->
+    <div x-show="cacheStats !== null" class="ml-auto flex items-center gap-1.5" :title="cacheTooltip">
+      <!-- Battery shell -->
+      <div class="relative flex items-center">
+        <div class="inline-flex items-center gap-[3px] px-[3px] h-[18px] rounded-[3px] border border-zinc-600 bg-zinc-900/80"
+             :class="cacheActiveDownload ? 'border-amber-500/60' : 'border-zinc-600'">
+          <template x-for="i in [1,2,3,4,5]" :key="i">
+            <div class="w-[5px] h-[10px] rounded-[1.5px] transition-colors duration-500"
+                 :class="cacheFillState >= i
+                   ? (cacheActiveDownload
+                       ? (i === cacheFillState ? 'bg-amber-400 animate-pulse' : 'bg-amber-500')
+                       : 'bg-emerald-500')
+                   : 'bg-zinc-700'">
+            </div>
+          </template>
+        </div>
+        <!-- Battery nub -->
+        <div class="w-[3px] h-[7px] rounded-r-[1px] ml-[1px]"
+             :class="cacheActiveDownload ? 'bg-amber-500/60' : 'bg-zinc-600'"></div>
+      </div>
+      <!-- Download % label — only shown when active -->
+      <span x-show="cacheActiveDownload" class="text-[10px] font-mono text-amber-400/80 tabular-nums"
+            x-text="cacheActiveDownload
+              ? Math.round(cacheActiveDownload.size / cacheActiveDownload.totalSize * 100) + '%'
+              : ''">
+      </span>
+      <!-- Idle label — file count when no active download -->
+      <span x-show="!cacheActiveDownload && cacheStats" class="text-[10px] font-mono text-zinc-600 tabular-nums"
+            x-text="(cacheStats?.items || []).filter(i => i.complete).length + ' cached'">
+      </span>
+    </div>
   </div>
 
+  <!-- Filter panel -->
   <div class="rounded-2xl border border-white/10 bg-zinc-900/40 p-6 space-y-4">
-    <div x-show="mode==='person'" class="grid gap-4 md:grid-cols-2">
-      <label class="block space-y-1"><span class="text-xs text-zinc-500">Person Name</span>
-        <input type="text" x-model="personQuery" placeholder="e.g. Christopher Nolan" class="input input-sm input-bordered w-full bg-zinc-950 border-zinc-700 text-zinc-100"/></label>
-      <label class="block space-y-1"><span class="text-xs text-zinc-500">Role</span>
-        <select x-model="role" class="select select-sm w-full bg-zinc-950 border-zinc-700 text-zinc-100 focus:outline-none">
-          <option value="all">All roles</option><option value="actor">Actor</option><option value="director">Director</option>
-        </select></label>
+
+    <!-- Person mode -->
+    <div x-show="mode==='person'" class="space-y-4">
+      <div class="grid gap-4 md:grid-cols-2">
+        <label class="block space-y-1">
+          <span class="text-xs text-zinc-500">Person Name</span>
+          <input type="text" x-model="personQuery" @input="fetchPersonSuggestions()"
+                 list="person-suggest-list"
+                 placeholder="e.g. Christopher Nolan"
+                 class="input input-sm input-bordered w-full bg-zinc-950 border-zinc-700 text-zinc-100"/>
+          <datalist id="person-suggest-list">
+            <template x-for="s in personSuggestions" :key="s"><option :value="s"></option></template>
+          </datalist>
+        </label>
+        <label class="block space-y-1">
+          <span class="text-xs text-zinc-500">Role</span>
+          <select x-model="role" class="select select-sm w-full bg-zinc-950 border-zinc-700 text-zinc-100 focus:outline-none">
+            <option value="all">All roles</option>
+            <option value="actor">Actor</option>
+            <option value="director">Director</option>
+          </select>
+        </label>
+      </div>
+      <div class="grid gap-4 md:grid-cols-3">
+        <label class="block space-y-1">
+          <span class="text-xs text-zinc-500">Director collaborator <span class="text-zinc-600">(optional)</span></span>
+          <input type="text" x-model="directorFilter"
+                 placeholder="e.g. Steven Spielberg"
+                 class="input input-sm input-bordered w-full bg-zinc-950 border-zinc-700 text-zinc-100"/>
+        </label>
+        <label class="block space-y-1">
+          <span class="text-xs text-zinc-500">Co-actor <span class="text-zinc-600">(optional)</span></span>
+          <input type="text" x-model="coActorFilter"
+                 placeholder="e.g. Tom Hanks"
+                 class="input input-sm input-bordered w-full bg-zinc-950 border-zinc-700 text-zinc-100"/>
+        </label>
+        <label class="block space-y-1">
+          <span class="text-xs text-zinc-500">Compare against playlist <span class="text-zinc-600">(optional)</span></span>
+          <select x-model="playlistTitle" class="select select-sm w-full bg-zinc-950 border-zinc-700 text-zinc-100 focus:outline-none">
+            <option value="">— none —</option>
+            <template x-for="p in playlists" :key="p"><option :value="p" x-text="p"></option></template>
+          </select>
+        </label>
+      </div>
     </div>
+
+    <!-- Studio mode -->
     <div x-show="mode==='studio'" class="grid gap-4 md:grid-cols-2">
-      <label class="block space-y-1"><span class="text-xs text-zinc-500">Studio Name</span>
-        <input type="text" x-model="studioQuery" placeholder="e.g. A24" class="input input-sm input-bordered w-full bg-zinc-950 border-zinc-700 text-zinc-100"/></label>
-    </div>
-    <div x-show="mode==='year'" class="grid gap-4 md:grid-cols-3">
-      <label class="block space-y-1"><span class="text-xs text-zinc-500">Min Year</span>
-        <input type="number" x-model="minYear" placeholder="1990" class="input input-sm input-bordered w-full bg-zinc-950 border-zinc-700 text-zinc-100"/></label>
-      <label class="block space-y-1"><span class="text-xs text-zinc-500">Max Year</span>
-        <input type="number" x-model="maxYear" placeholder="2024" class="input input-sm input-bordered w-full bg-zinc-950 border-zinc-700 text-zinc-100"/></label>
-      <label class="block space-y-1"><span class="text-xs text-zinc-500">Min Rating</span>
-        <select x-model="minRating" class="select select-sm w-full bg-zinc-950 border-zinc-700 text-zinc-100 focus:outline-none">
-          <option value="0">Any</option><option value="5">★ 5+</option><option value="6">★ 6+</option>
-          <option value="7">★ 7+</option><option value="7.5">★ 7.5+</option><option value="8">★ 8+</option>
-          <option value="8.5">★ 8.5+</option><option value="9">★ 9+</option>
-        </select></label>
-    </div>
-    <div class="flex flex-wrap gap-4 items-center pt-2 border-t border-white/5">
-      <label class="flex items-center gap-2 cursor-pointer text-sm text-zinc-300">
-        <input type="checkbox" x-model="excludeNonTheatrical" class="checkbox checkbox-sm"/> Exclude non-theatrical releases
+      <label class="block space-y-1">
+        <span class="text-xs text-zinc-500">Studio / Production Company</span>
+        <input type="text" x-model="studioQuery" @input="fetchStudioSuggestions()"
+               list="studio-suggest-list"
+               placeholder="e.g. A24"
+               class="input input-sm input-bordered w-full bg-zinc-950 border-zinc-700 text-zinc-100"/>
+        <datalist id="studio-suggest-list">
+          <template x-for="s in studioSuggestions" :key="s"><option :value="s"></option></template>
+        </datalist>
       </label>
-      <button @click="analyze()" :disabled="polling" class="btn btn-sm btn-gold">
-        <span x-show="polling" class="loading loading-spinner loading-xs"></span>
-        <span x-show="!polling">Analyze</span>
-      </button>
-      <button @click="clearCache()" class="btn btn-sm btn-ghost text-zinc-500 hover:text-zinc-200">Clear TMDB Cache</button>
-      <span x-show="status" x-text="status" class="text-xs text-zinc-400 ml-auto"></span>
+    </div>
+
+    <!-- Browse mode -->
+    <div x-show="mode==='browse'" class="space-y-4">
+      <div class="grid gap-4 md:grid-cols-3">
+        <label class="block space-y-1">
+          <span class="text-xs text-zinc-500">Min Year</span>
+          <select x-model="minYear" class="select select-sm w-full bg-zinc-950 border-zinc-700 text-zinc-100 focus:outline-none">
+            <option value="">Any</option>
+            <template x-for="y in years" :key="y"><option :value="y" x-text="y"></option></template>
+          </select>
+        </label>
+        <label class="block space-y-1">
+          <span class="text-xs text-zinc-500">Max Year</span>
+          <select x-model="maxYear" class="select select-sm w-full bg-zinc-950 border-zinc-700 text-zinc-100 focus:outline-none">
+            <option value="">Any</option>
+            <template x-for="y in years" :key="y"><option :value="y" x-text="y"></option></template>
+          </select>
+        </label>
+        <label class="block space-y-1">
+          <span class="text-xs text-zinc-500">Min TMDB Rating</span>
+          <select x-model="minRating" class="select select-sm w-full bg-zinc-950 border-zinc-700 text-zinc-100 focus:outline-none">
+            <option value="0">Any</option>
+            <option value="5">★ 5+</option>
+            <option value="6">★ 6+</option>
+            <option value="7">★ 7+</option>
+            <option value="7.5">★ 7.5+</option>
+            <option value="8">★ 8+</option>
+            <option value="8.5">★ 8.5+</option>
+            <option value="9">★ 9+</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <!-- Shared filters (all modes) -->
+    <div class="pt-3 border-t border-white/5 space-y-3">
+      <!-- Genre multi-select -->
+      <div x-show="tmdbGenres.length > 0" class="space-y-1">
+        <span class="text-xs text-zinc-500">Genres <span class="text-zinc-600">(hold Ctrl/Cmd for multiple)</span></span>
+        <select x-model="selectedGenreIds" multiple size="4"
+                class="select select-sm w-full bg-zinc-950 border-zinc-700 text-zinc-100 focus:outline-none"
+                style="height:auto">
+          <template x-for="g in tmdbGenres" :key="g.id">
+            <option :value="String(g.id)" x-text="g.name"></option>
+          </template>
+        </select>
+      </div>
+
+      <div class="flex flex-wrap gap-4 items-center">
+        <label class="flex items-center gap-2 cursor-pointer text-sm text-zinc-300">
+          <input type="checkbox" x-model="excludeNonTheatrical" class="checkbox checkbox-sm"/>
+          Exclude non-theatrical
+        </label>
+        <button @click="analyze()" :disabled="polling" class="btn btn-sm btn-gold">
+          <span x-show="polling" class="loading loading-spinner loading-xs"></span>
+          <span x-show="!polling">Analyze</span>
+        </button>
+        <button @click="clearCache()" class="btn btn-sm btn-ghost text-zinc-500 hover:text-zinc-200">Clear TMDB Cache</button>
+        <span x-show="status" x-text="status" class="text-xs text-zinc-400 ml-auto"></span>
+      </div>
     </div>
   </div>
 
-  <div x-show="results.length>0" class="space-y-3">
-    <div class="flex items-center gap-3">
+  <!-- Results -->
+  <div x-show="results.length > 0" class="space-y-3">
+    <div class="flex flex-wrap items-center gap-3">
       <h3 class="font-mono text-xs uppercase tracking-widest text-zinc-500">Results</h3>
-      <span class="badge badge-sm" x-text="results.length+' total'"></span>
-      <span x-show="missing.length>0" class="badge badge-sm badge-warning" x-text="missing.length+' not in library'"></span>
-      <button x-show="missing.length>0" @click="copyMissing()" class="btn btn-xs btn-ghost text-zinc-400 ml-auto">Copy missing as Markdown</button>
+      <span class="badge badge-sm" x-text="results.length + ' total'"></span>
+      <span x-show="missing.length > 0" class="badge badge-sm badge-warning" x-text="missing.length + ' not in library'"></span>
+      <div class="flex gap-2 ml-auto flex-wrap">
+        <button x-show="missing.length > 0" @click="selectAllMissing()" class="btn btn-xs btn-ghost text-zinc-400">Select all missing</button>
+        <button x-show="selectedRows.size > 0" @click="addSelectedToCart()"
+                class="btn btn-xs btn-ghost text-amber-400"
+                x-text="'Add ' + selectedRows.size + ' to cart'"></button>
+        <button x-show="missing.length > 0" @click="copyMissing()" class="btn btn-xs btn-ghost text-zinc-400">Copy missing</button>
+        <button @click="copyAllTitles()" class="btn btn-xs btn-ghost text-zinc-400">Copy all</button>
+      </div>
     </div>
+
     <div class="overflow-x-auto rounded-xl border border-white/10">
       <table class="table table-sm w-full">
         <thead class="bg-zinc-900/80">
           <tr>
-            <th class="text-zinc-500 font-mono text-xs">#</th><th class="text-zinc-500 font-mono text-xs">Title</th>
-            <th class="text-zinc-500 font-mono text-xs">Year</th><th class="text-zinc-500 font-mono text-xs">In Library</th>
-            <th class="text-zinc-500 font-mono text-xs">TMDB</th><th class="text-zinc-500 font-mono text-xs">Genres</th>
+            <th class="text-zinc-500 font-mono text-xs w-8"></th>
+            <th class="text-zinc-500 font-mono text-xs w-[60px]"></th>
+            <th class="text-zinc-500 font-mono text-xs">#</th>
+            <th class="text-zinc-500 font-mono text-xs cursor-pointer select-none hover:text-zinc-300"
+                @click="setSort('title')">
+              Title <span class="text-zinc-600" x-text="sortIcon('title')"></span>
+            </th>
+            <th class="text-zinc-500 font-mono text-xs cursor-pointer select-none hover:text-zinc-300"
+                @click="setSort('year')">
+              Year <span class="text-zinc-600" x-text="sortIcon('year')"></span>
+            </th>
+            <th class="text-zinc-500 font-mono text-xs cursor-pointer select-none hover:text-zinc-300"
+                @click="setSort('inLibrary')">
+              In Library <span class="text-zinc-600" x-text="sortIcon('inLibrary')"></span>
+            </th>
+            <th class="text-zinc-500 font-mono text-xs cursor-pointer select-none hover:text-zinc-300"
+                @click="setSort('voteAverage')">
+              TMDB <span class="text-zinc-600" x-text="sortIcon('voteAverage')"></span>
+            </th>
+            <th class="text-zinc-500 font-mono text-xs">Genres</th>
             <th class="text-zinc-500 font-mono text-xs"></th>
           </tr>
         </thead>
         <tbody>
-          <template x-for="(r,idx) in results" :key="r.tmdbId||idx">
-            <tr :class="!r.inLibrary?'bg-amber-950/10':''">
-              <td class="text-zinc-600 text-xs" x-text="idx+1"></td>
-              <td class="text-zinc-200 text-sm" x-text="r.title"></td>
+          <template x-for="(r,idx) in sortedResults" :key="r.tmdbId||idx">
+            <tr :class="!r.inLibrary ? 'bg-amber-950/10' : ''">
+              <!-- Checkbox -->
+              <td style="width:32px;padding:4px 8px;vertical-align:middle;text-align:center">
+                <input type="checkbox"
+                       :checked="isRowSelected(r.tmdbId)"
+                       @change="toggleRow(r.tmdbId)"
+                       class="checkbox checkbox-xs"/>
+              </td>
+              <!-- Poster -->
+              <td style="width:60px;padding:4px 8px;vertical-align:middle">
+                <template x-if="posterSrc(r)">
+                  <img :src="posterSrc(r)" :alt="r.title"
+                       style="width:44px;height:66px;object-fit:cover;border-radius:4px;border:1px solid rgba(255,255,255,.08);background:#111;cursor:zoom-in;display:block"
+                       loading="lazy"
+                       @error="$event.target.replaceWith(Object.assign(document.createElement('div'),{style:'width:44px;height:66px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#555;border:1px dashed #333;border-radius:4px',textContent:'—'}))"
+                       @mouseenter="showItemPopup($event, r)"
+                       @mouseleave="hideItemPopup()"/>
+                </template>
+                <template x-if="!posterSrc(r)">
+                  <div style="width:44px;height:66px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#555;border:1px dashed #333;border-radius:4px">—</div>
+                </template>
+              </td>
+              <td class="text-zinc-600 text-xs" x-text="idx + 1"></td>
+              <td class="text-zinc-200 text-sm max-w-[200px]"
+                  @mouseenter="showItemPopup($event, r)"
+                  @mouseleave="hideItemPopup()">
+                <span class="block truncate cursor-default" :title="r.title" x-text="r.title"></span>
+              </td>
               <td class="text-zinc-500 text-xs" x-text="r.year"></td>
-              <td><span x-show="r.inLibrary" class="text-emerald-400 text-xs">✓</span><span x-show="!r.inLibrary" class="text-zinc-600 text-xs">−</span></td>
-              <td class="text-amber-400 text-xs" x-text="r.voteAverage?'★ '+r.voteAverage:'—'"></td>
-              <td class="text-zinc-500 text-xs" x-text="(r.genres||[]).join(', ')"></td>
-              <td><button x-show="!r.inLibrary" @click="addToCart(r)" class="btn btn-xs btn-ghost text-zinc-400" title="Add to cart">+</button></td>
+              <td>
+                <span x-show="r.inLibrary" class="text-emerald-400 text-xs">✓</span>
+                <span x-show="!r.inLibrary" class="text-zinc-600 text-xs">−</span>
+              </td>
+              <td class="text-amber-400 text-xs" x-text="r.voteAverage ? '★ ' + r.voteAverage : '—'"></td>
+              <td class="text-zinc-500 text-xs" x-text="(r.genres || []).join(', ')"></td>
+              <td>
+                <button x-show="!r.inLibrary && !isRowSelected(r.tmdbId)"
+                        @click="addToCart(r)"
+                        class="btn btn-xs btn-ghost text-zinc-400" title="Add to cart">+</button>
+                <span x-show="isRowSelected(r.tmdbId)" class="text-amber-400 text-xs">●</span>
+              </td>
             </tr>
           </template>
         </tbody>
@@ -77,19 +256,24 @@
     </div>
   </div>
 
-  <div x-show="cart.length>0" class="rounded-2xl border border-white/10 bg-zinc-900/40 p-4 space-y-3">
+  <!-- Cart -->
+  <div x-show="cart.length > 0" class="rounded-2xl border border-white/10 bg-zinc-900/40 p-4 space-y-3">
     <div class="flex items-center gap-2">
       <h3 class="font-mono text-xs uppercase tracking-widest text-zinc-500">Cart</h3>
       <span class="badge badge-sm" x-text="cart.length"></span>
-      <button @click="copyCart()" class="btn btn-xs btn-ghost text-zinc-400 ml-auto">Copy as Markdown</button>
+      <div class="flex gap-2 ml-auto">
+        <button @click="copyCart()" class="btn btn-xs btn-ghost text-zinc-400">Copy as Markdown</button>
+        <button @click="clearCart()" class="btn btn-xs btn-ghost text-rose-400">Clear</button>
+      </div>
     </div>
     <ul class="space-y-1">
-      <template x-for="(item,idx) in cart" :key="item.tmdbId||idx">
+      <template x-for="(item, idx) in cart" :key="item.tmdbId || idx">
         <li class="flex items-center gap-2 text-sm text-zinc-300">
           <button @click="removeFromCart(item.tmdbId)" class="text-zinc-600 hover:text-rose-400 text-xs">✕</button>
-          <span x-text="item.title+' ('+item.year+')'"></span>
+          <span x-text="item.title + ' (' + item.year + ')'"></span>
         </li>
       </template>
     </ul>
   </div>
+
 </div>
