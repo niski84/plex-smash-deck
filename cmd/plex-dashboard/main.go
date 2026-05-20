@@ -34,6 +34,8 @@ func main() {
 	}()
 	go server.StartDailySnapshotWorker(ctx)
 	go server.StartConnectivityProbes(ctx)
+	go server.WatchSessionsForAudioNorm(ctx)
+	server.StartBackgroundWorkers(ctx)
 
 	addr := ":" + cfg.Port
 	url := "http://127.0.0.1:" + cfg.Port + "/"

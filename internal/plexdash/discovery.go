@@ -1550,6 +1550,65 @@ func tmdbPosterURLFromPath(posterPath string) string {
 	return "https://image.tmdb.org/t/p/w185" + s
 }
 
+type tmdbSearchResult struct {
+	TMDBID      int    `json:"tmdbId"`
+	Title       string `json:"title"`
+	Year        int    `json:"year"`
+	PosterURL   string `json:"posterUrl"`
+	Overview    string `json:"overview"`
+	VoteAverage float64 `json:"voteAverage"`
+}
+
+// tmdbSearchMovies calls TMDB /search/movie and returns the top results.
+// TMDB's search handles natural-language queries like "Top Gun 2" → "Top Gun: Maverick".
+func tmdbSearchMovies(ctx context.Context, apiKey, query string) ([]tmdbSearchResult, error) {
+	u := "https://api.themoviedb.org/3/search/movie?" + url.Values{
+		"api_key": {apiKey},
+		"query":   {query},
+	}.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("tmdb search: status %s", resp.Status)
+	}
+	var body struct {
+		Results []struct {
+			ID          int     `json:"id"`
+			Title       string  `json:"title"`
+			ReleaseDate string  `json:"release_date"`
+			PosterPath  string  `json:"poster_path"`
+			Overview    string  `json:"overview"`
+			VoteAverage float64 `json:"vote_average"`
+		} `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, err
+	}
+	out := make([]tmdbSearchResult, 0, len(body.Results))
+	for _, r := range body.Results {
+		year := 0
+		if len(r.ReleaseDate) >= 4 {
+			year, _ = strconv.Atoi(r.ReleaseDate[:4])
+		}
+		out = append(out, tmdbSearchResult{
+			TMDBID:      r.ID,
+			Title:       strings.TrimSpace(r.Title),
+			Year:        year,
+			PosterURL:   tmdbPosterURLFromPath(r.PosterPath),
+			Overview:    strings.TrimSpace(r.Overview),
+			VoteAverage: r.VoteAverage,
+		})
+	}
+	return out, nil
+}
+
 func truncateErrBody(b []byte) string {
 	s := strings.TrimSpace(string(b))
 	if len(s) > 280 {

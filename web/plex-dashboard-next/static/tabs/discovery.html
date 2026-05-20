@@ -1,10 +1,22 @@
 <div x-data="discoveryTab()" id="discovery-tab" class="space-y-6 max-w-5xl">
 
-  <!-- Mode tabs + cache indicator -->
+  <!-- Mode tabs + cart icon + cache indicator -->
   <div class="flex gap-1 flex-wrap items-center">
     <button @click="mode='person'" :class="mode==='person'?'pd-tab-active':'pd-tab-inactive'" class="btn btn-sm">By Person</button>
     <button @click="mode='studio'" :class="mode==='studio'?'pd-tab-active':'pd-tab-inactive'" class="btn btn-sm">By Studio</button>
     <button @click="mode='browse'" :class="mode==='browse'?'pd-tab-active':'pd-tab-inactive'" class="btn btn-sm">Browse</button>
+
+    <!-- Cart icon -->
+    <button id="cart-icon-btn" @click="openCartModal()" title="View cart"
+      class="relative btn btn-sm btn-ghost ml-1 px-2"
+      :class="cart.length > 0 ? 'text-amber-400' : 'text-zinc-600'">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2 9m5-9v9m4-9v9m1-9l2 9"/>
+      </svg>
+      <span x-show="cart.length > 0" id="cart-badge"
+        class="absolute -top-1 -right-1 bg-amber-500 text-black text-[9px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-[3px]"
+        x-text="cart.length"></span>
+    </button>
 
     <!-- Stream cache fill indicator -->
     <div x-show="cacheStats !== null" class="ml-auto flex items-center gap-1.5" :title="cacheTooltip">
@@ -256,24 +268,89 @@
     </div>
   </div>
 
-  <!-- Cart -->
+  <!-- Clipboard fallback for Copy Missing / Copy All (shown on HTTP where clipboard API is blocked) -->
+  <div x-show="clipboardFallbackVisible" x-transition class="rounded-2xl border border-amber-500/30 bg-zinc-900/60 p-4 space-y-2">
+    <div class="flex items-center gap-2">
+      <span class="text-xs text-amber-400 font-mono uppercase tracking-widest">Clipboard blocked</span>
+      <span class="text-xs text-zinc-500">— select all and copy manually</span>
+      <button @click="clipboardFallbackVisible = false" class="btn btn-xs btn-ghost text-zinc-500 ml-auto">✕ Dismiss</button>
+    </div>
+    <textarea readonly @click="$el.select()"
+      class="w-full font-mono text-xs bg-zinc-950 border border-white/10 rounded-lg p-3 text-zinc-300 resize-none focus:outline-none"
+      rows="10" :value="clipboardFallbackText"></textarea>
+    <p class="text-xs text-zinc-600">Click inside → Ctrl+A → Ctrl+C (or ⌘A → ⌘C on Mac)</p>
+  </div>
+
+  <!-- Cart summary strip (visible when cart has items) -->
   <div x-show="cart.length > 0" class="rounded-2xl border border-white/10 bg-zinc-900/40 p-4 space-y-3">
     <div class="flex items-center gap-2">
       <h3 class="font-mono text-xs uppercase tracking-widest text-zinc-500">Cart</h3>
       <span class="badge badge-sm" x-text="cart.length"></span>
       <div class="flex gap-2 ml-auto">
-        <button @click="copyCart()" class="btn btn-xs btn-ghost text-zinc-400">Copy as Markdown</button>
+        <button @click="copyCart()" id="copy-cart-btn" class="btn btn-xs btn-ghost text-zinc-400">Copy as Markdown</button>
+        <button @click="openCartModal()" class="btn btn-xs btn-ghost text-zinc-400">View</button>
         <button @click="clearCart()" class="btn btn-xs btn-ghost text-rose-400">Clear</button>
       </div>
     </div>
     <ul class="space-y-1">
       <template x-for="(item, idx) in cart" :key="item.tmdbId || idx">
         <li class="flex items-center gap-2 text-sm text-zinc-300">
-          <button @click="removeFromCart(item.tmdbId)" class="text-zinc-600 hover:text-rose-400 text-xs">✕</button>
+          <button @click="removeFromCart(item.tmdbId)" class="text-zinc-600 hover:text-rose-400 text-xs leading-none">✕</button>
           <span x-text="item.title + ' (' + item.year + ')'"></span>
         </li>
       </template>
     </ul>
+  </div>
+
+  <!-- Cart modal -->
+  <div x-show="cartModalOpen" x-transition id="cart-modal-overlay"
+    class="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-sm"
+    @keydown.escape.window="closeCartModal()"
+    @click.self="closeCartModal()">
+    <div class="bg-zinc-900 border border-white/10 rounded-2xl p-6 max-w-lg w-full mx-4 shadow-2xl space-y-4">
+
+      <!-- Header -->
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2 9m5-9v9m4-9v9m1-9l2 9"/>
+          </svg>
+          <h3 class="font-mono text-xs uppercase tracking-widest text-zinc-400">Cart</h3>
+          <span class="badge badge-sm" x-text="cart.length + ' item' + (cart.length !== 1 ? 's' : '')"></span>
+        </div>
+        <button @click="closeCartModal()" id="cart-modal-close" class="btn btn-sm btn-circle btn-ghost text-zinc-500">✕</button>
+      </div>
+
+      <!-- Empty state -->
+      <div x-show="cart.length === 0" class="text-center py-10 text-zinc-600 text-sm">Cart is empty</div>
+
+      <!-- Markdown textarea -->
+      <div x-show="cart.length > 0" class="space-y-2">
+        <textarea readonly @click="$el.select()" id="cart-modal-textarea"
+          class="w-full font-mono text-xs bg-zinc-950 border border-white/10 rounded-lg p-3 text-zinc-300 resize-none focus:outline-none focus:border-amber-500/40"
+          rows="12" :value="cartText()"></textarea>
+        <p class="text-xs text-zinc-600">Click to select all · Ctrl+C / ⌘C to copy</p>
+      </div>
+
+      <!-- Footer actions + status -->
+      <div class="flex items-center gap-3 justify-between pt-1">
+        <div class="text-xs min-h-[1rem]">
+          <span x-show="cartCopied" class="text-emerald-400">✓ Copied to clipboard!</span>
+          <span x-show="cartClipboardBlocked && !cartCopied" class="text-amber-400">Clipboard blocked — select text above and copy manually</span>
+        </div>
+        <div class="flex gap-2 shrink-0">
+          <button @click="clearCart()" class="btn btn-xs btn-ghost text-rose-400">Clear</button>
+          <button @click="closeCartModal()" class="btn btn-sm btn-ghost text-zinc-400">Close</button>
+          <button @click="copyCartFromModal()" x-show="cart.length > 0" id="copy-cart-modal-btn"
+            class="btn btn-sm transition-colors"
+            :class="cartCopied ? 'btn-success' : 'btn-warning'">
+            <span x-show="!cartCopied">Copy to clipboard</span>
+            <span x-show="cartCopied">✓ Copied!</span>
+          </button>
+        </div>
+      </div>
+
+    </div>
   </div>
 
 </div>

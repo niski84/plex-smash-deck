@@ -2369,8 +2369,15 @@
         <button id="copyAllTitlesMarkdownBtn" type="button" data-testid="copy-all-titles-md-btn">Copy all titles (Markdown)</button>
         <span class="muted">Cart: <strong id="discoveryCartCount">0</strong></span>
         <button id="copyDiscoveryCartBtn" type="button" data-testid="copy-discovery-cart-btn">Copy cart (Markdown)</button>
+        <button id="toggleCartTextBtn" type="button" data-testid="toggle-cart-text-btn" style="display:none;">▼ Show text</button>
         <button id="clearDiscoveryCartBtn" type="button">Clear cart</button>
         <span id="discoveryStatus" class="muted" data-testid="discovery-status">Idle</span>
+      </div>
+      <div id="cartTextWrap" style="display:none; margin: 6px 0 0;">
+        <textarea id="cartTextArea" readonly rows="8"
+          style="width:100%;font-family:monospace;font-size:12px;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:10px;resize:vertical;box-sizing:border-box;"
+          placeholder="Cart is empty"></textarea>
+        <p style="font-size:11px;color:#6b7280;margin:3px 0 0;">Click to select all · then Ctrl+C / ⌘C</p>
       </div>
       <div class="small">Optional <strong>Genres</strong>: hold Ctrl/Cmd to pick multiple TMDB genres — a title matches if it has <strong>any</strong> of them (OR). Browse/studio pass this to TMDB discover; actor/director mode filters after credits load. Results favor <strong>newer releases</strong> (TMDB release date). Min TMDB rating is optional (choose <strong>Any</strong> for the full filmography). Library matching uses TMDB ids from Plex when available, otherwise title/year. Watched titles stay listed. Click column headers to resort. Cart is saved in this browser (local). <strong>Copy missing</strong> = not in library; <strong>Copy all titles</strong> = every row in current order; <strong>Copy cart</strong> = items you added to the cart (Markdown, includes TMDB id).</div>
       <div id="discoveryTableWrap">
@@ -2996,7 +3003,18 @@
     let discoveryRenderedEnd = 0;
     const DISCOVERY_SCROLL_CHUNK = 48;
     let discoveryScrollBusy = false;
-    const DISCOVERY_CART_KEY = 'plexdash.discovery.cart.v1';
+    const DISCOVERY_CART_KEY    = 'plexdash.discovery.cart.v1';
+    const SEARCH_HISTORY_KEY    = 'plexdash.dashboard.searchHistory.v1';
+    const SEARCH_HISTORY_MAX    = 25;
+    function loadSearchHistory() {
+      try { return JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY) || '[]'); } catch(_) { return []; }
+    }
+    function saveSearchToHistory(q) {
+      if (!q || q.length < 2) return;
+      let h = loadSearchHistory().filter(x => x.toLowerCase() !== q.toLowerCase());
+      h.unshift(q);
+      try { localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(h.slice(0, SEARCH_HISTORY_MAX))); } catch(_) {}
+    }
     /** Last-selected main section tab (dashboard, playlists, discovery, …). Survives refresh like other localStorage prefs. */
     const MAIN_TAB_KEY = 'plexdash.mainTab.v1';
     let suggestTimer = null;
@@ -3661,7 +3679,7 @@
       card.addEventListener('mouseenter', () => {
         const movie = card._npMovie;
         if (movie && typeof window._showMovieInfo === 'function') {
-          window._showMovieInfo(card, movie, { immediate: true, noPlay: true });
+          window._showMovieInfo(card, movie, { noPlay: true });
         }
       });
       card.addEventListener('mouseleave', () => {
@@ -4846,6 +4864,8 @@
         });
       }
 
+      if (q && filtered.length > 0) saveSearchToHistory(q);
+
       cancelPrefetch();
       moviesDisplayFiltered = filtered;
 
@@ -5074,7 +5094,7 @@
         dashboardSuggestTimer = null;
         const q = (el.value || '').trim();
         if (q.length < 1) {
-          renderDashboardSearchSuggestions([]);
+          renderDashboardSearchSuggestions(loadSearchHistory().slice(0, 10));
           return;
         }
         const scope = dashboardMovieSearchScope();
@@ -5117,6 +5137,11 @@
       const el = document.getElementById('movieSearch');
       if (!el) return;
       el.addEventListener('input', scheduleDashboardSearchSuggestions);
+      el.addEventListener('focus', () => {
+        if (!(el.value || '').trim()) {
+          renderDashboardSearchSuggestions(loadSearchHistory().slice(0, 10));
+        }
+      });
       document.querySelectorAll('input[name="movieSearchScope"]').forEach((r) => {
         r.addEventListener('change', scheduleDashboardSearchSuggestions);
       });
@@ -5854,8 +5879,27 @@
     }
 
     function refreshDiscoveryCartCount() {
+      const cart = readDiscoveryCart();
       const el = document.getElementById('discoveryCartCount');
-      if (el) el.textContent = String(readDiscoveryCart().length);
+      if (el) el.textContent = String(cart.length);
+      const toggleBtn = document.getElementById('toggleCartTextBtn');
+      if (toggleBtn) toggleBtn.style.display = cart.length > 0 ? '' : 'none';
+      refreshCartTextArea();
+    }
+
+    function refreshCartTextArea() {
+      const ta = document.getElementById('cartTextArea');
+      if (!ta) return;
+      const cart = readDiscoveryCart();
+      if (!cart.length) { ta.value = ''; return; }
+      const person = document.getElementById('discoverPerson')?.value.trim() || 'Discovery';
+      const lines = [`## Cart — ${person}`, '', `*${cart.length} item(s) in cart*`, ''];
+      for (const m of cart) {
+        const y = m.year != null && m.year !== 0 ? String(m.year) : 'n/a';
+        const id = m.tmdbId != null ? String(m.tmdbId) : '';
+        lines.push(`- **${m.title}** (${y})${id ? ` — TMDB \`${id}\`` : ''}`);
+      }
+      ta.value = lines.join('\n');
     }
 
     function addToDiscoveryCart(item) {
@@ -5949,10 +5993,15 @@
       const md = lines.join('\n');
       navigator.clipboard.writeText(md).then(() => {
         setStatus('discoveryStatus', `Copied ${cart.length} cart item(s) to clipboard (Markdown).`, true);
-        console.log('[Plex Dashboard] discovery cart copied to clipboard', { count: cart.length });
       }).catch(err => {
-        setStatus('discoveryStatus', `Clipboard failed: ${err.message}`, false);
         console.error('[Plex Dashboard] clipboard error', err);
+        const wrap = document.getElementById('cartTextWrap');
+        const ta = document.getElementById('cartTextArea');
+        const btn = document.getElementById('toggleCartTextBtn');
+        if (wrap) wrap.style.display = '';
+        if (btn) btn.textContent = '▲ Hide text';
+        if (ta) { ta.value = md; ta.focus(); ta.select(); }
+        setStatus('discoveryStatus', 'Clipboard blocked — text shown below, select and copy manually', false);
       });
     }
 
@@ -6098,7 +6147,7 @@
       if (typeof window.__PLEXDASH_DISC_POPUP_HOVER_MS === 'number' && window.__PLEXDASH_DISC_POPUP_HOVER_MS >= 0) {
         return window.__PLEXDASH_DISC_POPUP_HOVER_MS;
       }
-      return 750;
+      return 950;
     }
 
     /**
@@ -6878,6 +6927,9 @@
         opts = opts || {};
         clearHideTimer();
         if (showTimer) { clearTimeout(showTimer); showTimer = null; }
+        // Always collapse immediately so the delay resets on every card, not just the first.
+        popup.classList.remove('mip-visible');
+        anchorCard = null;
         pendingMipAnchor = cardEl;
         showTimer = setTimeout(() => {
           showTimer = null;
@@ -9851,6 +9903,15 @@
     document.getElementById('copyMissingMarkdownBtn').addEventListener('click', copyMissingAsMarkdown);
     document.getElementById('copyAllTitlesMarkdownBtn').addEventListener('click', copyAllTitlesMarkdown);
     document.getElementById('copyDiscoveryCartBtn').addEventListener('click', copyDiscoveryCartMarkdown);
+    document.getElementById('toggleCartTextBtn').addEventListener('click', () => {
+      const wrap = document.getElementById('cartTextWrap');
+      const btn = document.getElementById('toggleCartTextBtn');
+      const open = wrap.style.display !== 'none' && wrap.style.display !== '';
+      wrap.style.display = open ? 'none' : '';
+      btn.textContent = open ? '▼ Show text' : '▲ Hide text';
+      if (!open) { refreshCartTextArea(); const ta = document.getElementById('cartTextArea'); ta?.focus(); ta?.select(); }
+    });
+    document.getElementById('cartTextArea')?.addEventListener('click', (e) => e.target.select());
     document.getElementById('clearDiscoveryCartBtn').addEventListener('click', () => {
       writeDiscoveryCart([]);
       refreshDiscoveryCartCount();

@@ -113,6 +113,18 @@ type Server struct {
 	// Stream cache: progressive download proxy for in-browser playback.
 	streamCacheMu   sync.RWMutex
 	streamDownloads map[string]*streamDownload
+
+	// Captions plumbing for /api/playback/captions. captionsPlexClient is nil
+	// in production (handler builds a real PlexClient from the snapshotted
+	// config); tests inject a stub. captionFetcher is the optional
+	// OpenSubtitles client; nil/Available()=false skips the remote step.
+	captionsCache      *CaptionsCache
+	captionFetcher     CaptionFetcher
+	captionsPlexClient captionsPlexClient
+
+	// Playback history ring + JSONL log feeding /api/playback/at and the
+	// captions handler's ?at=<rfc3339> path.
+	playbackHistory *PlaybackHistory
 }
 
 // FanartLogEntry is one line shown on the Settings tab fanart activity log.
@@ -210,9 +222,54 @@ func NewServer(cfg Config, client *PlexClient) *Server {
 		settingsPath:    defaultSettingsPath(),
 		discJobs:        newDiscoveryJobStore(),
 		streamDownloads: make(map[string]*streamDownload),
+		captionsCache:   NewCaptionsCache("data/captions-cache"),
+		captionFetcher: NewOpenSubtitlesClient(
+			cfg.OpenSubtitlesAPIKey,
+			cfg.OpenSubtitlesUsername,
+			cfg.OpenSubtitlesPassword,
+			cfg.OpenSubtitlesUserAgent,
+		),
 	}
 	s.loadPlaybackState()
+	// Playback history: poll Plex sessions every 30s, persist to JSONL.
+	// Real PlexClient is constructed per-poll via plexClientForCaptions so
+	// config edits are picked up. movieResolver maps ratingKey → IMDb/TMDB
+	// using the in-memory library cache.
+	s.playbackHistory = NewPlaybackHistory(
+		filepath.Clean("data/playback-history.jsonl"),
+		&serverPlaybackHistoryAdapter{s: s},
+		func(ctx context.Context, ratingKey string) (string, int, bool) {
+			m, ok := s.lookupMovieByRatingKey(ctx, ratingKey)
+			if !ok {
+				return "", 0, false
+			}
+			return strings.TrimSpace(m.IMDbID), m.TMDBID, true
+		},
+	)
 	return s
+}
+
+// serverPlaybackHistoryAdapter routes ListPlaybackSessions through whatever
+// captionsPlexClient/PlexClient the server currently has. This way tests can
+// inject stubs by setting s.captionsPlexClient and the poller honours it.
+type serverPlaybackHistoryAdapter struct {
+	s *Server
+}
+
+func (a *serverPlaybackHistoryAdapter) ListPlaybackSessions(ctx context.Context) ([]PlaybackSession, error) {
+	c := a.s.plexClientForCaptions()
+	if c == nil {
+		return nil, nil
+	}
+	return c.ListPlaybackSessions(ctx)
+}
+
+// StartBackgroundWorkers launches long-running pollers (currently just the
+// playback history). Safe to call once after NewServer; cancel ctx to stop.
+func (s *Server) StartBackgroundWorkers(ctx context.Context) {
+	if s.playbackHistory != nil {
+		s.playbackHistory.Start(ctx)
+	}
 }
 
 func (s *Server) loadPlaybackState() {
@@ -607,6 +664,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/seasons", s.handleSeasons)
 	mux.HandleFunc("/api/episodes", s.handleEpisodes)
 	mux.HandleFunc("/api/plex/episode-thumb", s.handlePlexEpisodeThumb)
+	mux.HandleFunc("/api/movies/resolve", s.handleMoviesResolve)
 	mux.HandleFunc("/api/movies/hover-meta", s.handleMoviesHoverMeta)
 	mux.HandleFunc("/api/movies/cache-status", s.handleMovieCacheStatus)
 	mux.HandleFunc("/api/branding/fanart-banner/file", s.handleBrandingFanartBannerFile)
@@ -618,6 +676,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/fanart-movie/prefetch", s.handleFanartMoviePrefetch)
 	mux.HandleFunc("/api/movies/sync-recent", s.handleMoviesSyncRecent)
 	mux.HandleFunc("/api/movies/play", s.handleMoviesPlay)
+	mux.HandleFunc("/api/movies/analyze-audio", s.handleAnalyzeAudio)
+	mux.HandleFunc("/api/movies/audio-profile", s.handleAudioProfile)
 	mux.HandleFunc("/api/movies", s.handleMovies)
 	mux.HandleFunc("/api/tmdb/collection", s.handleTMDBCollection)
 	mux.HandleFunc("/api/omdb-ratings", s.handleOMDbRatings)
@@ -628,7 +688,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/lg/volume", s.handleLgVolume)
 	mux.HandleFunc("/api/tv-devices/", s.handleTVDevice)
 	mux.HandleFunc("/api/tv-devices", s.handleTVDevices)
+	mux.HandleFunc("/api/playback/captions", s.handlePlaybackCaptions)
 	mux.HandleFunc("/api/playback/status", s.handlePlaybackStatus)
+	mux.HandleFunc("/api/playback/at", s.handlePlaybackAt)
+	mux.HandleFunc("/api/playback/history", s.handlePlaybackHistory)
 	mux.HandleFunc("/api/discovery/person-suggest", s.handleDiscoveryPersonSuggest)
 	mux.HandleFunc("/api/discovery/collaborators", s.handleDiscoveryCollaborators)
 	mux.HandleFunc("/api/discovery/filmography", s.handleDiscoveryFilmography)
@@ -923,6 +986,93 @@ func (s *Server) handleMovies(w http.ResponseWriter, r *http.Request) {
 			"movies": movies[:limit],
 		},
 	})
+}
+
+// handleMoviesResolve: GET /api/movies/resolve?q=Top+Gun+2
+// Searches TMDB for the query and cross-references results against the Plex library.
+// Returns up to 5 TMDB matches with an inPlex flag and ratingKey when found.
+func (s *Server) handleMoviesResolve(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+		return
+	}
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if q == "" {
+		respondJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "q required"})
+		return
+	}
+	cfg := s.snapshot()
+	if strings.TrimSpace(cfg.TMDBAPIKey) == "" {
+		respondJSON(w, http.StatusServiceUnavailable, apiResponse{Success: false, Error: "TMDB API key not configured"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	tmdbResults, err := tmdbSearchMovies(ctx, cfg.TMDBAPIKey, q)
+	if err != nil {
+		respondJSON(w, http.StatusBadGateway, apiResponse{Success: false, Error: "tmdb search failed: " + err.Error()})
+		return
+	}
+	if len(tmdbResults) > 5 {
+		tmdbResults = tmdbResults[:5]
+	}
+
+	// Re-sort to prefer exact title matches over trending/popular alternatives.
+	// TMDB returns by popularity, so a new sequel like "Predator: Badlands" can
+	// outrank the 1987 original when the user just says "Predator".
+	qLow := strings.ToLower(strings.TrimSpace(q))
+	sort.SliceStable(tmdbResults, func(i, j int) bool {
+		ti := strings.ToLower(strings.TrimSpace(tmdbResults[i].Title))
+		tj := strings.ToLower(strings.TrimSpace(tmdbResults[j].Title))
+		iExact := ti == qLow
+		jExact := tj == qLow
+		return iExact && !jExact
+	})
+
+	movies, _ := s.cachedListMovies(ctx)
+	byTMDB := make(map[int]Movie, len(movies))
+	titleYear := make(map[string][]int, len(movies))
+	for _, m := range movies {
+		if m.TMDBID > 0 {
+			byTMDB[m.TMDBID] = m
+		}
+		key := strings.ToLower(strings.TrimSpace(m.Title))
+		titleYear[key] = append(titleYear[key], m.Year)
+	}
+
+	type resolveResult struct {
+		tmdbSearchResult
+		InPlex     bool   `json:"inPlex"`
+		RatingKey  string `json:"ratingKey,omitempty"`
+		PlexTitle  string `json:"plexTitle,omitempty"`
+	}
+	out := make([]resolveResult, 0, len(tmdbResults))
+	for _, tr := range tmdbResults {
+		rr := resolveResult{tmdbSearchResult: tr}
+		if m, ok := byTMDB[tr.TMDBID]; ok {
+			rr.InPlex = true
+			rr.RatingKey = m.RatingKey
+			rr.PlexTitle = m.Title
+		} else {
+			// fallback: title+year match
+			key := strings.ToLower(tr.Title)
+			if years, ok := titleYear[key]; ok {
+				for _, m := range movies {
+					if strings.ToLower(m.Title) == key && (tr.Year == 0 || m.Year == 0 || abs(m.Year-tr.Year) <= 1) {
+						rr.InPlex = true
+						rr.RatingKey = m.RatingKey
+						rr.PlexTitle = m.Title
+						break
+					}
+				}
+				_ = years
+			}
+		}
+		out = append(out, rr)
+	}
+
+	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"results": out}})
 }
 
 // handleMoviesHoverMeta: GET /api/movies/hover-meta?ratingKey=… — contentRating + tmdbId/imdbId from Plex metadata (includeGuids).
@@ -3166,4 +3316,239 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 		fmt.Printf("[HTTP] %s %s\n", r.Method, r.URL.Path)
 		next.ServeHTTP(w, r)
 	})
+}
+
+// ── Audio normalization ──────────────────────────────────────────────────────
+
+// POST /api/movies/analyze-audio?ratingKey=<key>[&force=1]
+// Runs FFmpeg on the movie file and returns a NormResult.
+// Results are cached on disk; pass force=1 to re-analyze.
+func (s *Server) handleAnalyzeAudio(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	ratingKey := strings.TrimSpace(r.URL.Query().Get("ratingKey"))
+	if ratingKey == "" {
+		respondJSON(w, http.StatusBadRequest, apiResponse{Error: "ratingKey required"})
+		return
+	}
+	force := r.URL.Query().Get("force") == "1"
+
+	cfg := s.snapshot()
+
+	// Locate movie in library cache.
+	s.mlMu.RLock()
+	var found *Movie
+	for i := range s.mlMovies {
+		if s.mlMovies[i].RatingKey == ratingKey {
+			m := s.mlMovies[i]
+			found = &m
+			break
+		}
+	}
+	s.mlMu.RUnlock()
+
+	if found == nil {
+		respondJSON(w, http.StatusNotFound, apiResponse{Error: "movie not in library cache; load movies first"})
+		return
+	}
+	if found.FilePath == "" {
+		respondJSON(w, http.StatusUnprocessableEntity, apiResponse{Error: "no filesystem path for this movie (Plex may not have returned it yet)"})
+		return
+	}
+
+	// Return cached result if available and not forced.
+	if !force {
+		if cached, ok := loadAudioProfile(ratingKey); ok {
+			result := NormalizeVolume(cached, cfg.NormBaselineVolume, cfg.NormReferenceDB)
+			respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: result})
+			return
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 95*time.Second)
+	defer cancel()
+
+	profile, err := AnalyzeAudioFile(ctx, ratingKey, found.Title, found.FilePath)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, apiResponse{Error: err.Error()})
+		return
+	}
+	if err := saveAudioProfile(profile); err != nil {
+		fmt.Printf("[audio-norm] warn: save cache: %v\n", err)
+	}
+
+	result := NormalizeVolume(profile, cfg.NormBaselineVolume, cfg.NormReferenceDB)
+
+	// Publish MQTT if configured.
+	if cfg.MQTTBroker != "" {
+		go func() {
+			if err := PublishMQTT(cfg.MQTTBroker, cfg.MQTTTopic, cfg.MQTTUsername, cfg.MQTTPassword, result); err != nil {
+				fmt.Printf("[audio-norm] mqtt publish error: %v\n", err)
+			} else {
+				fmt.Printf("[audio-norm] mqtt published: %s level=%d vol=%d\n", result.Profile.Title, result.NormalizedLevel, result.RecommendedVolume)
+			}
+		}()
+	}
+
+	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: result})
+}
+
+// GET /api/movies/audio-profile?ratingKey=<key>
+// Returns the cached AudioProfile for a movie, or 404 if not yet analyzed.
+func (s *Server) handleAudioProfile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	ratingKey := strings.TrimSpace(r.URL.Query().Get("ratingKey"))
+	if ratingKey == "" {
+		respondJSON(w, http.StatusBadRequest, apiResponse{Error: "ratingKey required"})
+		return
+	}
+	profile, ok := loadAudioProfile(ratingKey)
+	if !ok {
+		respondJSON(w, http.StatusNotFound, apiResponse{Error: "no audio profile cached for this movie"})
+		return
+	}
+	cfg := s.snapshot()
+	result := NormalizeVolume(profile, cfg.NormBaselineVolume, cfg.NormReferenceDB)
+	respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: result})
+}
+
+// ── Session watcher ──────────────────────────────────────────────────────────
+
+// WatchSessionsForAudioNorm polls Plex sessions every 30s. When a new movie
+// starts playing (state=playing, type=movie, different ratingKey than last seen),
+// it triggers audio analysis in the background and — if a cached profile already
+// exists — immediately applies the recommended TV volume.
+func (s *Server) WatchSessionsForAudioNorm(ctx context.Context) {
+	const pollInterval = 30 * time.Second
+	var (
+		lastRatingKey string
+		analyzing     sync.Mutex // prevents overlapping FFmpeg runs
+	)
+
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+
+		cfg := s.snapshot()
+		client := NewPlexClient(cfg)
+		sessions, err := client.ListPlaybackSessions(ctx)
+		if err != nil {
+			continue
+		}
+
+		// Find the first playing movie session.
+		var active *PlaybackSession
+		for i := range sessions {
+			if sessions[i].Type == "movie" && sessions[i].PlayerState == "playing" {
+				active = &sessions[i]
+				break
+			}
+		}
+		if active == nil || active.RatingKey == "" || active.RatingKey == lastRatingKey {
+			if active == nil {
+				lastRatingKey = "" // reset when nothing is playing
+			}
+			continue
+		}
+		lastRatingKey = active.RatingKey
+		ratingKey := active.RatingKey
+		title := active.Title
+
+		// Apply cached profile immediately if available.
+		if cached, ok := loadAudioProfile(ratingKey); ok {
+			result := NormalizeVolume(cached, cfg.NormBaselineVolume, cfg.NormReferenceDB)
+			fmt.Printf("[audio-norm] session: %q cached vol=%d level=%d\n", title, result.RecommendedVolume, result.NormalizedLevel)
+			s.applyNormResult(ctx, cfg, result)
+			continue
+		}
+
+		// No cache — analyze in background (may take up to 90s).
+		go func(key, ttl string) {
+			if !analyzing.TryLock() {
+				return // another analysis is already running
+			}
+			defer analyzing.Unlock()
+
+			// Locate file path from library cache.
+			s.mlMu.RLock()
+			var filePath string
+			for _, m := range s.mlMovies {
+				if m.RatingKey == key {
+					filePath = m.FilePath
+					break
+				}
+			}
+			s.mlMu.RUnlock()
+
+			if filePath == "" {
+				fmt.Printf("[audio-norm] session: %q — no file path, skipping\n", ttl)
+				return
+			}
+
+			profile, err := AnalyzeAudioFile(ctx, key, ttl, filePath)
+			if err != nil {
+				fmt.Printf("[audio-norm] analysis error for %q: %v\n", ttl, err)
+				return
+			}
+			if err := saveAudioProfile(profile); err != nil {
+				fmt.Printf("[audio-norm] cache save error: %v\n", err)
+			}
+
+			cfg2 := s.snapshot()
+			result := NormalizeVolume(profile, cfg2.NormBaselineVolume, cfg2.NormReferenceDB)
+			fmt.Printf("[audio-norm] analyzed %q mean=%.1fdB level=%d vol=%d\n",
+				ttl, profile.MeanVolumeDB, result.NormalizedLevel, result.RecommendedVolume)
+			s.applyNormResult(ctx, cfg2, result)
+		}(ratingKey, title)
+	}
+}
+
+// applyNormResult publishes the result via MQTT and, if an LG TV is configured,
+// directly sets the TV volume.
+func (s *Server) applyNormResult(ctx context.Context, cfg Config, result NormResult) {
+	// MQTT publish.
+	if cfg.MQTTBroker != "" {
+		go func() {
+			if err := PublishMQTT(cfg.MQTTBroker, cfg.MQTTTopic, cfg.MQTTUsername, cfg.MQTTPassword, result); err != nil {
+				fmt.Printf("[audio-norm] mqtt: %v\n", err)
+			}
+		}()
+	}
+
+	// Direct LG TV volume — apply if any device is configured.
+	if len(cfg.TVDevices) == 0 {
+		return
+	}
+	dev := cfg.TVDevices[0]
+	addr := strings.TrimSpace(dev.Addr)
+	if addr == "" {
+		return
+	}
+
+	go func() {
+		tctx, cancel := context.WithTimeout(ctx, 25*time.Second)
+		defer cancel()
+		var err error
+		if k := strings.TrimSpace(dev.IPControlKey); k != "" {
+			_, err = SetVolumeLGIP(tctx, addr, k, result.RecommendedVolume)
+		} else if k := strings.TrimSpace(dev.ClientKey); k != "" {
+			_, err = SetVolumeSSAP(tctx, addr, k, result.RecommendedVolume)
+		}
+		if err != nil {
+			fmt.Printf("[audio-norm] set TV volume error: %v\n", err)
+		} else {
+			fmt.Printf("[audio-norm] TV volume set to %d for %q\n", result.RecommendedVolume, result.Profile.Title)
+		}
+	}()
 }

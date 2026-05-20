@@ -9,8 +9,20 @@
  *   - Search scope (all / actor / director) with rank re-ordering
  *   - File-size on cards with stream-warn / stream-risk colour bands
  */
-const PD_GENRE_PREFS_KEY = 'plexdash.genreBar.prefs.v1';
-const PD_SORT_PREFS_KEY  = 'plexdash.movieSort.v1';
+const PD_GENRE_PREFS_KEY    = 'plexdash.genreBar.prefs.v1';
+const PD_SORT_PREFS_KEY     = 'plexdash.movieSort.v1';
+const PD_SEARCH_HISTORY_KEY = 'plexdash.dashboard.searchHistory.v1';
+const PD_SEARCH_HISTORY_MAX = 25;
+
+function pdLoadSearchHistory() {
+  try { return JSON.parse(localStorage.getItem(PD_SEARCH_HISTORY_KEY) || '[]'); } catch { return []; }
+}
+function pdSaveSearchToHistory(q) {
+  if (!q || q.length < 2) return;
+  let h = pdLoadSearchHistory().filter(x => x.toLowerCase() !== q.toLowerCase());
+  h.unshift(q);
+  try { localStorage.setItem(PD_SEARCH_HISTORY_KEY, JSON.stringify(h.slice(0, PD_SEARCH_HISTORY_MAX))); } catch {}
+}
 
 function genrePrefKey(name) {
   if (!name) return '';
@@ -110,7 +122,14 @@ function movieGrid() {
     selected: new Set(),
     playbackPath: 'direct',
     _suggTimer: null,
+    _histSaveTimer: null,
     searchSuggestions: [],
+    searchHistory: pdLoadSearchHistory(),
+
+    // ── TMDB resolve (smart search for sequels / alternate titles) ─────────────
+    resolveResults: [],
+    resolveLoading: false,
+    _resolveTimer: null,
 
     // ── Library sync status ──────────────────────────────────────────────────
     cacheStatus: null,   // data from /api/movies/cache-status
@@ -184,7 +203,24 @@ function movieGrid() {
       // Force Alpine to re-evaluate `filtered` by nudging displayedCount even
       // when it was already 60 — avoids Alpine skipping the update as a no-op.
       const reset = () => { this.displayedCount = 0; this.displayedCount = 60; };
-      this.$watch('searchQuery', () => { reset(); this.scheduleSuggestions(); });
+      this.$watch('searchQuery', (q) => {
+        reset();
+        this.scheduleSuggestions();
+        this.resolveResults = [];
+        clearTimeout(this._resolveTimer);
+        if (q.trim().length >= 2) {
+          this._resolveTimer = setTimeout(() => this.runResolve(), 600);
+        }
+        clearTimeout(this._histSaveTimer);
+        if (q && q.trim().length >= 2) {
+          this._histSaveTimer = setTimeout(() => {
+            if (this.filteredMovies.length > 0) {
+              pdSaveSearchToHistory(q.trim());
+              this.searchHistory = pdLoadSearchHistory();
+            }
+          }, 800);
+        }
+      });
       this.$watch('searchScope', () => { reset(); this.scheduleSuggestions(); });
       this.$watch('sortMode', (v) => {
         reset();
@@ -596,11 +632,42 @@ function movieGrid() {
       }
     },
 
+    // ── TMDB smart resolve ───────────────────────────────────────────────────
+    async runResolve() {
+      const q = (this.searchQuery || '').trim();
+      if (!q) { this.resolveResults = []; return; }
+      this.resolveLoading = true;
+      try {
+        const r = await fetch('/api/movies/resolve?q=' + encodeURIComponent(q));
+        const j = await r.json();
+        if ((this.searchQuery || '').trim() !== q) return; // stale
+        this.resolveResults = (j.data?.results || []);
+      } catch (e) {
+        this.resolveResults = [];
+      } finally {
+        this.resolveLoading = false;
+      }
+    },
+
+    async playResolvedMovie(result) {
+      if (!result.inPlex || !result.ratingKey) return;
+      const movie = this.movies.find(m => m.RatingKey === result.ratingKey);
+      if (movie) { this.playMovie(movie); return; }
+      // Fallback: play by ratingKey directly
+      try {
+        await fetch('/api/movies/play', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ratingKeys: [result.ratingKey] }),
+        });
+      } catch (e) { alert('Play failed: ' + e.message); }
+    },
+
     // ── Search autocomplete ───────────────────────────────────────────────────
     scheduleSuggestions() {
       clearTimeout(this._suggTimer);
       const q = (this.searchQuery || '').trim();
-      if (!q) { this.searchSuggestions = []; return; }
+      if (!q) { this.searchSuggestions = this.searchHistory.slice(0, 10); return; }
       this._suggTimer = setTimeout(() => {
         const scope = this.searchScope;
         const qq = q.toLowerCase();
