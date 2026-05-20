@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/pbkdf2"
@@ -290,7 +291,9 @@ func GetVolumeLGIP(ctx context.Context, host, keycode string) (LGVolumeStatus, e
 	return LGVolumeStatus{Volume: vol, Mute: muted}, nil
 }
 
-// SetVolumeLGIP sets absolute volume via VOLUME_CONTROL (same as lg-webos-smash-deck).
+// SetVolumeLGIP sets volume via KEY_ACTION volumeup/volumedown so that HDMI
+// CEC/SIMPLINK (soundbars, AV receivers) responds and the TV shows its OSD.
+// VOLUME_CONTROL sets the TV's internal speaker directly and bypasses CEC.
 func SetVolumeLGIP(ctx context.Context, host, keycode string, level int) (LGVolumeStatus, error) {
 	if level < 0 {
 		level = 0
@@ -298,12 +301,58 @@ func SetVolumeLGIP(ctx context.Context, host, keycode string, level int) (LGVolu
 	if level > 100 {
 		level = 100
 	}
-	resp, err := lgIPSendCommand(ctx, host, keycode, fmt.Sprintf("VOLUME_CONTROL %d", level))
-	if err != nil {
-		return LGVolumeStatus{}, err
+
+	const (
+		maxConcurrent = 5
+		maxRounds     = 4
+	)
+
+	for round := 0; round < maxRounds; round++ {
+		select {
+		case <-ctx.Done():
+			return LGVolumeStatus{}, ctx.Err()
+		default:
+		}
+
+		st, err := GetVolumeLGIP(ctx, host, keycode)
+		if err != nil {
+			return LGVolumeStatus{}, err
+		}
+
+		delta := level - st.Volume
+		if delta == 0 {
+			return st, nil
+		}
+
+		key := "volumeup"
+		steps := delta
+		if delta < 0 {
+			key = "volumedown"
+			steps = -delta
+		}
+		if steps > 100 {
+			steps = 100
+		}
+
+		sem := make(chan struct{}, maxConcurrent)
+		var wg sync.WaitGroup
+		for i := 0; i < steps; i++ {
+			select {
+			case <-ctx.Done():
+				wg.Wait()
+				return LGVolumeStatus{}, ctx.Err()
+			default:
+			}
+			sem <- struct{}{}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				defer func() { <-sem }()
+				lgIPSendCommand(ctx, host, keycode, "KEY_ACTION "+key) //nolint:errcheck
+			}()
+		}
+		wg.Wait()
 	}
-	if strings.TrimSpace(resp) != "OK" {
-		return LGVolumeStatus{}, fmt.Errorf("VOLUME_CONTROL: %q", resp)
-	}
+
 	return GetVolumeLGIP(ctx, host, keycode)
 }

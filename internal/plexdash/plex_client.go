@@ -42,6 +42,7 @@ type Movie struct {
 	Directors         []string
 	Genres            []string
 	PartKey           string // e.g. /library/parts/12345/file.mp4
+	FilePath          string // actual filesystem path e.g. /media/movies/Foo.mkv
 	FileContainer     string // e.g. mp4, mkv
 	PartSize          int64
 	CollectionID      int    `json:"collectionId,omitempty"`   // TMDB collection id; 0 = none/unknown
@@ -65,17 +66,18 @@ type CreateAndPlayResult struct {
 
 // PlaybackSession is one row from GET /status/sessions (Plex-reported playback).
 type PlaybackSession struct {
-	PlayerName       string `json:"playerName"`
-	PlayerProduct    string `json:"playerProduct"`
-	PlayerState      string `json:"playerState"`
-	MachineID        string `json:"machineId"`
-	Title            string `json:"title"`
-	GrandparentTitle string `json:"grandparentTitle,omitempty"`
-	ParentTitle      string `json:"parentTitle,omitempty"`
-	Type             string `json:"type"`
-	Year             string `json:"year,omitempty"`
-	ViewOffsetMs     int64  `json:"viewOffsetMs"`
-	DurationMs       int64  `json:"durationMs"`
+	RatingKey        string  `json:"ratingKey"`
+	PlayerName       string  `json:"playerName"`
+	PlayerProduct    string  `json:"playerProduct"`
+	PlayerState      string  `json:"playerState"`
+	MachineID        string  `json:"machineId"`
+	Title            string  `json:"title"`
+	GrandparentTitle string  `json:"grandparentTitle,omitempty"`
+	ParentTitle      string  `json:"parentTitle,omitempty"`
+	Type             string  `json:"type"`
+	Year             string  `json:"year,omitempty"`
+	ViewOffsetMs     int64   `json:"viewOffsetMs"`
+	DurationMs       int64   `json:"durationMs"`
 	ProgressPercent  float64 `json:"progressPercent"`
 }
 
@@ -177,7 +179,7 @@ func movieFromVideo(video video) Movie {
 
 	// Pick the media version with the largest file — Plex can store
 	// multiple quality versions (e.g. 4K + 1080p) under one entry.
-	var partKey, fileContainer string
+	var partKey, filePath, fileContainer string
 	var partSize int64
 	for _, media := range video.Medias {
 		if len(media.Parts) == 0 {
@@ -187,6 +189,7 @@ func movieFromVideo(video video) Movie {
 		if sz > partSize {
 			partSize = sz
 			partKey = media.Parts[0].Key
+			filePath = media.Parts[0].File
 			fileContainer = media.Container
 		}
 	}
@@ -209,6 +212,7 @@ func movieFromVideo(video video) Movie {
 		Directors:         tagsToStrings(video.Directors),
 		Genres:            tagsToStrings(video.Genres),
 		PartKey:           partKey,
+		FilePath:          filePath,
 		FileContainer:     fileContainer,
 		PartSize:          partSize,
 	}
@@ -658,6 +662,7 @@ func (p *PlexClient) ListPlaybackSessions(ctx context.Context) ([]PlaybackSessio
 	var root struct {
 		XMLName xml.Name `xml:"MediaContainer"`
 		Videos  []struct {
+			RatingKey        string `xml:"ratingKey,attr"`
 			Type             string `xml:"type,attr"`
 			Title            string `xml:"title,attr"`
 			GrandparentTitle string `xml:"grandparentTitle,attr"`
@@ -689,6 +694,7 @@ func (p *PlexClient) ListPlaybackSessions(ctx context.Context) ([]PlaybackSessio
 			pct = 100 * float64(offset) / float64(dur)
 		}
 		out = append(out, PlaybackSession{
+			RatingKey:        v.RatingKey,
 			PlayerName:       pl.Title,
 			PlayerProduct:    pl.Product,
 			PlayerState:      pl.State,
@@ -1575,6 +1581,7 @@ type videoMedia struct {
 type videoPart struct {
 	Key  string `xml:"key,attr"`
 	Size string `xml:"size,attr"`
+	File string `xml:"file,attr"`
 }
 
 type mediaTag struct {

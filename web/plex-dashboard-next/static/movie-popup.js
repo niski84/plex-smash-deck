@@ -59,6 +59,9 @@ document.addEventListener('alpine:init', () => {
     show(item, anchor, opts) {
       clearTimeout(this._showTimer);
       clearTimeout(this._hideTimer);
+      // Always collapse the popup immediately so the delay resets card-to-card.
+      this.visible = false;
+      this.item = null;
       this._showTimer = setTimeout(() => {
         this._position(anchor);
         this.item = item;
@@ -68,7 +71,7 @@ document.addEventListener('alpine:init', () => {
         this.visible = true;
         this._fetchRatings(item.tmdbId || 0, item.imdbId || '');
         this._fetchCollection(item.tmdbId || 0);
-      }, 500);
+      }, 2000);
     },
 
     hide() {

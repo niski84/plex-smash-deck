@@ -59,6 +59,20 @@ type Config struct {
 	// When empty, TV show features are hidden in the UI.
 	TVLibraryKey string
 
+	// MQTT — optional. When MQTTBroker is set, audio normalization results are
+	// published to MQTTTopic as JSON after each movie analysis.
+	// Format: tcp://host:1883 or ssl://host:8883
+	MQTTBroker   string
+	MQTTTopic    string
+	MQTTUsername string
+	MQTTPassword string
+
+	// Audio normalization. NormBaselineVolume is the TV volume (0–100) that
+	// corresponds to a "normal" loudness movie (NormReferenceDB dBFS, default -23).
+	// When 0, defaults to 50.
+	NormBaselineVolume int
+	NormReferenceDB    float64 // default -23.0 (EBU R128 reference)
+
 	// Fanart.tv hero banner (optional). When enabled and no custom HeroBannerURL,
 	// the dashboard loads wide movie art from fanart.tv (TMDB id required), with
 	// disk cache under data/fanart-banner-cache/.
@@ -68,6 +82,14 @@ type Config struct {
 	FanartBannerCacheMaxMB   int    // total disk budget for downloaded banner images
 	BannerArtRefresh         string // 5m|10m|30m|1h|3h|8h|24h|48h|1w|once
 	BannerRotateInterval     string // same vocabulary; "once" = do not auto-rotate title
+
+	// OpenSubtitles (optional). Used by /api/playback/captions to fetch subtitles
+	// when neither the on-disk cache nor a local SRT in data/subtitles/ has the movie.
+	// All three credentials must be present for fetches to be attempted.
+	OpenSubtitlesAPIKey    string
+	OpenSubtitlesUsername  string
+	OpenSubtitlesPassword  string
+	OpenSubtitlesUserAgent string
 }
 
 func LoadConfig() (Config, error) {
@@ -101,11 +123,21 @@ func LoadConfig() (Config, error) {
 		LGTVAddr:               os.Getenv("LGTV_ADDR"),
 		LGTVClientKey:          os.Getenv("LGTV_CLIENT_KEY"),
 		LGTVIPControlKey:       firstNonEmptyEnv("LGTV_IP_CONTROL_KEY", "TV_KEYCODE"),
+		MQTTBroker:             os.Getenv("MQTT_BROKER"),
+		MQTTTopic:              getenv("MQTT_TOPIC", "plex/volume"),
+		MQTTUsername:           os.Getenv("MQTT_USERNAME"),
+		MQTTPassword:           os.Getenv("MQTT_PASSWORD"),
+		NormBaselineVolume:     getenvInt("NORM_BASELINE_VOLUME", 50),
+		NormReferenceDB:        getenvFloat("NORM_REFERENCE_DB", -23.0),
 		FanartAPIKey:           os.Getenv("FANART_API_KEY"),
 		FanartClientKey:        os.Getenv("FANART_CLIENT_KEY"),
 		FanartBannerCacheMaxMB: getenvInt("FANART_BANNER_CACHE_MAX_MB", 0),
 		BannerArtRefresh:       getenv("BANNER_ART_REFRESH", ""),
 		BannerRotateInterval:   getenv("BANNER_ROTATE_INTERVAL", ""),
+		OpenSubtitlesAPIKey:    os.Getenv("OPENSUBTITLES_API_KEY"),
+		OpenSubtitlesUsername:  os.Getenv("OPENSUBTITLES_USERNAME"),
+		OpenSubtitlesPassword:  os.Getenv("OPENSUBTITLES_PASSWORD"),
+		OpenSubtitlesUserAgent: getenv("OPENSUBTITLES_USER_AGENT", "plex-dashboard/0.1"),
 	}
 
 	// Source from .env first, then fill missing values from persisted settings.
@@ -275,6 +307,18 @@ func getenvInt(key string, fallback int) int {
 		return fallback
 	}
 	return value
+}
+
+func getenvFloat(key string, fallback float64) float64 {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	var v float64
+	if _, err := fmt.Sscanf(raw, "%f", &v); err != nil {
+		return fallback
+	}
+	return v
 }
 
 func defaultSettingsPath() string {

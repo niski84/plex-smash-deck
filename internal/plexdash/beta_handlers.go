@@ -8,12 +8,36 @@ import (
 	plexdashboardnext "plex-dashboard/web/plex-dashboard-next"
 )
 
+func noCacheHandler(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		h.ServeHTTP(w, r)
+	})
+}
+
+// diskOrEmbedded returns a handler that serves from diskRoot when the file exists there,
+// falling back to the embedded fallback handler. This lets JS/CSS edits take effect
+// without a binary rebuild when running in dev (repo layout on disk).
+func diskOrEmbedded(diskRoot http.Dir, fallback http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f, err := os.Open(string(diskRoot) + "/" + r.URL.Path)
+		if err == nil {
+			f.Close()
+			http.FileServer(diskRoot).ServeHTTP(w, r)
+			return
+		}
+		fallback.ServeHTTP(w, r)
+	})
+}
+
 // registerBetaRoutes wires up the new UI at /beta.
 // Called from Routes() after all API routes are registered.
 func (s *Server) registerBetaRoutes(mux *http.ServeMux) {
-	// Static assets for the new UI.
+	// Static assets — prefer disk so JS/CSS edits take effect without a rebuild.
+	// Always no-store so browsers re-fetch on every deploy.
 	nextStatic, _ := fs.Sub(plexdashboardnext.FS, "static")
-	mux.Handle("/next/static/", http.StripPrefix("/next/static/", http.FileServer(http.FS(nextStatic))))
+	diskStatic := http.Dir("web/plex-dashboard-next/static")
+	mux.Handle("/next/static/", http.StripPrefix("/next/static/", noCacheHandler(diskOrEmbedded(diskStatic, http.FileServer(http.FS(nextStatic))))))
 
 	// New dashboard at /beta.
 	mux.HandleFunc("/beta", s.handleNewDashboard)

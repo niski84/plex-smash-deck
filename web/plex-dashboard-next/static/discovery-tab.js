@@ -21,6 +21,11 @@ function discoveryTab() {
     results: [],
     status: '',
     cart: JSON.parse(localStorage.getItem('plexdash.discovery.cart.v1') || '[]'),
+    cartModalOpen: false,
+    cartCopied: false,
+    cartClipboardBlocked: false,
+    clipboardFallbackText: '',
+    clipboardFallbackVisible: false,
     tmdbGenres: [],           // [{id, name}] loaded once
     playlists: [],            // titles for compare-against dropdown
     selectedRows: new Set(),  // tmdbIds of selected rows
@@ -274,24 +279,66 @@ function discoveryTab() {
     },
 
     // ── Copy actions ───────────────────────────────────────────────────────────
+    _copyText(text, successMsg) {
+      this.clipboardFallbackVisible = false;
+      navigator.clipboard.writeText(text).then(() => {
+        this.status = successMsg;
+      }).catch(() => {
+        this.clipboardFallbackText = text;
+        this.clipboardFallbackVisible = true;
+        this.status = 'Clipboard blocked (HTTP) — text shown below';
+      });
+    },
+
     copyMissing() {
       if (!this.missing.length) return;
       const lines = ['## Movies to add\n', ...this.missing.map(r => `- **${r.title}** (${r.year})${r.voteAverage ? ' — TMDB ' + r.voteAverage : ''}`)];
-      navigator.clipboard.writeText(lines.join('\n'));
-      this.status = 'Copied ' + this.missing.length + ' missing title(s)';
+      this._copyText(lines.join('\n'), 'Copied ' + this.missing.length + ' missing title(s)');
     },
 
     copyAllTitles() {
       if (!this.results.length) { this.status = 'Run analysis first'; return; }
       const lines = ['## All titles\n', ...this.results.map(r => `- **${r.title}** (${r.year})`)];
-      navigator.clipboard.writeText(lines.join('\n'));
-      this.status = 'Copied ' + this.results.length + ' title(s)';
+      this._copyText(lines.join('\n'), 'Copied ' + this.results.length + ' title(s)');
     },
 
+    cartText() {
+      if (!this.cart.length) return '';
+      return ['## Cart\n', ...this.cart.map(r => `- **${r.title}** (${r.year})`)].join('\n');
+    },
+
+    // Opens the cart modal. Also attempts clipboard immediately (triggered by "Copy as Markdown").
     copyCart() {
       if (!this.cart.length) return;
-      const lines = ['## Cart\n', ...this.cart.map(r => `- **${r.title}** (${r.year})`)];
-      navigator.clipboard.writeText(lines.join('\n'));
+      this.openCartModal();
+      this._tryCartClipboard();
+    },
+
+    openCartModal() {
+      this.cartModalOpen = true;
+      this.cartCopied = false;
+      this.cartClipboardBlocked = false;
+    },
+
+    closeCartModal() {
+      this.cartModalOpen = false;
+    },
+
+    _tryCartClipboard() {
+      navigator.clipboard.writeText(this.cartText()).then(() => {
+        this.cartCopied = true;
+        this.cartClipboardBlocked = false;
+        this.status = `Copied ${this.cart.length} cart item(s) to clipboard`;
+        setTimeout(() => { this.cartCopied = false; }, 2500);
+      }).catch(() => {
+        this.cartCopied = false;
+        this.cartClipboardBlocked = true;
+        this.status = 'Clipboard blocked — copy from the modal';
+      });
+    },
+
+    copyCartFromModal() {
+      this._tryCartClipboard();
     },
 
     // ── Cache ──────────────────────────────────────────────────────────────────
