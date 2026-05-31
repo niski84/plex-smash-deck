@@ -117,6 +117,9 @@ function movieGrid() {
     minRating: 0,
     decade: sortPrefs.decade || '',
 
+    // ── Collection filter (set when user clicks a collection link in the popup) ──
+    collectionFilter: null,  // { name: string, ratingKeys: Set<string> } | null
+
     // ── Render state ────────────────────────────────────────────────────────
     displayedCount: 60,
     selected: new Set(),
@@ -398,8 +401,26 @@ function movieGrid() {
     },
 
     // ── Filter pipeline ─────────────────────────────────────────────────────
+    filterByCollection(name, ratingKeys) {
+      this.collectionFilter = { name, ratingKeys: new Set(ratingKeys) };
+      this.searchQuery = '';
+      this.displayedCount = 60;
+    },
+
+    clearCollectionFilter() {
+      this.collectionFilter = null;
+    },
+
     get filtered() {
       let list = this.movies;
+
+      // Collection filter (from popup series link)
+      if (this.collectionFilter?.ratingKeys?.size > 0) {
+        list = list.filter(m => this.collectionFilter.ratingKeys.has(m.RatingKey));
+        // Sort by release year ascending within the collection
+        list = [...list].sort((a, b) => (a.Year || 0) - (b.Year || 0));
+        return list;
+      }
 
       // Genre filter: exclude takes priority, then OR-include
       if (this.excludedGenres.size > 0) {

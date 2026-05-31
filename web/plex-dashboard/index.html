@@ -1344,6 +1344,11 @@
       margin-bottom: 6px;
     }
     .mip-actors-label { color: #6b7ab0; margin-right: 6px; }
+    .mip-collection { margin-top: 7px; font-size: 11px; color: #a78bfa; }
+    .mip-collection[hidden] { display: none !important; }
+    .mip-collection-link { color: #a78bfa; background: none; border: 1px solid rgba(139,92,246,.4); border-radius: 4px; padding: 1px 7px; cursor: pointer; font: inherit; font-size: 11px; }
+    .mip-collection-link:hover { color: #ddd6fe; border-color: #a78bfa; }
+    .mip-collection-pos { color: #6b7280; font-size: 10px; margin-left: 6px; }
     .mip-search-credit {
       display: inline;
       margin: 0;
@@ -2012,6 +2017,7 @@
         <div class="mip-attrs"></div>
         <div class="mip-genres"></div>
         <div class="mip-actors"></div>
+        <div class="mip-collection" hidden></div>
         <div class="mip-play-row" hidden>
           <button type="button" class="mip-play-tv" data-testid="mip-play-tv">Play on TV</button>
           <button type="button" class="mip-play-browser" data-testid="mip-play-browser">Play in Browser</button>
@@ -3034,6 +3040,9 @@
     let moviesAll = [];
     /** Filtered subset of moviesAll for current search/genre/rating/decade; null = show all. */
     let moviesDisplayFiltered = null;
+    /** Collection filter — when set, grid shows only these ratingKeys sorted by year. */
+    let collectionFilterRks = null;  // Set<string> | null
+    let collectionFilterName = '';
     let allCardData = []; // [{movie, el}] — grows as the grid scrolls
     let moviesMaterializedCount = 0;
     // Cached DOM refs for elements queried on every scroll tick / filter cycle.
@@ -4811,6 +4820,64 @@
       }
     }
 
+    function applyDashboardCollectionFilter(name, ratingKeys) {
+      collectionFilterName = name || '';
+      collectionFilterRks = (ratingKeys && ratingKeys.length) ? new Set(ratingKeys.map(String)) : null;
+      if (typeof window._hideMovieInfoImmediate === 'function') window._hideMovieInfoImmediate();
+      // Directly rebuild grid — avoids any filterMovieCards interaction
+      const grid = _elMovieGrid || document.getElementById('movieGrid');
+      if (!grid) return;
+      const rks = collectionFilterRks;
+      if (!rks) return;
+      const filtered = moviesAll.filter(function(m) { return rks.has(String(m.RatingKey)); });
+      filtered.sort(function(a, b) { return (a.Year || 0) - (b.Year || 0); });
+      moviesDisplayFiltered = filtered;
+      cancelPrefetch();
+      grid.innerHTML = '';
+      allCardData = [];
+      moviesMaterializedCount = 0;
+      materializeMovieRange(0, Math.min(MOVIE_GRID_INITIAL, filtered.length));
+      schedulePrefetch();
+      updateCollectionBanner();
+      updateMovieCountDisplay('', filtered.length, false, false, false);
+    }
+    // Expose so popup IIFE sibling can call it directly
+    window._applyDashboardCollectionFilter = applyDashboardCollectionFilter;
+
+    function clearCollectionFilter() {
+      collectionFilterRks = null;
+      collectionFilterName = '';
+      updateCollectionBanner();
+      filterMovieCards();
+    }
+
+    function updateCollectionBanner() {
+      let banner = document.getElementById('collectionFilterBanner');
+      if (!collectionFilterRks) {
+        if (banner) banner.remove();
+        return;
+      }
+      if (!banner) {
+        const grid = _elMovieGrid || document.getElementById('movieGrid');
+        if (!grid || !grid.parentNode) return;
+        banner = document.createElement('div');
+        banner.id = 'collectionFilterBanner';
+        banner.style.cssText = 'margin-bottom:10px;padding:6px 12px;background:rgba(139,92,246,.15);border:1px solid rgba(139,92,246,.4);border-radius:6px;display:flex;align-items:center;gap:10px;font-size:12px;color:#a78bfa;';
+        grid.parentNode.insertBefore(banner, grid);
+      }
+      const count = collectionFilterRks ? collectionFilterRks.size : 0;
+      banner.innerHTML = '';
+      const label = document.createElement('span');
+      label.textContent = '🎬 ' + collectionFilterName + ' · ' + count + ' film' + (count === 1 ? '' : 's');
+      banner.appendChild(label);
+      const clr = document.createElement('button');
+      clr.type = 'button';
+      clr.textContent = '✕ Clear filter';
+      clr.style.cssText = 'margin-left:auto;background:none;border:1px solid #52525b;border-radius:4px;color:#9ca3af;font-size:11px;padding:2px 8px;cursor:pointer;';
+      clr.addEventListener('click', clearCollectionFilter);
+      banner.appendChild(clr);
+    }
+
     /**
      * Filter moviesAll in memory → moviesDisplayFiltered, then rebuild the grid
      * from scratch with only matching movies (progressive rendering).
@@ -4825,7 +4892,7 @@
       const ratingMin = dashboardMinRatingFilter();
       const ratingOn = ratingMin > 0;
       const decadeOn = decadeFilterActive();
-      const hasFilter = !!(q || genreOn || ratingOn || decadeOn);
+      const hasFilter = !!(q || genreOn || ratingOn || decadeOn || collectionFilterRks);
 
       if (!hasFilter) {
         // No filter: show full sorted library
@@ -4843,7 +4910,22 @@
         return;
       }
 
-      // Filter moviesAll in memory — uses cached blobs, no DOM touching
+      // Collection filter: show only those movies, sorted by year
+      if (collectionFilterRks) {
+        const rks = collectionFilterRks;
+        const sorted = moviesAll.filter(m => rks.has(String(m.RatingKey))).sort((a, b) => (a.Year || 0) - (b.Year || 0));
+        cancelPrefetch();
+        moviesDisplayFiltered = sorted;
+        updateCollectionBanner();
+        grid.innerHTML = '';
+        allCardData = [];
+        moviesMaterializedCount = 0;
+        materializeMovieRange(0, Math.min(MOVIE_GRID_INITIAL, sorted.length));
+        schedulePrefetch();
+        updateMovieCountDisplay('', sorted.length, false, false, false);
+        return;
+      }
+
       let filtered = moviesAll.filter(movie => {
         if (!moviePassesGenreFilters(movie)) return false;
         if (!movieMeetsRatingFilter(movie)) return false;
@@ -6487,6 +6569,8 @@
       const mipPlayTv   = popup.querySelector('.mip-play-tv');
       const mipPlayBrowser = popup.querySelector('.mip-play-browser');
       const mipPlayDownload = popup.querySelector('.mip-play-download');
+      const mipCollection = popup.querySelector('.mip-collection');
+      let mipCollectionAbort = null;
       /* Slightly longer than Discovery so brief pointer passes don't open the panel. */
       const SHOW_MS = plexdashHoverPopupDelayMs() + 50;
       let showTimer = null;
@@ -6717,6 +6801,14 @@
         mipPlot.classList.remove('mip-plot-expanded');
         mipPlotMore.textContent = 'Show more';
         mipPlotMore.hidden = true;
+        if (mipCollection) {
+          mipCollection.hidden = true;
+          mipCollection.innerHTML = '';
+        }
+        if (mipCollectionAbort) {
+          try { mipCollectionAbort.abort(); } catch (_) {}
+          mipCollectionAbort = null;
+        }
         if (mipPlayRow) {
           mipPlayRow.hidden = true;
           if (mipPlayTv) mipPlayTv.onclick = null;
@@ -6884,6 +6976,7 @@
           const t = e.target;
           if (t === mipPoster || (mipPoster && mipPoster.contains(t))) return;
           if (t.closest && t.closest('.mip-search-credit')) return;
+          if (t.closest && t.closest('.mip-collection-link')) return;
           if (mipPlayRow && (t === mipPlayRow || mipPlayRow.contains(t))) return;
           if (mipPlotMore && (t === mipPlotMore || mipPlotMore.contains(t))) return;
           e.stopPropagation();
@@ -7106,6 +7199,50 @@
             });
           } else {
             mipActors.style.display = 'none';
+          }
+
+          // Collection / series lookup
+          if (mipCollection) {
+            mipCollection.hidden = true;
+            mipCollection.innerHTML = '';
+            if (mipCollectionAbort) { try { mipCollectionAbort.abort(); } catch(_){} }
+            const tmdbId = Number(movie.TMDBID != null ? movie.TMDBID : movie.tmdbId);
+            if (tmdbId > 0) {
+              mipCollectionAbort = new AbortController();
+              const colSignal = mipCollectionAbort.signal;
+              fetch('/api/tmdb/collection?tmdbId=' + tmdbId, { signal: colSignal })
+                .then(r => r.json())
+                .then(j => {
+                  if (!stillSameMovieHover()) return;
+                  const d = j.data || j;
+                  if (!d || !d.collectionId || !d.parts || d.parts.length < 2) return;
+                  const idx = d.parts.findIndex(p => p.tmdbId === tmdbId);
+                  const pos = idx >= 0 ? 'Film ' + (idx + 1) + ' of ' + d.parts.length : '';
+                  const owned = d.parts.filter(p => p.owned).length;
+                  const ownedNote = owned < d.parts.length ? ' · ' + owned + ' owned' : '';
+                  const btn = document.createElement('button');
+                  btn.type = 'button';
+                  btn.className = 'mip-collection-link';
+                  btn.textContent = '🎬 ' + d.collectionName;
+                  btn.title = 'Filter grid to this collection';
+                  btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const rks = d.parts.filter(function(p) { return p.owned && p.ratingKey; }).map(function(p) { return p.ratingKey; });
+                    if (typeof window._applyDashboardCollectionFilter === 'function') {
+                      window._applyDashboardCollectionFilter(d.collectionName, rks);
+                    }
+                  });
+                  mipCollection.appendChild(btn);
+                  if (pos) {
+                    const span = document.createElement('span');
+                    span.className = 'mip-collection-pos';
+                    span.textContent = pos + ownedNote;
+                    mipCollection.appendChild(span);
+                  }
+                  mipCollection.hidden = false;
+                })
+                .catch(() => {});
+            }
           }
 
           const summary = (movie.Summary != null ? String(movie.Summary) : '').trim();
@@ -9679,6 +9816,7 @@
 
     document.getElementById('movieSearch').addEventListener('input', () => {
       clearTimeout(searchDebounceTimer);
+      if (collectionFilterRks) clearCollectionFilter();
       // Debounce for mid-word typing; RAF inside filterMovieCards handles paint ordering.
       searchDebounceTimer = setTimeout(filterMovieCards, 160);
     });
@@ -10905,5 +11043,30 @@
     aria-label="Back to top — tab controls and reset discovery list position"
     title="Back to top (filters &amp; controls). Resets Discovery table scroll when that tab is open."
   >↑</button>
+
+<script>
+// Auto-reload when server restarts — keeps one tab alive instead of opening new ones.
+(function () {
+  var knownStartedAt = null;
+  var POLL_MS = 3000;
+  var RETRY_MS = 1000;
+  var _timer = null;
+
+  function poll() {
+    fetch('/api/health', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        var t = j && j.data && j.data.startedAt ? j.data.startedAt : null;
+        if (t === null) { _timer = setTimeout(poll, POLL_MS); return; }
+        if (knownStartedAt === null) { knownStartedAt = t; _timer = setTimeout(poll, POLL_MS); return; }
+        if (t !== knownStartedAt) { location.reload(); return; }
+        _timer = setTimeout(poll, POLL_MS);
+      })
+      .catch(function () { _timer = setTimeout(poll, RETRY_MS); });
+  }
+
+  poll();
+})();
+</script>
 </body>
 </html>

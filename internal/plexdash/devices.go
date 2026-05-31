@@ -12,7 +12,7 @@ import (
 type TVDevice struct {
 	ID           string `json:"id"`           // stable random hex ID, generated on creation
 	Name         string `json:"name"`         // user-friendly display name, e.g. "Living Room"
-	Manufacturer string `json:"manufacturer"` // "lg" | future: "roku", "appletv"
+	Manufacturer string `json:"manufacturer"` // "lg" | "smash-deck" (any service exposing GET /api/smash/manifest + /api/v1/volume/*) | future: "roku", "appletv"
 	Addr         string `json:"addr"`         // local IP address
 	ClientKey    string `json:"clientKey"`    // SSAP pairing key (LG webOS)
 	IPControlKey string `json:"ipControlKey"` // 8-char LG IP Control keycode (optional, for volume)

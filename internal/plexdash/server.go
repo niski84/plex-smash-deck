@@ -57,6 +57,7 @@ type Server struct {
 	mu           sync.RWMutex
 	cfg          Config
 	settingsPath string
+	startedAt    int64 // unix seconds — changes on every restart; used by browser auto-reload
 
 	mlMu       sync.RWMutex
 	mlMovies   []Movie
@@ -125,6 +126,10 @@ type Server struct {
 	// Playback history ring + JSONL log feeding /api/playback/at and the
 	// captions handler's ?at=<rfc3339> path.
 	playbackHistory *PlaybackHistory
+
+	// Per-device volume operation cancel — keyed by device addr.
+	// Ensures a new volume command cancels any in-flight one for the same device.
+	lgVolumeCancel sync.Map
 }
 
 // FanartLogEntry is one line shown on the Settings tab fanart activity log.
@@ -220,6 +225,7 @@ func NewServer(cfg Config, client *PlexClient) *Server {
 	s := &Server{
 		cfg:             cfg,
 		settingsPath:    defaultSettingsPath(),
+		startedAt:       time.Now().Unix(),
 		discJobs:        newDiscoveryJobStore(),
 		streamDownloads: make(map[string]*streamDownload),
 		captionsCache:   NewCaptionsCache("data/captions-cache"),
@@ -730,6 +736,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/stream/cache", s.handleStreamCacheList)
 	mux.HandleFunc("/api/stream/", s.handleStream)
 
+	mux.HandleFunc("/api/smash/manifest", s.handleSmashManifest)
+
 	// Old dashboard at /.
 	mux.Handle("/", DashboardFileServer())
 
@@ -737,6 +745,27 @@ func (s *Server) Routes() http.Handler {
 	s.registerBetaRoutes(mux)
 
 	return requestLogMiddleware(mux)
+}
+
+func (s *Server) handleSmashManifest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Error: "method not allowed"})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"smash_deck":   "1",
+		"service":      "plex-dashboard",
+		"display_name": "Plex Dashboard",
+		"capabilities": []string{"playback.play", "playback.queue", "playback.control", "captions.query"},
+		"state_url":    "/api/playback/status",
+		"controls": map[string]any{
+			"play":           map[string]any{"method": "POST", "path": "/api/movies/play"},
+			"companion_ctrl": map[string]any{"method": "POST", "path": "/api/plex/companion/control"},
+			"captions_at":    map[string]any{"method": "GET", "path": "/api/playback/at"},
+			"volume_set":     map[string]any{"method": "POST", "path": "/api/lg/volume", "note": "proxies to configured TV device"},
+		},
+	})
 }
 
 func (s *Server) handleHelpDocs(w http.ResponseWriter, r *http.Request) {
@@ -817,7 +846,8 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, apiResponse{
 		Success: true,
 		Data: map[string]any{
-			"service": "plex-dashboard",
+			"service":   "plex-dashboard",
+			"startedAt": s.startedAt,
 		},
 	})
 }
@@ -3038,27 +3068,42 @@ func (s *Server) handleLgVolume(w http.ResponseWriter, r *http.Request) {
 
 	// Resolve device: prefer ?device=<id> param, fall back to first LG device, then legacy fields.
 	deviceID := strings.TrimSpace(r.URL.Query().Get("device"))
-	var addr, ssapKey, ipKey string
+	var addr, ssapKey, ipKey, manufacturer string
 	if dev := FindDeviceByID(cfg.TVDevices, deviceID); dev != nil {
 		addr = strings.TrimSpace(dev.Addr)
 		ssapKey = strings.TrimSpace(dev.ClientKey)
 		ipKey = strings.TrimSpace(dev.IPControlKey)
+		manufacturer = strings.ToLower(strings.TrimSpace(dev.Manufacturer))
 	} else if len(cfg.TVDevices) > 0 {
 		// Fall back to first configured device.
 		first := cfg.TVDevices[0]
 		addr = strings.TrimSpace(first.Addr)
 		ssapKey = strings.TrimSpace(first.ClientKey)
 		ipKey = strings.TrimSpace(first.IPControlKey)
+		manufacturer = strings.ToLower(strings.TrimSpace(first.Manufacturer))
 	} else {
 		// Legacy single-TV fields.
 		addr = strings.TrimSpace(cfg.LGTVAddr)
 		ssapKey = strings.TrimSpace(cfg.LGTVClientKey)
 		ipKey = strings.TrimSpace(cfg.LGTVIPControlKey)
+		manufacturer = "lg"
 	}
-	lgVolumeOK := addr != "" && (ipKey != "" || ssapKey != "")
+	smashDeckOK := manufacturer == "smash-deck" && addr != ""
+	lgVolumeOK := !smashDeckOK && addr != "" && (ipKey != "" || ssapKey != "")
 
 	switch r.Method {
 	case http.MethodGet:
+		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		defer cancel()
+		if smashDeckOK {
+			st, err := GetVolumeSmashDeck(ctx, addr)
+			if err != nil {
+				respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"supported": true, "error": err.Error()}})
+				return
+			}
+			respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"supported": true, "volume": st.Volume, "mute": st.Muted}})
+			return
+		}
 		if !lgVolumeOK {
 			respondJSON(w, http.StatusOK, apiResponse{
 				Success: true,
@@ -3068,8 +3113,6 @@ func (s *Server) handleLgVolume(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-		defer cancel()
 		var st LGVolumeStatus
 		var err error
 		if ipKey != "" {
@@ -3104,6 +3147,17 @@ func (s *Server) handleLgVolume(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
+		if smashDeckOK {
+			ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+			defer cancel()
+			st, err := SetVolumeSmashDeck(ctx, addr, level)
+			if err != nil {
+				respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"supported": true, "error": err.Error()}})
+				return
+			}
+			respondJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"supported": true, "volume": st.Volume, "mute": st.Muted}})
+			return
+		}
 		if !lgVolumeOK {
 			respondJSON(w, http.StatusOK, apiResponse{
 				Success: true,
@@ -3113,13 +3167,23 @@ func (s *Server) handleLgVolume(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
-		defer cancel()
+		// Cancel any in-flight LG volume operation for this device, then run ours.
+		// Using context.Background() (not r.Context()) so the operation isn't tied
+		// to this HTTP request — we control the lifetime via lgVolumeCancel.
+		if old, loaded := s.lgVolumeCancel.LoadAndDelete(addr); loaded {
+			old.(context.CancelFunc)()
+		}
+		opCtx, opCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		s.lgVolumeCancel.Store(addr, opCancel)
+		defer func() {
+			s.lgVolumeCancel.CompareAndDelete(addr, opCancel)
+			opCancel()
+		}()
 		var st LGVolumeStatus
 		if ipKey != "" {
-			st, err = SetVolumeLGIP(ctx, addr, ipKey, level)
+			st, err = SetVolumeLGIP(opCtx, addr, ipKey, level)
 		} else {
-			st, err = SetVolumeSSAP(ctx, addr, ssapKey, level)
+			st, err = SetVolumeSSAP(opCtx, addr, ssapKey, level)
 		}
 		if err != nil {
 			respondJSON(w, http.StatusOK, apiResponse{
@@ -3526,7 +3590,7 @@ func (s *Server) applyNormResult(ctx context.Context, cfg Config, result NormRes
 		}()
 	}
 
-	// Direct LG TV volume — apply if any device is configured.
+	// Apply volume to first configured device — routes by manufacturer.
 	if len(cfg.TVDevices) == 0 {
 		return
 	}
@@ -3540,15 +3604,17 @@ func (s *Server) applyNormResult(ctx context.Context, cfg Config, result NormRes
 		tctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 		defer cancel()
 		var err error
-		if k := strings.TrimSpace(dev.IPControlKey); k != "" {
+		if strings.ToLower(strings.TrimSpace(dev.Manufacturer)) == "smash-deck" {
+			_, err = SetVolumeSmashDeck(tctx, addr, result.RecommendedVolume)
+		} else if k := strings.TrimSpace(dev.IPControlKey); k != "" {
 			_, err = SetVolumeLGIP(tctx, addr, k, result.RecommendedVolume)
 		} else if k := strings.TrimSpace(dev.ClientKey); k != "" {
 			_, err = SetVolumeSSAP(tctx, addr, k, result.RecommendedVolume)
 		}
 		if err != nil {
-			fmt.Printf("[audio-norm] set TV volume error: %v\n", err)
+			fmt.Printf("[audio-norm] set volume error: %v\n", err)
 		} else {
-			fmt.Printf("[audio-norm] TV volume set to %d for %q\n", result.RecommendedVolume, result.Profile.Title)
+			fmt.Printf("[audio-norm] volume set to %d for %q\n", result.RecommendedVolume, result.Profile.Title)
 		}
 	}()
 }
