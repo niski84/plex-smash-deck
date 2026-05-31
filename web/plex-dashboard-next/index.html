@@ -13,6 +13,7 @@
   <script src="/next/static/movie-popup.js"></script>
   <script src="/next/static/movie-grid.js"></script>
   <script src="/next/static/player-card.js"></script>
+  <script src="/next/static/volume-control.js"></script>
   <script src="/next/static/settings-tab.js"></script>
   <script src="/next/static/playlists-tab.js"></script>
   <script src="/next/static/discovery-tab.js"></script>
@@ -64,7 +65,28 @@
       const d = A.$data(el);
       if (!d) { if (++tries < 30) setTimeout(fill, 60); return; }
       d.searchQuery = name;
-      d.searchScope = scope === 'director' ? 'director' : scope === 'actor' ? 'actor' : 'all';
+      d.searchScope = scope === 'director' ? 'director' : 'all';
+    };
+    setTimeout(fill, 80);
+  }
+
+  // Filter the dashboard grid to owned movies in a collection
+  function goToDashboardCollection(collectionName, parts) {
+    const A = window.Alpine;
+    if (!A) return;
+    const rootEl = document.getElementById('pd-root');
+    if (rootEl) {
+      A.$data(rootEl).tab = 'dashboard';
+      localStorage.setItem('pd-tab', 'dashboard');
+    }
+    const ratingKeys = (parts || []).filter(p => p.owned && p.ratingKey).map(p => p.ratingKey);
+    let tries = 0;
+    const fill = () => {
+      const el = document.getElementById('movie-grid-root');
+      if (!el) { if (++tries < 30) setTimeout(fill, 60); return; }
+      const d = A.$data(el);
+      if (!d) { if (++tries < 30) setTimeout(fill, 60); return; }
+      d.filterByCollection(collectionName, ratingKeys);
     };
     setTimeout(fill, 80);
   }
@@ -183,6 +205,8 @@
        id="shared-movie-popup"
        @mouseenter="$store.moviePopup.keepOpen()"
        @mouseleave="$store.moviePopup.hide()"
+       @mousedown="$store.moviePopup.onMousedown()"
+       @contextmenu="$store.moviePopup.onContextMenu()"
        class="fixed z-[9998] bg-zinc-900/95 border border-zinc-700 rounded-xl shadow-2xl p-4 backdrop-blur-sm overflow-y-auto"
        style="width:min(640px,calc(100vw - 20px));max-height:min(90vh,680px)"
        :style="'top:'+$store.moviePopup.y+'px;left:'+$store.moviePopup.x+'px'">
@@ -221,6 +245,23 @@
                  @click.stop>IMDb ↗</a>
             </div>
           </div>
+          <!-- Collection / series installment badge — x-if so child exprs never eval while collection is null -->
+          <template x-if="mp.collection && mp.collection.collectionId > 0">
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <button @click.stop="goToDashboardCollection(mp.collection.collectionName, mp.collection.parts); $store.moviePopup.hide()"
+                      class="inline-flex items-center gap-1 badge badge-xs border-violet-700/60 bg-violet-950/40 text-violet-300 hover:bg-violet-900/60 cursor-pointer"
+                      x-text="'🎬 ' + mp.collection.collectionName"
+                      :title="'Show all ' + mp.collection.collectionName + ' movies in the grid'"></button>
+              <span class="text-[10px] text-zinc-600"
+                    x-text="(function(){
+                      const idx = (mp.collection.parts||[]).findIndex(p => p.tmdbId === mp.item.tmdbId);
+                      if (idx < 0) return '';
+                      const total = mp.collection.parts.length;
+                      const owned = mp.collection.parts.filter(p => p.owned).length;
+                      return 'Film ' + (idx+1) + ' of ' + total + (owned < total ? ' · ' + owned + ' owned' : '');
+                    })()"></span>
+            </div>
+          </template>
           <div x-show="(mp.item.genres||[]).length>0" class="flex flex-wrap gap-1">
             <template x-for="g in (mp.item.genres||[]).slice(0,4)" :key="g">
               <span class="badge badge-xs badge-outline text-zinc-500 border-zinc-700" x-text="g"></span>
@@ -269,8 +310,9 @@
           <!-- Collection row -->
           <template x-if="mp.collection && mp.collection.collectionId > 0">
             <div class="mt-2 pt-2 border-t border-zinc-800">
-              <p class="text-[10px] text-zinc-500 mb-1.5 font-medium tracking-wide uppercase"
-                 x-text="mp.collection.collectionName"></p>
+              <button @click.stop="goToDashboardCollection(mp.collection.collectionName, mp.collection.parts); $store.moviePopup.hide()"
+                      class="text-[10px] text-violet-400 hover:text-violet-200 mb-1.5 font-medium tracking-wide uppercase cursor-pointer"
+                      x-text="mp.collection.collectionName"></button>
               <div class="flex gap-1.5 overflow-x-auto pb-1" style="scrollbar-width:thin;scrollbar-color:#3f3f46 transparent">
                 <template x-for="(part, idx) in mp.collection.parts" :key="part.tmdbId">
                   <button @click.stop="mp.goToCollectionMember(part)"

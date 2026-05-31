@@ -55,6 +55,7 @@ document.addEventListener('alpine:init', () => {
     _hideTimer: null,
     _ratingsCtrl: null,
     _collectionCtrl: null,
+    _selecting: false,   // true while user is selecting text or context menu is open
 
     show(item, anchor, opts) {
       clearTimeout(this._showTimer);
@@ -74,7 +75,26 @@ document.addEventListener('alpine:init', () => {
       }, 2000);
     },
 
+    // Called on mousedown inside the popup — suspends hide until mouseup so
+    // text selection dragging outside the popup bounds doesn't dismiss it.
+    onMousedown() {
+      this._selecting = true;
+      document.addEventListener('mouseup', () => {
+        // Keep the popup alive briefly after releasing so the user can right-click
+        // or press Ctrl+C without a mouseleave dismissing it first.
+        setTimeout(() => { this._selecting = false; }, 700);
+      }, { once: true });
+    },
+
+    // Called on contextmenu — keeps popup alive while the native menu is open.
+    onContextMenu() {
+      this._selecting = true;
+      clearTimeout(this._contextMenuTimer);
+      this._contextMenuTimer = setTimeout(() => { this._selecting = false; }, 3000);
+    },
+
     hide() {
+      if (this._selecting) return;
       clearTimeout(this._showTimer);
       this._hideTimer = setTimeout(() => {
         this.visible = false;
