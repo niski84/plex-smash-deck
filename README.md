@@ -1,5 +1,8 @@
 # Plex Smash Deck
 
+
+![Plex Dashboard demo](docs/plex-dashboard-demo.gif)
+
 A self-hosted Plex dashboard that streams movies straight to an LG webOS TV and adds discovery, playlists, and library tracking on top.
 
 Part of the [Smash Deck](https://github.com/niski84/smash-deck-catalog) family - self-hosted dashboards built in Go for the homelab.
