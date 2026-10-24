@@ -33,3 +33,7 @@ docs/demo-frames/
 .idea/
 .DS_Store
 *~
+
+# Runtime state is never a distributable fixture
+/data/
+/scripts/work-vlan-brake.sh
